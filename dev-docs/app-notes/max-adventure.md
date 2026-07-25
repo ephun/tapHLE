@@ -15,9 +15,25 @@
 - Availability check (2026-07-25): not re-confirmed against Apple lookup yet;
   do this before a report-worthy run.
 
+## Status: STRUCK — artifact is encrypted
+
+The only available Archive build (`MaxAdventureFree 1.2.ipa`, app-id-233) has an
+**encrypted executable**. tapHLE parses the Mach-O, finds a non-zero
+`LC_ENCRYPTION_INFO` cryptid, and refuses it:
+`"Could not load executable: The executable is encrypted. tapHLE can't run
+encrypted apps!"`. This is not a tapHLE bug and not fixable by advancing the
+emulator — running a FairPlay-encrypted App Store binary is out of scope. The
+target is struck until a lawfully-obtained **decrypted** copy of this exact
+version is designated.
+
+The earlier "silent hang" was a red herring: with `popup_errors` on, the load
+error raises a **blocking modal message box** that an unattended run cannot
+dismiss, so the process sat with idle CPU. Under a redirected-stderr launch the
+error line is emitted; a GUI launch shows the dialog.
+
 ## Highest milestone
 
-None yet. The process launches and stays alive but does not present a frame.
+None. The executable cannot be loaded (encrypted).
 
 ## Proven facts (dirty worktree, 2026-07-25)
 
