@@ -27,6 +27,13 @@ None yet. The process launches and stays alive but does not present a frame.
   it is waiting on something, not busy-looping), no further log appears, and no
   EAGL renderbuffer or Core Animation frame is ever presented (frame capture
   times out).
+- The block is **host-side, before any guest code runs.** The unconditional
+  `echo!("CPU emulation begins now.")` at the top of the main-thread init
+  coroutine (`src/environment.rs`) goes to stderr and **never prints**, so the
+  guest CPU never starts. The stall is between the Mach-O slice load
+  (`src/mach_o.rs`) and the first resume of the main-thread coroutine — i.e. in
+  host-side dyld linking / `Environment` construction / main-loop startup, not
+  in guest `+load`/static-init/`main`.
 - The hang is **independent of device family** (same with the default iPhone and
   with `--device-family=ipad`) and of the `--landscape-*` orientation.
 - No guest crash / panic / register dump — there is no fault PC to anchor on.
@@ -39,18 +46,20 @@ None yet. The process launches and stays alive but does not present a frame.
 
 ## Next discriminator
 
-Find where the main thread is blocked between Mach-O load and the first
-runtime output. Options, cheapest first:
-1. Temporarily add `"tapHLE::dyld"` (and thread-start / libc pthread modules) to
-   `ENABLED_MODULES` in `src/log.rs`, rebuild, and see the last dyld/link step
-   before the stall.
-2. Launch with `--gdb=127.0.0.1:9001`, attach, and read the main thread's stack
-   to see what it is waiting on (a mutex/semaphore/thread-join is likely, given
-   idle CPU).
-Suspect an early ObjC `+load`/static-initializer or a secondary thread the main
-thread joins that never starts. Only after it presents a frame should
-orientation be assessed (it is landscape-only; may need `--landscape-native`,
-see [[landscape-native-option]] equivalent in tapHLE_default_options.txt).
+The stall is host-side and before guest execution, so `--gdb` (which debugs the
+*guest*) will not help until the guest starts. Instead find where the native
+Rust startup blocks between `Loading <arch> slice` and `CPU emulation begins
+now`:
+1. Add `echo!` trace markers along the load/link/Environment-construction path
+   (bundle load → dyld bind → `Environment::new` → main-loop first resume) and
+   rebuild; the last marker printed localizes the stall.
+2. Or attach a native debugger (WinDbg / the VS debugger / `rust-lldb`) to the
+   live `tapHLE.exe` and read the main thread's native stack — idle CPU means it
+   is parked on a host wait (a lock, a channel `recv`, an SDL/window call, or a
+   blocking file read).
+Only after it presents a frame does orientation matter (landscape-only; may need
+`--landscape-native`, see the tapHLE_default_options.txt entry pattern used for
+Warlords HD).
 
 ## Checks run
 
