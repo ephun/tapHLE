@@ -936,6 +936,12 @@ where
             _ => None,
         };
 
+        let mut suppress_assignment = false;
+        if env.mem.read(format + format_char_idx) == b'*' {
+            suppress_assignment = true;
+            format_char_idx += 1;
+        }
+
         let specifier = env.mem.read(format + format_char_idx);
         format_char_idx += 1;
 
@@ -965,15 +971,21 @@ where
                 // Unlike the string conversions, %c neither skips whitespace
                 // nor appends a terminator. A missing width means one byte.
                 assert!(length_modifier.is_none());
-                let mut dst: MutPtr<u8> = args.next(env);
+                let mut dst = if suppress_assignment {
+                    None
+                } else {
+                    Some(args.next::<MutPtr<u8>>(env))
+                };
                 let count = if max_width == 0 { 1 } else { max_width };
                 for _ in 0..count {
                     let Ok(c) = getc_fn(env, subject, src_char_idx) else {
                         input_ended = true;
                         break 'outer;
                     };
-                    env.mem.write(dst, c.into());
-                    dst += 1;
+                    if let Some(dst) = dst.as_mut() {
+                        env.mem.write(*dst, c.into());
+                        *dst += 1;
+                    }
                     src_char_idx += 1;
                 }
             }
@@ -1220,7 +1232,9 @@ where
             _ => unimplemented!("Format character '{}'", specifier as char),
         }
 
-        matched_args += 1;
+        if !suppress_assignment {
+            matched_args += 1;
+        }
     }
 
     // C reports EOF, not zero, when the input ran out before the first
