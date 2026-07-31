@@ -34,7 +34,12 @@ impl HostObject for NSOperationHostObject {}
 
 #[derive(Clone, Copy)]
 enum OperationInvocation {
-    TargetSelectorObject(id, SEL, id),
+    TargetSelectorObject {
+        target: id,
+        selector: SEL,
+        object: id,
+        object_is_live: bool,
+    },
     NSInvocation(id),
 }
 
@@ -85,7 +90,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (())main {
     let invocation = env.objc.borrow::<NSOperationHostObject>(this).invocation;
     match invocation {
-        Some(OperationInvocation::TargetSelectorObject(target, selector, object)) => {
+        Some(OperationInvocation::TargetSelectorObject {
+            target,
+            selector,
+            object,
+            ..
+        }) => {
             () = msg_send_no_type_checking(env, (target, selector, object));
         }
         Some(OperationInvocation::NSInvocation(invocation)) => {
@@ -126,9 +136,16 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (())dealloc {
     if let Some(invocation) = env.objc.borrow::<NSOperationHostObject>(this).invocation {
         match invocation {
-            OperationInvocation::TargetSelectorObject(target, _selector, object) => {
+            OperationInvocation::TargetSelectorObject {
+                target,
+                object,
+                object_is_live,
+                ..
+            } => {
                 release(env, target);
-                release(env, object);
+                if object_is_live {
+                    release(env, object);
+                }
             }
             OperationInvocation::NSInvocation(invocation) => release(env, invocation),
         }
@@ -146,9 +163,20 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (id)initWithTarget:(id)target selector:(SEL)selector object:(id)object {
     retain(env, target);
-    retain(env, object);
+    // Although this argument is declared as `id`, some early audio stacks use
+    // it to carry a scalar buffer identifier. Forward that value unchanged,
+    // but retain it only when it is a live Objective-C object.
+    let object_is_live = env.objc.get_host_object(object).is_some();
+    if object_is_live {
+        retain(env, object);
+    }
     env.objc.borrow_mut::<NSOperationHostObject>(this).invocation =
-        Some(OperationInvocation::TargetSelectorObject(target, selector, object));
+        Some(OperationInvocation::TargetSelectorObject {
+            target,
+            selector,
+            object,
+            object_is_live,
+        });
     this
 }
 

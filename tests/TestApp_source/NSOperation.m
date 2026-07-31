@@ -22,6 +22,8 @@ static int operation_value;
 - (void)record:(id)object {
   if (object == self)
     operation_value = 2;
+  else if (object == (id)1)
+    operation_value = 3;
 }
 @end
 
@@ -53,6 +55,17 @@ int test_NSOperation(void) {
   if (operation_value != 2 || ![invocation isFinished])
     return -4;
 
+  // The one-object convenience API is sometimes used to forward a scalar
+  // identifier through an id-typed callback argument. It must not be retained
+  // or released as an Objective-C object, but it must reach the target intact.
+  NSInvocationOperation *scalar_invocation =
+      [[NSInvocationOperation alloc] initWithTarget:target
+                                          selector:@selector(record:)
+                                            object:(id)1];
+  [queue addOperation:scalar_invocation];
+  if (operation_value != 3 || ![scalar_invocation isFinished])
+    return -9;
+
   // initWithInvocation: retains and executes an NSInvocation with arbitrary
   // arguments, instead of reducing it to the one-object convenience form.
   operation_value = 0;
@@ -78,6 +91,7 @@ int test_NSOperation(void) {
 
   [cancelled release];
   [from_invocation release];
+  [scalar_invocation release];
   [invocation release];
   [target release];
   [queue release];

@@ -5,6 +5,8 @@
 - Load a view controller's archived view nib and support registration of pinch
   gesture recognizers, allowing more nib-based games to start their custom
   rendering views.
+- Preserve scalar callback values passed through `NSInvocationOperation`, so
+  older audio engines can schedule their buffer cleanup safely.
 - Rebrand the fork as tapHLE across the executable, crates, runtime resources,
   internal symbols, tests, and packaging.
 - Define Windows game compatibility as the product focus, with macOS retained
