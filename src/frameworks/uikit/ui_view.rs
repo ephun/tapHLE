@@ -19,6 +19,7 @@ pub mod ui_window;
 
 use core::panic;
 
+use super::ui_gesture_recognizer;
 use super::ui_graphics::{UIGraphicsPopContext, UIGraphicsPushContext};
 use crate::abi::CallFromHost;
 use crate::frameworks::core_animation::ca_animation::{
@@ -98,6 +99,8 @@ pub struct UIViewHostObject {
     autoresizes_subviews: bool,
     /// Set by `-setNeedsLayout`, cleared when the layout actually happens.
     needs_layout: bool,
+    /// Attached gesture recognizers. UIView retains them while attached.
+    gesture_recognizers: Vec<id>,
 }
 impl HostObject for UIViewHostObject {}
 impl Default for UIViewHostObject {
@@ -118,6 +121,7 @@ impl Default for UIViewHostObject {
             // UIKit's default is YES.
             autoresizes_subviews: true,
             needs_layout: false,
+            gesture_recognizers: Vec::new(),
         }
     }
 }
@@ -544,6 +548,14 @@ pub const CLASSES: ClassExports = objc_classes! {
     msg![env; this initWithFrame:(<CGRect as Default>::default())]
 }
 
+- (())addGestureRecognizer:(id)recognizer {
+    retain(env, recognizer);
+    env.objc.borrow_mut::<UIViewHostObject>(this)
+        .gesture_recognizers
+        .push(recognizer);
+    ui_gesture_recognizer::set_view(env, recognizer, this);
+}
+
 - (id)initWithFrame:(CGRect)frame {
     let this = init_common(env, this);
 
@@ -874,6 +886,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         autoresizing_mask: _,
         autoresizes_subviews: _,
         needs_layout: _,
+        gesture_recognizers,
     } = std::mem::take(env.objc.borrow_mut(this));
 
     release(env, layer);
@@ -882,6 +895,9 @@ pub const CLASSES: ClassExports = objc_classes! {
     for subview in subviews {
         env.objc.borrow_mut::<UIViewHostObject>(subview).superview = nil;
         release(env, subview);
+    }
+    for recognizer in gesture_recognizers {
+        release(env, recognizer);
     }
 
     let state = &mut env.framework_state.uikit.ui_view.views;

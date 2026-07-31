@@ -114,6 +114,15 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (id)initWithCoder:(id)coder {
+    // A controller archived separately from its view stores the view nib here.
+    // Retaining it through initWithNibName: lets -view load that nib later,
+    // instead of falling back to an unrelated empty UIView.
+    let nib_name_key = get_static_str(env, "UINibName");
+    let nib_name: id = msg![env; coder decodeObjectForKey:nib_name_key];
+    let nib_bundle_key = get_static_str(env, "UINibBundle");
+    let nib_bundle: id = msg![env; coder decodeObjectForKey:nib_bundle_key];
+    () = msg![env; this initWithNibName:nib_name bundle:nib_bundle];
+
     let key_ns_string = get_static_str(env, "UIView");
     let view: id = msg![env; coder decodeObjectForKey:key_ns_string];
 
