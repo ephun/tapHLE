@@ -12,6 +12,7 @@
 - Current implementation: retain `UINibName`/`UINibBundle` in
   `UIViewController`'s keyed-decoder path; add the minimal
   `UIGestureRecognizer`/`UIPinchGestureRecognizer` registration API the
-  EAGLView creates during startup.
+  EAGLView creates during startup; support `sscanf`'s byte-oriented `%c`
+  conversion, which the app uses after audio setup.
 - Next discriminator: rerun the exact IPA from the clean commit and identify
-  the next post-gesture startup boundary.
+  the next post-`sscanf` startup boundary.
