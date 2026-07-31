@@ -17,7 +17,7 @@ use super::audio_file::{
 use super::audio_queue::is_supported_audio_format;
 use super::audio_unit::AudioBufferList;
 use crate::dyld::{export_c_func, FunctionExports};
-use crate::frameworks::carbon_core::{eofErr, OSStatus};
+use crate::frameworks::carbon_core::{eofErr, paramErr, OSStatus};
 use crate::frameworks::core_audio_types::{
     debug_fourcc, fourcc, kAudioFormatLinearPCM, AudioStreamBasicDescription,
 };
@@ -288,6 +288,33 @@ fn ExtAudioFileRead(
     0 // success
 }
 
+fn ExtAudioFileSeek(
+    env: &mut Environment,
+    in_ext_audio_file: ExtAudioFileRef,
+    in_frame_offset: i64,
+) -> OSStatus {
+    return_if_null!(in_ext_audio_file);
+    if in_frame_offset < 0 {
+        return paramErr;
+    }
+
+    let host_object = env
+        .framework_state
+        .audio_toolbox
+        .extended_audio_file
+        .extended_audio_files
+        .get_mut(&in_ext_audio_file)
+        .unwrap();
+    let bytes_per_frame = host_object
+        .client_data_format
+        .expect("ExtAudioFileSeek requires a client data format")
+        .bytes_per_frame;
+    host_object.current_bytes_read = in_frame_offset
+        .checked_mul(i64::from(bytes_per_frame))
+        .expect("ExtAudioFileSeek frame offset overflow");
+    0
+}
+
 fn ExtAudioFileDispose(env: &mut Environment, in_ext_audio_file: ExtAudioFileRef) -> OSStatus {
     return_if_null!(in_ext_audio_file);
 
@@ -319,5 +346,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(ExtAudioFileGetProperty(_, _, _, _)),
     export_c_func!(ExtAudioFileSetProperty(_, _, _, _)),
     export_c_func!(ExtAudioFileRead(_, _, _)),
+    export_c_func!(ExtAudioFileSeek(_, _)),
     export_c_func!(ExtAudioFileDispose(_)),
 ];
