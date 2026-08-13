@@ -15,6 +15,82 @@
 - tapHLEdb: App 20, version 20, report 28 (2026-07-26, tapHLE `4e246384`,
   ★☆☆☆☆).
 
+## 2026-08-13: the menu works. Six fixes, and the blocker was invisible
+
+**Everything below this line is superseded.** The app is no longer stuck at its
+menu: every button works, and it now runs through profile creation and its
+introduction cutscene. It is still two stars, because no gameplay scene has
+rendered yet — see the frontier at the end of this section.
+
+### The cause: a view that draws itself was never asked to
+
+Crystal's modal was a full-screen `CCSkinnedView` over the game, and its
+content — a **CRYSTAL** panel with **ENABLE CRYSTAL** and **NO THANKS** buttons —
+is drawn entirely in `-drawRect:`. Across a whole startup, traced, `-drawRect:`
+was called **zero times**.
+
+A new `UIView` displays itself once without being told to; a bare `CALayer` does
+not. tapHLE applied the layer's rule to views, so `needs_display` was never set
+and the compositor never displayed anything. The modal was therefore invisible,
+full-screen, and touch-absorbing, and the only thing that dismisses it is a
+press on a button nobody could see. Fixed on `trunk` in `c2dcee53`.
+
+That also explains why the three network fixes recorded below changed nothing:
+Crystal was never waiting on the network. It was waiting for a tap.
+
+### The other five
+
+- `30e935bc` — the drawn bitmap was composited upside down. The UV flip meant
+  for renderbuffer readback was being applied to Core Graphics output too. This
+  is what the old note's "a mirrored click seems to work" observation was.
+- `6e258942` — `NSStringFromSelector` read through a null selector. The app
+  passes one while starting a game.
+- `efdf18e7` — `CGRectIntersection` asserted on empty rectangles. An unlaid-out
+  view is empty; the first scene hits this immediately.
+- `3cf1ea39` — `AVAudioPlayer` wrote its `NSError *` through a NULL
+  out-parameter, and read through nil URLs and nil data. Several of this app's
+  sounds fail to load, so it takes all three paths.
+- `a6e6488c` — a scheduled reachability target now gets its initial callback.
+  Correct, and did not move this app.
+
+### Click map, in client coordinates of the 1024x768 window
+
+1. Launch; wait ~20 s for the menu with the Crystal panel over it.
+2. `(692, 675)` — **NO THANKS**. The panel goes and the menu brightens (the dim
+   backdrop was the "dark overlay" that made this visible in the first place).
+   `(332, 674)` is **ENABLE CRYSTAL**, which opens Crystal's sign-in UI and then
+   dies on a nil string — a separate, unfixed bug, so avoid it.
+3. `(847, 114)` — **Play Game** → Profiles.
+4. `(202, 199)` — first profile slot → Enter Your Name.
+5. `(519, 314)` — the name field, then type, then **Return**.
+   Note: the Return must be injected as a *scancode* (`keybd_event` with
+   `KEYEVENTF_SCANCODE`, scancode `0x1C`). SDL never sees a virtual-key-only
+   synthetic Return, and `SendKeys "{ENTER}"` does not work either — the
+   characters arrive but the key does not. This cost a while to notice.
+6. `(707, 679)` — **Load** → back to the menu with the profile selected.
+7. `(847, 114)` — **Play Game** → the introduction cutscene.
+
+### Frontier: the intro plays, the first scene is black
+
+The cutscene runs and advances — its caption text changes between frames — and
+the app survives it. When it ends, the screen is **entirely black** and stays
+that way, with the app alive.
+
+Two things to check first, in this order:
+
+1. Whether the scene's artwork is actually loading. The warnings name doubled
+   paths (`Images/Images/IntroductionScene/...`, `Images/Fonts/white.png`) but
+   those are the app's *first* of two attempts and the retry normally succeeds —
+   this is the same false lead the note records for the main menu, so confirm
+   with `TAPHLE_LOG_MODULES=tapHLE::frameworks::foundation::ns_string` before
+   concluding anything. The files do exist, at `Images/IntroductionScene/` and
+   `Fonts/`.
+2. Whether the caption glyphs being wrong (they render as "fifi i", "yiiig") and
+   the black background share a cause, since both are texture-fed.
+
+Do not resume by assuming the app is stuck: it is alive and its scene manager
+has moved on. This is a rendering question, not a hang.
+
 ## 2026-08-12: the thing eating the tap is on screen, and it is Crystal's splash
 
 **This supersedes the 2026-08-06 conclusion below, which said the emulator side
