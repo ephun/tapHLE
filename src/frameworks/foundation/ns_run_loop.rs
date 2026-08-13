@@ -245,7 +245,7 @@ pub(super) fn remove_timer(env: &mut Environment, run_loop: id, timer: id) {
 /// If should_sync is set to true, a semaphore that should
 /// be waited on by the calling thread is returned. Otherwise, a null value is
 /// returned.
-pub(super) fn add_perform_request(
+pub fn add_perform_request(
     env: &mut Environment,
     run_loop: id,
     target: id,
