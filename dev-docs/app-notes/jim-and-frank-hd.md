@@ -86,7 +86,16 @@ could not decode — `Could not load the file Voice Over/intro_female.aif`. With
 `4885fefc` the log has zero audio decode failures and the sequence gets further,
 with the frames genuinely changing rather than frozen.
 
-**It still stops.** After roughly a minute the frame becomes identical for
+**A second cause is also fixed, and it still stops.**
+`audioPlayerDidFinishPlaying:successfully:` was never sent at all — tapHLE
+stopped the queue at end of file and told nobody — so a sequence that advances
+when its narration ends had nothing to advance on. Fixed in `d9029210`, queued
+on the run loop rather than sent from inside the audio callback, because
+delegates release the player there and the first attempt crashed on the disposed
+queue.
+
+With both audio fixes the cutscene runs about two minutes and several shots
+further than it used to. **It then stalls anyway.** After roughly a minute the frame becomes identical for
 minutes on end — the fingerprint to compare against is mean RGB
 `(9.5, 9.3, 8.8)` with 661 distinct colours in the 1024x768 client area, which
 is the same frame it stalled on before the audio fix. So the voice-over was one
