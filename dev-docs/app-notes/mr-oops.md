@@ -11,9 +11,10 @@
 - Embedded identity: bundle `jp.co.ponos.mroops`, version `1.2.2`, minimum
   OS `4.3`. Same developer as Mr. AahH!!, but a much later build.
 - tapHLEdb: App 18, version 18. Report 26 (2026-07-26, tapHLE `8832a3e1`,
-  ★☆☆☆☆); report 67 (2026-08-12, tapHLE `e0645ce4`, ★★☆☆☆).
+  ★☆☆☆☆); report 67 (2026-08-12, tapHLE `e0645ce4`, ★★☆☆☆); report 68
+  (2026-08-12, tapHLE `6d54d36d`, ★★★☆☆).
 
-## 2026-08-12: two stars. The title screen, and a stage that starts
+## 2026-08-12: three stars. It plays.
 
 **Everything below this section is history.** It describes an app that faulted
 during startup and never presented a frame. That is no longer what happens.
@@ -64,73 +65,80 @@ Requests are now built normally and `NSURLConnection` reports
 way a device in airplane mode behaves. The Twitter request now carries its real
 URL. Do not implement OAuth: nothing here needs a working exchange.
 
-### Frontier: a stage starts but does not persist
+### Frontier: the stage plays, and it persists
 
 Pressing the upper menu bar starts the game. The click map, in client
 coordinates of the 480x320 window:
 
 1. Launch, wait about 15 seconds for the title screen.
-2. Click `(375, 179)` — the upper of the two dark bars on the right. It
-   highlights purple.
+2. Click `(375, 179)` — the upper of the two dark bars on the right ("Begin
+   Game"). It highlights purple.
+3. The app raises a one-button alert, `【First Mission】Clear 20waves to unlock
+   "Iron Cannons"!`. On `6d54d36d` that alert reports its only button as
+   pressed, so the app continues.
 
-The app then raises a one-button alert, `【First Mission】Clear 20waves to
-unlock "Iron Cannons"!`, and on `e0645ce4` that alert reports its only button as
-pressed rather than reporting no button, so the app continues. Stage 1,
-"Rolling Stones", draws its title and the player on a grid playfield.
+Stage 1, "Rolling Stones", then runs a real loop: the player is drawn on the
+grid, stones spawn with entry arrows and roll across it, and positions advance
+between frames. **The maintainer play-tested it directly and confirmed the loop
+persists across sustained play.** Left alone it lasts about five seconds and
+returns to the title, because the player is hit — that is the game working, not
+a defect.
 
-**It then returns to the title screen after about five seconds with no input.**
-That is why this is two stars and not three: the loop starts and does not
-persist. The playfield's own sprites — the stones — were never visible in any
-captured frame, so the next question is whether the stage is ending because the
-player is being hit by something that is not being drawn, or because the stage
-never really ran. Nothing is logged when it ends.
+Reported as tapHLEdb report 68 (2026-08-12, tapHLE `6d54d36d`, ★★★☆☆).
 
-### Why the stage probably ends: exception unwinding is not bound
+**Correction, recorded because I got it wrong and the wrong version was briefly
+in this note.** I first read the five-second return as "the loop does not
+persist" and looked for a defect. That came from sampling frames at 500 ms and
+classifying them by mean brightness: the playfield and the stage-intro banner
+have almost the same mean, so a run that was actually playing looked like a
+banner that never advanced. Capturing at 250 ms and *looking at the frames*
+showed stones moving. On this app, look at the picture before trusting a
+summary statistic — and the maintainer watching the window is faster than either.
 
-Nothing is logged when the stage ends, no asset load fails, and the game loop is
-demonstrably running (663 `EAGLView` draws in the traced window). Two relocations
-are unbound, and together they are the best-supported explanation:
+### Rejected: exception unwinding is not the problem
+
+The wrong reading above led to a wrong cause, which is also recorded so nobody
+implements it. `_OBJC_EHTYPE_$_NSException` and `___objc_personality_v0` are
+genuinely unbound, and that looked like a `@catch` that could never match.
+
+It is not what happens. tapHLE's `objc_exception_throw` logs
+`Ignoring Objective-C exception` and returns, and **that line never appears in
+this app's log**, so nothing is ever thrown. The unbound relocations sit in
+exception tables that are only read while unwinding, and no unwinding occurs.
+Do not implement SjLj unwinding for this app.
+
+### The blank menu bars: measured, and not tapHLE's text renderer
+
+The two dark bars have no label. They are supposed to read "Begin Game" and
+"Options" — those exact strings are drawn with
+`-[NSString drawInRect:withFont:lineBreakMode:alignment:]` during startup.
+
+Measured with a temporary diagnostic in `ui_font::draw_in_rect` and
+`ui_font::size_with_font` (removed again; do not look for it):
 
 ```text
-Warning: unhandled external relocation "_OBJC_EHTYPE_$_NSException" in "mroops"
-  at 0xde55c, 0xde59c, 0xde5a0, 0xde604
-Warning: unhandled non-lazy symbol "___objc_personality_v0" at 0xc87cc
+draw_in_rect  text="Begin Game" rect=11.0x1.0  fill=(1,1,1,1) ctx=16x1
+size_with_font text="Begin Game" font_size=36.0 constrained=Some(11.0x1.0)
 ```
 
-`_OBJC_EHTYPE_$_NSException` is the type information a `@catch (NSException *)`
-matches against, and `___objc_personality_v0` is the personality routine that
-performs the match during unwinding. With neither bound, an app that throws and
-catches an exception around its stage setup cannot land in its own handler.
-A silent abort back to the menu is what that looks like from outside — which is
-exactly the observed behaviour, and it is why nothing appears in the log.
+So the font is right (36 pt, a supported face), the fill colour is right
+(opaque white), and the drawing code is not a stub. **The app asks for a 16x1
+pixel image context and tells UIKit to draw into an 11x1 rect.** Nothing can be
+legible at that size, and `size_with_font`'s absurd 415-pixel height is a
+consequence of wrapping "Begin Game" into an 11-pixel width, not a cause.
 
-The four `0xde5..` addresses are the catch clauses. Disassembling around them
-names the region that throws and settles this in one lookup, the same way
-`nl-symbol-at.py` settled the startup fault. Do that before implementing
-exception unwinding, which is a large piece of work to start speculatively.
+Where the 11x1 comes from is the open question. The app never calls
+`sizeWithFont:` at all — every `size_with_font` call in the run originates
+inside `draw_in_rect` — so it is not being misinformed by a measurement API. Its
+own numbers fit `charCount * fontSize / 32` closely across nine labels at two
+font sizes, which looks like a texture size computed in 32-pixel tiles and then
+used as a pixel count.
 
-Note the earlier per-frame noise is *not* a fault: the app polls
-`[Twitter twIsLogin]` -> `[SA_OAuthTwitterEngine isAuthorized]` and allocates an
-`OAToken` every frame, and calls `[[UIDevice currentDevice] userInterfaceIdiom]`
-tens of thousands of times. Wasteful, and its own behaviour, not tapHLE's.
+The likely shape is a fallback: the game's normal path is its own bitmap-font
+artwork, and `void load(NSString *kind) failed!` shows asset loads failing at
+startup. Check what those loads want before touching the text renderer.
+Cosmetic; it does not affect the rating.
 
-### The blank menu bars are drawn text, not a missing image
-
-The two dark bars on the title screen have no visible label. They are supposed
-to have one: the app calls
-`-[NSString drawInRect:withFont:lineBreakMode:alignment:]` eighteen times during
-startup with `[UIFont systemFontOfSize:]`, and logs `setSingleStageButton 50`,
-so the labels are composed at runtime rather than shipped as artwork. The small
-"MORE GAMES" button beside them, which *is* artwork, renders correctly — so the
-contrast is between drawn text and bundled images, not between one button and
-another.
-
-tapHLE implements that method (`ui_font::draw_in_rect`, honouring the fill
-colour and clipping to the rect) and `systemFontOfSize:` maps to a supported
-font, so the call is not a stub. Where the glyphs are lost between there and the
-texture the button samples has not been measured. It is cosmetic and does not
-block the rating, but it is the cheapest remaining lead into this app's text
-path.
 
 ## Current state: 1-star, no frame
 
