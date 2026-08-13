@@ -287,9 +287,45 @@ Two things checked and cleared while here, to save repeating them:
   depth are therefore all cleared — a tempting explanation for a texture that
   samples as fully transparent, and not this one.
 
+### What the chapter actually submits to GL
+
+Instrumented `glDrawElements` (the app uses only `glDrawArrays` and
+`glDrawElements`, and in practice only the latter — instrumenting `glDrawArrays`
+alone reports zero and is a trap worth avoiding). Diagnostics removed again.
+
+Menu: **5829 draws** in a few seconds. Chapter, while black:
+
+```text
+855 x  drawE mode 0x5 (TRIANGLE_STRIP) tex 3 fb 1 blend 1 colour [1,1,1,1]
+854 x  drawE mode 0x5 (TRIANGLE_STRIP) tex 1 fb 1 blend 1 colour [1,1,1,1]
+```
+
+So the chapter is **not** failing to draw. It submits two textured, blended,
+full-white quads every frame to the main framebuffer, using exactly **two**
+textures, and the result is black.
+
+Two textures is the shape of a scene that is drawing its curtains and nothing
+else: `ChapterStart_1.png` is 4,736 bytes for a 1024x768 RGBA image, which is
+an almost entirely transparent overlay. Drawing two transparent quads over a
+cleared buffer gives precisely the `[0, 0, 0, 0]` the framebuffer reads back.
+
+Note also that GL state is innocent: blending on, colour opaque white,
+framebuffer 1. Nothing here would hide a texture that had content.
+
 ### Next step
 
-Find why element 1 does not draw when its schema says visible. `setMVisible:` is called
+**Work out which textures 1 and 3 are, and where the background went.** The
+scene declares three elements and the background (`object_id 1`,
+`Chapter1_Welcome.png`, 1 MB) is the one that should dominate the screen.
+Either it is not among the two being drawn, or it is drawn and its texture is
+empty. `glBindTexture` and `glTexImage2D` are the two calls to log — name and
+dimensions at upload, then which name is bound per draw — and that says which
+of the two it is in a single run.
+
+Do not repeat: the schema is parsed (both plists parse; the `<real>` is a red
+herring), the PNG is 1024x768 RGBA exactly like the menu background that works,
+the framebuffer is complete, the transition finishes and the curtain is removed,
+the selector queue is healthy, and the app is not hung. `setMVisible:` is called
 some 800 times during scene setup and never again, so the state they are left in
 after `buildUIFromSchema` and `createMainCharacters` is the state they keep.
 Compare that against `Odyssey_MainMenu`, which builds the same way through the
