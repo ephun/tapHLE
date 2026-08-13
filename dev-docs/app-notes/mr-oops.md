@@ -85,7 +85,52 @@ captured frame, so the next question is whether the stage is ending because the
 player is being hit by something that is not being drawn, or because the stage
 never really ran. Nothing is logged when it ends.
 
-Neither menu bar renders its label, which is a separate cosmetic gap.
+### Why the stage probably ends: exception unwinding is not bound
+
+Nothing is logged when the stage ends, no asset load fails, and the game loop is
+demonstrably running (663 `EAGLView` draws in the traced window). Two relocations
+are unbound, and together they are the best-supported explanation:
+
+```text
+Warning: unhandled external relocation "_OBJC_EHTYPE_$_NSException" in "mroops"
+  at 0xde55c, 0xde59c, 0xde5a0, 0xde604
+Warning: unhandled non-lazy symbol "___objc_personality_v0" at 0xc87cc
+```
+
+`_OBJC_EHTYPE_$_NSException` is the type information a `@catch (NSException *)`
+matches against, and `___objc_personality_v0` is the personality routine that
+performs the match during unwinding. With neither bound, an app that throws and
+catches an exception around its stage setup cannot land in its own handler.
+A silent abort back to the menu is what that looks like from outside — which is
+exactly the observed behaviour, and it is why nothing appears in the log.
+
+The four `0xde5..` addresses are the catch clauses. Disassembling around them
+names the region that throws and settles this in one lookup, the same way
+`nl-symbol-at.py` settled the startup fault. Do that before implementing
+exception unwinding, which is a large piece of work to start speculatively.
+
+Note the earlier per-frame noise is *not* a fault: the app polls
+`[Twitter twIsLogin]` -> `[SA_OAuthTwitterEngine isAuthorized]` and allocates an
+`OAToken` every frame, and calls `[[UIDevice currentDevice] userInterfaceIdiom]`
+tens of thousands of times. Wasteful, and its own behaviour, not tapHLE's.
+
+### The blank menu bars are drawn text, not a missing image
+
+The two dark bars on the title screen have no visible label. They are supposed
+to have one: the app calls
+`-[NSString drawInRect:withFont:lineBreakMode:alignment:]` eighteen times during
+startup with `[UIFont systemFontOfSize:]`, and logs `setSingleStageButton 50`,
+so the labels are composed at runtime rather than shipped as artwork. The small
+"MORE GAMES" button beside them, which *is* artwork, renders correctly — so the
+contrast is between drawn text and bundled images, not between one button and
+another.
+
+tapHLE implements that method (`ui_font::draw_in_rect`, honouring the fill
+colour and clipping to the rect) and `systemFontOfSize:` maps to a supported
+font, so the call is not a stub. Where the glyphs are lost between there and the
+texture the button samples has not been measured. It is cosmetic and does not
+block the rating, but it is the cheapest remaining lead into this app's text
+path.
 
 ## Current state: 1-star, no frame
 
