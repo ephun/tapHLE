@@ -22,11 +22,12 @@ use crate::frameworks::carbon_core::eofErr;
 use crate::frameworks::core_audio_types::AudioStreamBasicDescription;
 use crate::frameworks::core_foundation::cf_run_loop::kCFRunLoopCommonModes;
 use crate::frameworks::foundation::ns_error::NSOSStatusErrorDomain;
+use crate::frameworks::foundation::ns_run_loop;
 use crate::frameworks::foundation::{ns_string, NSInteger, NSTimeInterval, NSUInteger};
 use crate::mem::{guest_size_of, ConstVoidPtr, GuestUSize, MutPtr, MutVoidPtr, Ptr};
 use crate::objc::{
-    autorelease, id, msg, msg_class, nil, objc_classes, release, retain, todo_objc_setter, Class,
-    ClassExports, HostObject, NSZonePtr,
+    autorelease, id, msg, msg_class, msg_send, nil, objc_classes, release, retain,
+    todo_objc_setter, Class, ClassExports, HostObject, NSZonePtr,
 };
 use crate::Environment;
 
@@ -71,6 +72,35 @@ fn write_os_status_error(env: &mut Environment, out_error: MutPtr<id>, status: N
     let error: id = msg![env; error initWithDomain:domain code:status userInfo:nil];
     autorelease(env, error);
     env.mem.write(out_error, error);
+}
+
+/// Ask for the delegate to be told its sound reached the end, which is the only
+/// signal an `AVAudioPlayer` gives that playback is over.
+///
+/// tapHLE stopped the queue and cleared `is_playing` but told nobody, so an app
+/// that sequences itself on audio finishing — a cutscene advancing when its
+/// narration ends, a menu waiting on a sting before changing screen — waited
+/// forever.
+///
+/// It is queued on the run loop rather than sent from here, because here is
+/// inside the audio queue's own buffer callback. Delegates routinely release
+/// the player in this method, which disposes the queue that is still being
+/// serviced further up the stack; doing it synchronously crashed on a disposed
+/// queue in `prime_audio_queue`. A device delivers this on the run loop too.
+///
+/// The player is retained across the hop. The release in the delegate method is
+/// exactly the case that makes that necessary.
+fn schedule_did_finish_playing(env: &mut Environment, player: id) {
+    let delegate = env.objc.borrow::<AVAudioPlayerHostObject>(player).delegate;
+    if delegate == nil {
+        return;
+    }
+    let Some(selector) = env.objc.lookup_selector("tapHLE_deliverDidFinishPlaying") else {
+        return;
+    };
+    retain(env, player);
+    let run_loop: id = msg_class![env; NSRunLoop mainRunLoop];
+    ns_run_loop::add_perform_request(env, run_loop, player, selector, nil, Some(0.0), false);
 }
 
 pub const CLASSES: ClassExports = objc_classes! {
@@ -168,6 +198,27 @@ pub const CLASSES: ClassExports = objc_classes! {
             nil
         }
     }
+}
+
+// Deliver the queued end-of-playback notification. See
+// [schedule_did_finish_playing] for why this is not sent directly.
+- (())tapHLE_deliverDidFinishPlaying {
+    let delegate = env.objc.borrow::<AVAudioPlayerHostObject>(this).delegate;
+    if delegate != nil {
+        // The delegate is not retained, per the property, so check it still
+        // answers before messaging it.
+        if let Some(selector) = env
+            .objc
+            .lookup_selector("audioPlayerDidFinishPlaying:successfully:")
+        {
+            let responds: bool = msg![env; delegate respondsToSelector:selector];
+            if responds {
+                log_dbg!("[(AVAudioPlayer*){:?}] telling {:?} playback finished", this, delegate);
+                () = msg_send(env, (delegate, selector, this, true));
+            }
+        }
+    }
+    release(env, this);
 }
 
 - (id)delegate {
@@ -497,6 +548,7 @@ fn _tapHLE_AVAudioPlayerOutputBufferHelper(
             env.objc
                 .borrow_mut::<AVAudioPlayerHostObject>(av_audio_player)
                 .is_playing = false;
+            schedule_did_finish_playing(env, av_audio_player);
         } else {
             if number_of_loops > 0 {
                 env.objc
