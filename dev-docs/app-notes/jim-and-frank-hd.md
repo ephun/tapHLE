@@ -14,6 +14,80 @@
   version `1.1`.
 - tapHLEdb: App 20, version 20, report 28 (2026-07-26, tapHLE `4e246384`,
   ★☆☆☆☆).
+- SHA-256 of the tested IPA:
+  `52BDD06DA70513B1252DACE4FF4AC0D6528305F91AE659B7534FEB8D09A4F92C`.
+
+## 2026-08-13: it plays. Three stars on `d2121078`
+
+**This supersedes everything below, including the section that follows it.** The
+game runs: profile creation, the introduction cutscene, chapter one's dialogue,
+its tutorials, object interaction, the quest letter, collecting Eurekas, and
+walking from one scene to the next. The loop starts and it persists.
+
+### The blocker was a string parser
+
+Every chapter rendered black while the main menu rendered fine, and the reason
+was neither the FBO nor the compositor nor anything else the sections below
+chase. The scene elements' geometry lives in the plists as strings, and
+`CGRectFromString` accepted only the exact spelling tapHLE itself emits —
+`", "` between numbers, `"}, {"` between the pairs. The menu's plists use that
+spelling. The chapters' use the compact `{{0,0},{1024,768}}`.
+
+So every chapter element parsed as `CGRectZero`, and the app drew a correct,
+fully bound, zero-sized quad for each one. That is why the scene traced as
+completely alive while showing nothing: it *was* completely alive.
+
+Fixed on `trunk` in `15d8f51c` by parsing the numbers out of the braces and
+ignoring the layout, which is what Core Graphics does. Everything the sections
+below describe as a rendering mystery resolves at that commit.
+
+### Four more gaps between the title card and gameplay
+
+Each of these aborted the app outright on ordinary input, and each was found by
+walking the click map after the fix above:
+
+- `380a1ae2` — `-[NSObject setValuesForKeysWithDictionary:]` did not exist. The
+  engine configures each scene element by handing it a whole plist dictionary.
+- `9b313153` — six `UIScrollView` messages did not exist, including
+  `setShowsHorizontalScrollIndicator:` and `setContentOffset:animated:`. The
+  grandfather's letter, which sets up chapter one's puzzle, is a scroll view.
+- `7eca6279` — `CGRectInset` asserted that the centre is unmoved, compared with
+  `==` on floats. That is true in exact arithmetic and routinely false in the
+  arithmetic actually used, so it rejected ordinary geometry. It also aborted on
+  over-insetting instead of answering the null rectangle.
+- `fe09bdfa` — `CFPropertyListCreateDeepCopy` was missing; the engine reads a
+  schema once per scene and deep-copies it per element.
+
+### Verified click map, client coordinates of the 1024x768 window
+
+Steps 1-7 are the map in the section below, unchanged. Continuing from it:
+
+8. Wait ~185 s for the introduction cutscene. It ends on chapter one's title
+   card and then the living room, with Jim and Frank in dialogue.
+9. `(512, 690)` repeatedly — advance dialogue. The speech scroll is at the
+   bottom and any tap on it advances.
+10. `(779, 518)` — **OK** on the interaction tutorial.
+11. `(272, 489)` — the scroll on the table, the arrow-marked object. The
+    characters react, which is the first proof that input reaches the game.
+12. More `(512, 690)`, then the desk close-up; `(782, 419)` opens the letter.
+13. `(894, 727)` — **Skip** on the letter, then dialogue, then the Eureka
+    tutorial at `(779, 518)`.
+14. `(279, 154)` and `(782, 397)` — the two Eurekas hidden in the living room.
+    "Whoa! Two Eurekas!" is the game counting them.
+15. `(955, 709)` — the boot icon; footprints appear at `(960, 399)` and tapping
+    them walks to the study with the fireplace.
+
+### What is left
+
+Cosmetic, and neither blocks the rating:
+
+- The profile name field draws its text upside down. This is the app's own GL
+  text path, not `UILabel`.
+- `TutorialOKButtonPressedState.png` is missing from the bundle, so the tutorial
+  button has no pressed state. That is the app's, not tapHLE's.
+
+Not reached, and therefore not tested: any actual puzzle, chapter two onward,
+and the **ENABLE CRYSTAL** path, which still dies on a nil string.
 
 ## 2026-08-13: the menu works. Six fixes, and the blocker was invisible
 
