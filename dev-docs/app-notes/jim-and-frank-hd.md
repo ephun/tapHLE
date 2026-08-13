@@ -333,9 +333,44 @@ its textures and submits two of them. The remaining question is which element
 owns the two that get drawn and why the other nine — one of which must be
 `Chapter1_Welcome.png` — are never bound.
 
+### The background IS drawn, and it is opaque
+
+Logged a content summary at each `glTexImage2D` (mean RGBA over a strided
+sample). The chapter's textures identify themselves immediately:
+
+```text
+tex 1  1024x1024  meanRGBA [100,  77,  46, 191]   <- opaque, colourful
+tex 2  1024x1024  meanRGBA [ 78,  15,   4, 188]   <- opaque
+tex 3  1024x1024  meanRGBA [  0,   0,   0,   4]   <- empty
+tex 4  1024x1024  meanRGBA [ 40,   8,   2, 110]
+tex 5  1024x1024  meanRGBA [  5,   1,   0,  20]   <- empty
+tex 6  1024x1024  meanRGBA [  0,   0,   0,   8]   <- empty
+tex 8  1024x1024  meanRGBA [  0,   0,   0,   4]   <- empty
+tex 12  512x512   meanRGBA [  0,   0,   0,   5]   <- empty
+```
+
+For comparison the working menu's background is
+`tex 1 meanRGBA [81, 94, 72, 191]` — the same signature.
+
+The chapter draws **tex 1 and tex 3**. So `Chapter1_Welcome.png` is uploaded
+with real, opaque pixels **and it is one of the two textures being drawn**, to
+framebuffer 1, blended, with colour white — and the screen is black.
+
+**Every previous explanation is now dead.** Not a missing texture, not a failed
+upload, not an unbound texture, not a transparent one, not GL state, not the
+framebuffer, not the scene failing to submit geometry. The background is
+submitted, opaque, every frame.
+
 ### Next step
 
-**Work out which textures 1 and 3 are, and where the background went.** The
+What is left is **where** the quad lands. Log the modelview/projection state and
+the first few vertices and texture coordinates at the draw call, for the menu
+and the chapter side by side. The quad is presumably being placed off-screen,
+collapsed to zero area, or given texture coordinates that sample the empty
+corner of a 1024x1024 texture holding a 1024x768 image — that last one is worth
+suspecting first, because the engine pads every texture to a power of two and
+the chapter is the first scene where a full-screen padded texture is drawn
+through this path. The
 scene declares three elements and the background (`object_id 1`,
 `Chapter1_Welcome.png`, 1 MB) is the one that should dominate the screen.
 Either it is not among the two being drawn, or it is drawn and its texture is
