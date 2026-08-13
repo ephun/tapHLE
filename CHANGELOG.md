@@ -2,6 +2,15 @@
 
 ## Unreleased for 0.3.0-alpha.1
 
+- Draw the parts of a game's interface it paints itself, the right way up.
+  Panels, buttons and dialogs a game draws by hand — rather than assembling
+  from images — were never drawn at all: they were fully working, fully
+  touchable, and invisible. Where such a panel covered the screen, as the
+  Crystal sign-up screen does in The Jim and Frank Mysteries HD, the result was
+  a game that ignored every tap, because the only way past the panel was a
+  button nobody could see. They now appear, and appear in the correct
+  orientation rather than upside down.
+
 - Let a game get past a pop-up that has only one button. tapHLE cannot draw
   pop-ups, so it tells the game one was dismissed; for a pop-up offering a
   single "OK" it used to say nobody pressed anything, which the game reads as

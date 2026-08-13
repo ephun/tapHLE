@@ -153,6 +153,28 @@ pub fn set_view_controller(env: &mut Environment, view: id, controller: id) {
 /// called here.
 ///
 /// Do not call this in subclasses of `UIView`.
+/// Whether `view_class` supplies its own `-drawRect:` below `UIView`.
+///
+/// `class_has_method_named` cannot answer this: it walks the whole chain, and
+/// every view inherits `UIView`'s do-nothing `-drawRect:`, so it says yes for
+/// all of them. Only a class that overrides it actually draws anything, and
+/// only those need backing store — hence `class_has_uninherited_method`, and
+/// the walk stopping at `UIView` rather than at the root.
+fn draws_its_own_content(env: &mut Environment, view_class: Class) -> bool {
+    let Some(draw_rect) = env.objc.lookup_selector("drawRect:") else {
+        return false;
+    };
+    let ui_view_class = env.objc.get_known_class("UIView", &mut env.mem);
+    let mut class = view_class;
+    while class != nil && class != ui_view_class {
+        if env.objc.class_has_uninherited_method(class, draw_rect) {
+            return true;
+        }
+        class = env.objc.class_get_superclass(class);
+    }
+    false
+}
+
 fn init_common(env: &mut Environment, this: id) -> id {
     let view_class: Class = msg![env; this class];
     let layer_class: Class = msg![env; view_class layerClass];
@@ -163,6 +185,26 @@ fn init_common(env: &mut Environment, this: id) -> id {
     () = msg![env; layer setOpaque:true];
 
     env.objc.borrow_mut::<UIViewHostObject>(this).layer = layer;
+
+    // A new view draws itself once without being asked. A bare CALayer does
+    // not — you must call `-setNeedsDisplay` — and tapHLE was applying the
+    // layer's rule to views, so a view whose entire appearance comes from
+    // `-drawRect:` stayed blank forever unless the app happened to invalidate
+    // it for some other reason. Nothing in UIKit's contract makes an app do
+    // that, so most never did.
+    //
+    // The Jim and Frank Mysteries HD is the measured case: Chillingo's Crystal
+    // presents a full-screen `CCSkinnedView` over the game, that view's buttons
+    // are drawn in `-drawRect:`, and across a whole startup `-drawRect:` was
+    // never called even once. The splash therefore had no button to press, and
+    // pressing one is the only thing that dismisses it.
+    //
+    // Restricted to classes that override `-drawRect:`, because displaying a
+    // layer allocates a bitmap the size of the view in guest memory. Views that
+    // draw nothing would pay that for an empty image.
+    if draws_its_own_content(env, view_class) {
+        () = msg![env; layer setNeedsDisplay];
+    }
 
     env.framework_state.uikit.ui_view.views.push(this);
 

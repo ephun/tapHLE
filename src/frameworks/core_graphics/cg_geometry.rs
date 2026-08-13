@@ -295,20 +295,42 @@ fn CGRectIntersectsRect(_env: &mut Environment, rect1: CGRect, rect2: CGRect) ->
             <= (rect1.origin.y + rect1.size.height).min(rect2.origin.y + rect2.size.height)
 }
 
+/// The overlap of two rectangles, or the null rectangle when there is none.
+///
+/// An empty rectangle — one with no width or no height — overlaps nothing, so
+/// it produces the null rectangle rather than being rejected. This used to
+/// assert instead, on both the inputs and a zero-area result, which turned
+/// ordinary geometry into a crash: an empty rectangle is what a view that has
+/// not been laid out yet has, and code that clips one thing against another
+/// hands it straight to this function without checking, because on a device
+/// there is nothing to check for.
+///
+/// The Jim and Frank Mysteries HD ended here while opening its first scene.
 pub(super) fn CGRectIntersection(_env: &mut Environment, rect1: CGRect, rect2: CGRect) -> CGRect {
+    rect_intersection(rect1, rect2)
+}
+
+fn rect_intersection(rect1: CGRect, rect2: CGRect) -> CGRect {
     if rect1 == CGRectNull || rect2 == CGRectNull {
         return CGRectNull;
     }
-    assert!(rect1.size.height > 0.0 && rect1.size.width > 0.0); // TODO
-    assert!(rect2.size.height > 0.0 && rect2.size.width > 0.0); // TODO
+    if rect1.size.width <= 0.0
+        || rect1.size.height <= 0.0
+        || rect2.size.width <= 0.0
+        || rect2.size.height <= 0.0
+    {
+        return CGRectNull;
+    }
     let x = rect1.origin.x.max(rect2.origin.x);
     let y = rect1.origin.y.max(rect2.origin.y);
     let width = (rect1.origin.x + rect1.size.width).min(rect2.origin.x + rect2.size.width) - x;
     let height = (rect1.origin.y + rect1.size.height).min(rect2.origin.y + rect2.size.height) - y;
-    if width < 0.0 || height < 0.0 {
+    // Rectangles that merely touch along an edge produce no area, and Core
+    // Graphics counts that as not intersecting: `CGRectIntersectsRect` is false
+    // for them too.
+    if width <= 0.0 || height <= 0.0 {
         return CGRectNull;
     }
-    assert!(height != 0.0 || width != 0.0); // TODO
     CGRect {
         origin: CGPoint { x, y },
         size: CGSize { width, height },
@@ -623,9 +645,54 @@ pub const CONSTANTS: ConstantExports = &[
 #[cfg(test)]
 mod tests {
     use super::{
-        divide, rect_is_empty, standardize, CGPoint, CGRect, CGRectMaxXEdge, CGRectMaxYEdge,
-        CGRectMinXEdge, CGRectMinYEdge, CGRectNull, CGRectZero, CGSize,
+        divide, rect_intersection, rect_is_empty, standardize, CGPoint, CGRect, CGRectMaxXEdge,
+        CGRectMaxYEdge, CGRectMinXEdge, CGRectMinYEdge, CGRectNull, CGRectZero, CGSize,
     };
+
+    /// The ordinary case, so the null answers below are not vacuously right.
+    #[test]
+    fn overlapping_rectangles_intersect() {
+        assert_eq!(
+            rect_intersection(rect(0.0, 0.0, 10.0, 10.0), rect(5.0, 5.0, 10.0, 10.0)),
+            rect(5.0, 5.0, 5.0, 5.0)
+        );
+    }
+
+    /// An empty rectangle overlaps nothing. This used to assert, and an
+    /// unlaid-out view is empty, so games reached it on ordinary paths.
+    #[test]
+    fn an_empty_rectangle_intersects_nothing() {
+        assert_eq!(
+            rect_intersection(CGRectZero, rect(0.0, 0.0, 10.0, 10.0)),
+            CGRectNull
+        );
+        assert_eq!(
+            rect_intersection(rect(0.0, 0.0, 10.0, 0.0), rect(0.0, 0.0, 10.0, 10.0)),
+            CGRectNull
+        );
+        assert_eq!(
+            rect_intersection(rect(0.0, 0.0, 10.0, 10.0), rect(2.0, 2.0, 0.0, 5.0)),
+            CGRectNull
+        );
+    }
+
+    /// Touching along an edge is not intersecting, which is also what
+    /// `CGRectIntersectsRect` says.
+    #[test]
+    fn edge_contact_is_not_an_intersection() {
+        assert_eq!(
+            rect_intersection(rect(0.0, 0.0, 10.0, 10.0), rect(10.0, 0.0, 10.0, 10.0)),
+            CGRectNull
+        );
+    }
+
+    #[test]
+    fn separated_rectangles_do_not_intersect() {
+        assert_eq!(
+            rect_intersection(rect(0.0, 0.0, 5.0, 5.0), rect(20.0, 20.0, 5.0, 5.0)),
+            CGRectNull
+        );
+    }
 
     fn rect(x: f32, y: f32, width: f32, height: f32) -> CGRect {
         CGRect {

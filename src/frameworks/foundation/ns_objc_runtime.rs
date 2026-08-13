@@ -6,12 +6,26 @@ use crate::objc::{id, nil, Class, SEL};
 use crate::Environment;
 
 fn NSStringFromSelector(env: &mut Environment, selector: SEL) -> id {
+    // A null selector names nothing, and Foundation answers nil rather than
+    // reading through it. This is not a defensive check: a null selector
+    // reaches here on ordinary paths, because it is what an accessor for an
+    // unset selector-typed property returns. The Jim and Frank Mysteries HD
+    // takes exactly that route while starting a game, and dereferencing it
+    // ended the app one tap after its menu became usable.
+    if selector.is_null() {
+        return nil;
+    }
     // TODO: caching?
     let string = selector.as_str(&env.mem).to_string();
     ns_string::from_rust_string(env, string)
 }
 
 fn NSSelectorFromString(env: &mut Environment, string: id) -> SEL {
+    // The mirror of the above, and nil for the same reason: there is no
+    // selector named by no string.
+    if string == nil {
+        return SEL::null();
+    }
     // TODO: avoid copy?
     let string = ns_string::to_rust_string(env, string);
     env.objc.register_host_selector(string.into(), &mut env.mem)

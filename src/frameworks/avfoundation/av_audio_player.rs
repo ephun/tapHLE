@@ -53,6 +53,26 @@ struct AVAudioPlayerHostObject {
 }
 impl HostObject for AVAudioPlayerHostObject {}
 
+/// Report an `OSStatus` failure through an `NSError **`, which may be NULL.
+///
+/// Passing NULL is how a caller says it does not want the error, and it is
+/// common — an app that already knows it will give up does not need one. The
+/// two initialisers here each open-coded this, and one of them wrote through
+/// the pointer without checking, so a game that declined the error and then hit
+/// an unreadable sound file was killed by the report rather than by the
+/// failure. The Jim and Frank Mysteries HD does both while opening its first
+/// scene.
+fn write_os_status_error(env: &mut Environment, out_error: MutPtr<id>, status: NSInteger) {
+    if out_error.is_null() {
+        return;
+    }
+    let domain = ns_string::get_static_str(env, NSOSStatusErrorDomain);
+    let error = msg_class![env; NSError alloc];
+    let error: id = msg![env; error initWithDomain:domain code:status userInfo:nil];
+    autorelease(env, error);
+    env.mem.write(out_error, error);
+}
+
 pub const CLASSES: ClassExports = objc_classes! {
 
 (env, this, _cmd);
@@ -86,6 +106,18 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (id)initWithContentsOfURL:(id)url // NSURL*
                       error:(MutPtr<id>)out_error { // NSError**
+    // A nil URL gives nil back, the way AVFoundation does, rather than being
+    // read through. Games reach this on their own error paths: a sound whose
+    // file is missing produces a nil URL, and the code that then builds a
+    // player from it is the code meant to notice and carry on. The Jim and
+    // Frank Mysteries HD does exactly that while opening its first scene,
+    // where several of its sounds do not load.
+    if url == nil {
+        write_os_status_error(env, out_error, -50); // paramErr
+        release(env, this);
+        return nil;
+    }
+
     let path: id = msg![env; url path];
     let path_str = ns_string::to_rust_string(env, path);
     log_dbg!("[(AVAudioPlayer*){:?} initWithContentsOfURL:{:?} {} outError:{:?}]", this, url, path_str, out_error);
@@ -100,13 +132,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.objc.borrow_mut::<AVAudioPlayerHostObject>(this).audio_file_id = Some(audio_file_id);
     env.mem.free(tmp_afi_ptr.cast());
     if status != 0 {
-        if !out_error.is_null() {
-            let domain = ns_string::get_static_str(env, NSOSStatusErrorDomain);
-            let error = msg_class![env; NSError alloc];
-            let error = msg![env; error initWithDomain:domain code:status userInfo:nil];
-            autorelease(env, error);
-            env.mem.write(out_error, error);
-        }
+        write_os_status_error(env, out_error, status);
         release(env, this);
         return nil;
     }
@@ -116,6 +142,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (id)initWithData:(id)data // NSData*
              error:(MutPtr<id>)out_error { // NSError**
+    if data == nil {
+        write_os_status_error(env, out_error, -50); // paramErr
+        release(env, this);
+        return nil;
+    }
     let bytes: ConstVoidPtr = msg![env; data bytes];
     let length: NSUInteger = msg![env; data length];
     let data_vec = env
@@ -132,13 +163,7 @@ pub const CLASSES: ClassExports = objc_classes! {
             this
         }
         Err(_) => {
-            let domain = ns_string::get_static_str(env, NSOSStatusErrorDomain);
-            let error = msg_class![env; NSError alloc];
-            let code = -1; // TODO: set a proper code
-            let error = msg![env; error initWithDomain:domain code:code userInfo:nil];
-            autorelease(env, error);
-            env.mem.write(out_error, error);
-
+            write_os_status_error(env, out_error, -1); // TODO: a proper code
             release(env, this);
             nil
         }
