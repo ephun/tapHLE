@@ -153,13 +153,49 @@ the rest straight through to the `EXT` entry points in `gles1_on_gl2.rs`, so
 they are present — whether the attachment is *complete* at 1024x1024 on this
 backend is the thing that has not been checked.
 
+### That measurement is done: the scene draws, then stops drawing
+
+Both framebuffers report `GL_FRAMEBUFFER_COMPLETE` (`0x8CD5`) with
+`glGetError() == 0` every frame, so the offscreen target is set up correctly and
+nothing is failing at the GL level.
+
+Reading a pixel out of each framebuffer just before it is unbound settles the
+rest. Early frames contain **real scene content**:
+
+```text
+leaving fb2: px(512,512)=[190, 221, 230, 255]  px(300,300)=[142, 169, 61, 255]
+leaving fb1: px(512,512)=[195, 218, 238, 255]  px(300,300)=[74, 60, 26, 255]
+```
+
+That is the game's sky and grass. Then, for every frame afterwards — 36 of fb2
+and 34 of fb1 in one run — both read back as:
+
+```text
+[0, 0, 0, 0]
+```
+
+Fully transparent, not opaque black. So the chapter **renders its scene
+correctly and then stops drawing anything at all.**
+
+**This is not a graphics bug.** The framebuffers, the offscreen pass, the
+textures and the GL state are all fine; the engine simply stops submitting
+geometry. The render loop keeps running and keeps asking every element for
+`mVisible`, so the elements are answering "no".
+
+That puts it back with the three causes already fixed on this app — an
+animation `didStop`, an audio finish callback, a reachability callback — all of
+which were "something that should re-show or advance never fires". The scene
+draws, a transition takes it away, and whatever should bring the next state in
+does not run.
+
 Where to look next:
 
-0. **Start here.** Log `CheckFramebufferStatusOES` for framebuffer 2, and read
-   a few pixels back out of its texture after the scene has drawn into it. That
-   distinguishes "the offscreen pass draws nothing" from "it draws and the
-   result is never shown", which are different bugs, and no other measurement
-   here separates them.
+0. **Start here.** Find what sets `mVisible` false and what should set it true
+   again. `CSelectorsQueue performSelector:onDelegate:withObject:` is the
+   engine's own deferred-call mechanism and is visible driving `CMenuManager`
+   on the menu, so trace it through the chapter transition. `CDelegatedAnimator`,
+   `CRenderTimedAnimator`, `CFader` and `ScreenFader` are the other candidates.
+   The question is narrow now: one callback that never arrives.
 
 1. Whether the textures have a real `glID` and non-zero dimensions — the trace
    shows the accessors being called but not what they return. A texture upload
