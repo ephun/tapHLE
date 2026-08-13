@@ -1108,23 +1108,6 @@ fn glTexImage2D(
     pixels: ConstVoidPtr,
 ) {
     with_ctx_and_mem(env, |gles, mem| unsafe {
-        if !pixels.is_null() && format == 0x1908 && type_ == 0x1401 {
-            let mut tex: GLint = 0;
-            gles.GetIntegerv(0x8069, &mut tex);
-            let n: GuestUSize = (width as GuestUSize) * (height as GuestUSize) * 4;
-            let bytes = mem.bytes_at(pixels.cast::<u8>(), n);
-            let (mut sr, mut sg, mut sb, mut sa, mut cnt) = (0u64, 0u64, 0u64, 0u64, 0u64);
-            let mut i = 0usize;
-            while i + 3 < bytes.len() {
-                sr += bytes[i] as u64; sg += bytes[i + 1] as u64;
-                sb += bytes[i + 2] as u64; sa += bytes[i + 3] as u64;
-                cnt += 1;
-                i += 4 * 997; // stride a prime number of pixels
-            }
-            let c = cnt.max(1);
-            log!("DIAG texdata tex {tex} {width}x{height} meanRGBA [{}, {}, {}, {}] samples {cnt}",
-                 sr / c, sg / c, sb / c, sa / c);
-        }
         let pixels = if pixels.is_null() {
             std::ptr::null()
         } else {
