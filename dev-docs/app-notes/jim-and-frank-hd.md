@@ -15,6 +15,121 @@
 - tapHLEdb: App 20, version 20, report 28 (2026-07-26, tapHLE `4e246384`,
   ★☆☆☆☆).
 
+## 2026-08-12: the thing eating the tap is on screen, and it is Crystal's splash
+
+**This supersedes the 2026-08-06 conclusion below, which said the emulator side
+was exhausted and what remained was "Crystal SDK behaviour, not an identified
+tapHLE gap".** That was wrong in a way worth stating plainly, because it closed
+the investigation: the blocker is visible on the screen, and the maintainer
+spotted it by looking at the window — *"there seems to be a dark overlay on the
+main menu"*. Still two stars; the rating has not moved.
+
+### What is actually on the window
+
+Three subviews, back to front, all traced with
+`TAPHLE_LOG_MODULES=tapHLE::frameworks::uikit::ui_view`:
+
+```text
+MOUNT [UIWindow addSubview:EAGLView]        <- the game
+MOUNT [UIWindow addSubview:UIView]          <- black, alpha 0.4, full screen
+MOUNT [UIWindow addSubview:CCSkinnedView]   <- full screen, frontmost
+```
+
+The `UIView` is the dim backdrop the maintainer can see. The `CCSkinnedView` is
+its content. Together they are **one Crystal modal**, and it is presented over
+the game and never dismissed. `ui_touch` confirms the consequence directly:
+
+```text
+Found view 0x30214b30 (CCSkinnedView) with frame
+  CGRect { origin: (-6.1e-5, -3.0e-6), size: 768.00006 x 1024.0 }
+```
+
+### Why "the app legitimately declines the touch" was the wrong reading
+
+The section below concluded that `CCSkinnedView` receives the tap and its own
+logic declines it, so the menu behind never sees it — and treated that as
+correct app behaviour. It cannot be. Read straight out of `__objc_classlist`,
+**`CCSkinnedView` implements neither `hitTest:withEvent:` nor
+`pointInside:withEvent:`**. A full-screen frontmost view with no such override
+swallows every touch on a real iPad too. So the app cannot be reaching its own
+menu on a device with this view up: the view is not supposed to still be there.
+
+While checking that, two identifications in the older sections are worth
+correcting. `CC` here is **Chillingo Crystal**, not cocos2d — there is no
+cocos2d in this binary at all. The engine is the app's own: `Screen`,
+`ScreenManager`, `Odyssey_MainMenu`, `CMenuManager`, `CControlElement`, drawn
+through `EAGLView`, whose `touchesEnded:` is the real menu handler.
+
+### Where the splash comes from, and where it stops
+
+`-[OdysseyAppDelegate putupCrystalSplash]` is a guarded one-liner:
+
+```objc
+if (!isCrystalLaunched) { [CrystalSession displaySplashScreen]; isCrystalLaunched = YES; }
+```
+
+`displaySplashScreen` hops to the main thread and runs
+`-[CCPrivateSession activateFullScreenSplashDialog]`, which builds a
+`CCModalViewController` from `uiDescriptionForFullScreenSplashAsLandscape:`,
+mounts it on the app's window and calls `loadView`. `loadView` creates the black
+backdrop (`blackColor` / `setBackgroundColor:` / `setAlpha:`), sizes the skinned
+view with `sizeThatFits:`, and starts an animation named `step_1`.
+
+The animation machinery works. `step_1` (scale 0.2 -> 1.1) completes, its
+`animationDidStop:finished:context:` fires and starts `step_2` (1.1 -> 1.0),
+and that one completes and fires too — all verified in the log, including
+tapHLE's `Notifying delegate ... animationDidStop:finished:context:` lines.
+`-[CCModalViewController animationDidStop:finished:context:]`, disassembled,
+handles `step_1` by starting `step_2`, and otherwise only calls
+`modalViewController:buttonPressedWithId:` for a *button press*. **There is no
+`step_3` and no dismissal timer**, and after `step_2` the entire trace contains
+no further Crystal activity at all. `splashScreenFinishedWithActivateCrystal:`,
+the app's own callback for the splash ending, is never called.
+
+So the modal is waiting to be dismissed by something outside its animation
+sequence, and that something is Crystal's session state machine.
+
+### Ruled out this session
+
+- **Not the animation delegate.** Both `didStop` callbacks fire correctly.
+- **Not `setAffineTransform:` skipping its implicit animation.** It does skip it
+  (a stated TODO in `ca_layer.rs`), but the `setAlpha:` in the same block still
+  schedules one, so the block has an animation and the delegate is attached.
+- **Not the missing skin image.** The doubled-path `Images/Images/...` warning
+  is a first attempt; `Images/MainMenu/MainMenu_Crystal_btn12x203.png` is really
+  in the bundle and the retry loads it.
+- **Not reachability, though that was a real bug.** `SCNetworkReachabilityGetFlags`
+  returned *false* ("cannot determine") rather than true-with-no-Reachable-bit
+  ("definitely offline"), and `SetCallback` refused registration, so Crystal
+  could neither read the state nor be told it changed. Both are fixed on
+  `trunk` (`62be5b70`), and Crystal now polls `remoteHostStatus` and gets a
+  definite offline answer where it previously asked once and stopped. **The
+  splash still does not dismiss.**
+- **Not NSURLConnection returning nil, though that was also a real bug.** Fixed
+  on `trunk` (`4f5b7387`): requests build offline and connections fail
+  asynchronously with `NSURLErrorNotConnectedToInternet`. The app's own
+  `CUsageStatisicsSender` now receives `connection:didFailWithError:`, which it
+  never did before. Crystal, however, **never constructs a connection at all**
+  during the splash, so this did not move it either.
+- **Not a tap on the splash.** A click at the centre of the window leaves the
+  frame byte-identical.
+
+### Next discriminator
+
+Find what calls `-[CCModalViewController dismiss]`, or the sibling of
+`activateFullScreenSplashDialog` at `0xd658c` that does
+`[[_modalViewController view] removeFromSuperview]` and
+`ensureNotTopWindowDelegate`. Work backwards from its caller to whichever
+Crystal state transition is not happening. `CCPrivateSession`'s
+`sessionActivatedWithAppID:delegate:version:theme:secretKey:` and its
+`_dialogState` ivar are the places to start; `CCFetchManager` never runs at all
+in a full `TAPHLE_TRACE_SELECTORS=all` startup, which is itself a clue.
+
+Do **not** resume by re-testing touch coordinates, hit-test order, responder
+forwarding, layer transforms, resource paths or `userInteractionEnabled`. Those
+were all measured correct, and they still are; the view really is there and
+really should not be.
+
 ## 2026-08-04: the menu is on screen. Two stars.
 
 **Everything below this section is history.** It describes a one-star app whose
