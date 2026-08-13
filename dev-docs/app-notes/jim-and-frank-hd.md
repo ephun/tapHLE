@@ -154,6 +154,51 @@ distinct-colour count.
   later runs. Delete `tapHLE_sandbox` between experiments only when that is the
   variable being tested.
 
+### Answered: only a button press dismisses this modal
+
+The dismissal routine this note pointed at — the one doing
+`[[_modalViewController view] removeFromSuperview]`, `set_modalViewController:`
+and `ensureNotTopWindowDelegate` around `0xd658c` — is **inside
+`-[CCPrivateSession modalViewController:buttonPressedWithId:]`** (imp `0xd6579`,
+next method `modalPopupFinished:` at `0xd68cd`).
+
+So there is no timer, no network path and no automatic exit. The only way this
+splash comes down is:
+
+```
+CCSkinnedView touchesEnded:
+  -> [delegate skinnedView:buttonPressedWithId:itemType:themeUrl:]   (the modal)
+  -> _pendingButtonId, animate, animationDidStop:
+  -> [delegate modalViewController:self buttonPressedWithId:]        (the session)
+  -> teardown
+```
+
+That reframes the problem. The question is no longer "what is Crystal waiting
+for" — it is waiting for a tap on one of its own buttons — but **"why is there no
+button to tap".**
+
+### The visible gem is the app's artwork, not the splash's
+
+Easy to conflate, and it wasted time here. The gem in the bottom-left corner is
+`Images/MainMenu/MainMenu_Crystal_btn12x203.png`, which lives in the *app*
+bundle and is drawn by the game's GL engine. It is not part of the
+`CCSkinnedView`. Tapping it at client `(57, 694)` produces no
+`skinnedView:buttonPressedWithId:` and no frame change, only Crystal's periodic
+reachability poll.
+
+So the modal is a visible dim backdrop plus a skinned view that draws nothing —
+which is exactly why no tap can dismiss it.
+
+### Touch coordinates are correct; stop re-testing them
+
+Confirmed again, arithmetically this time. A click at client `(847, 114)`
+arrives as guest window point `(654, 847)`, and the modal's view has bounds
+1024x768, centre `(384, 512)` and a 90-degree transform. Inverting that maps the
+point back to `(847, 114)` in the view's own space — the same place the user
+clicked. `locationInView:` is called once and the handler then declines the
+touch, which is the behaviour of a view with no item under the point, not of one
+given the wrong point.
+
 ### Next discriminator
 
 Find what calls `-[CCModalViewController dismiss]`, or the sibling of
