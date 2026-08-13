@@ -2,6 +2,13 @@
 
 ## Unreleased for 0.3.0-alpha.1
 
+- Play the compressed sound files a great many games of this era ship. Apple's
+  own conversion tool produced them by default, and tapHLE could not read them
+  at all — The Jim and Frank Mysteries HD has 267 sounds and not one of them
+  worked, so the game was silent, and its opening story sequence sat waiting
+  forever for narration that could never play. Games that wait on a sound
+  finishing now get on with it.
+
 - Draw the parts of a game's interface it paints itself, the right way up.
   Panels, buttons and dialogs a game draws by hand — rather than assembling
   from images — were never drawn at all: they were fully working, fully

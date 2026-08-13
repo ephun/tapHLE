@@ -12,6 +12,7 @@
 //! Resources:
 //! - [Apple Core Audio Format Specification 1.0](https://developer.apple.com/library/archive/documentation/MusicAudio/Reference/CAFSpec/CAF_intro/CAF_intro.html)
 
+mod aifc;
 mod caf;
 mod ima4;
 pub mod openal;
@@ -90,6 +91,8 @@ impl AudioFile {
             let reader = hound::WavReader::new(Cursor::new(bytes)).unwrap();
             Ok(AudioFile(AudioFileInner::Wave(reader)))
         } else if let Ok(pcm) = caf::decode_signed_8_bit_lpcm(&bytes) {
+            Ok(AudioFile(AudioFileInner::Symphonia(pcm)))
+        } else if let Ok(pcm) = aifc::decode_ima4_aifc(&bytes) {
             Ok(AudioFile(AudioFileInner::Symphonia(pcm)))
         // TODO: Real MP3/MP4/Non-linear PCM container handling. Currently we
         // are immediately decoding the entire file to PCM and acting as if
