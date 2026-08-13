@@ -70,26 +70,42 @@ Crystal was never waiting on the network. It was waiting for a tap.
 6. `(707, 679)` — **Load** → back to the menu with the profile selected.
 7. `(847, 114)` — **Play Game** → the introduction cutscene.
 
-### Frontier: the intro plays, the first scene is black
+### Frontier: the introduction cutscene stalls part-way
 
-The cutscene runs and advances — its caption text changes between frames — and
-the app survives it. When it ends, the screen is **entirely black** and stays
-that way, with the app alive.
+**Corrected twice, so read this rather than the earlier framing.** The screen
+during the cutscene is black *by design* — it is a narration sequence with white
+caption text on black, not a failed render. The scene's artwork does load: the
+doubled-path warnings (`Images/Images/IntroductionScene/...`,
+`Images/Fonts/white.png`) are the app's first of two attempts and the retry
+succeeds, which `TAPHLE_LOG_MODULES=tapHLE::frameworks::foundation::ns_string`
+confirms. Do not chase them; this is the same false lead the main menu produced.
 
-Two things to check first, in this order:
+One cause of the stall is fixed. The cutscene advances on its voice-over
+finishing, and every one of this app's 267 sounds is AIFC/`ima4`, which tapHLE
+could not decode — `Could not load the file Voice Over/intro_female.aif`. With
+`4885fefc` the log has zero audio decode failures and the sequence gets further,
+with the frames genuinely changing rather than frozen.
 
-1. Whether the scene's artwork is actually loading. The warnings name doubled
-   paths (`Images/Images/IntroductionScene/...`, `Images/Fonts/white.png`) but
-   those are the app's *first* of two attempts and the retry normally succeeds —
-   this is the same false lead the note records for the main menu, so confirm
-   with `TAPHLE_LOG_MODULES=tapHLE::frameworks::foundation::ns_string` before
-   concluding anything. The files do exist, at `Images/IntroductionScene/` and
-   `Fonts/`.
-2. Whether the caption glyphs being wrong (they render as "fifi i", "yiiig") and
-   the black background share a cause, since both are texture-fed.
+**It still stops.** After roughly a minute the frame becomes identical for
+minutes on end — the fingerprint to compare against is mean RGB
+`(9.5, 9.3, 8.8)` with 661 distinct colours in the 1024x768 client area, which
+is the same frame it stalled on before the audio fix. So the voice-over was one
+blocker and something else is a second.
 
-Do not resume by assuming the app is stuck: it is alive and its scene manager
-has moved on. This is a rendering question, not a hang.
+Next, in order:
+
+1. Find what the cutscene waits on besides audio. `IntroductionScene`,
+   `Speech`, `CSelectorsQueue` and `CDelegatedAnimator` are the classes to
+   trace; `CSelectorsQueue performSelector:onDelegate:withObject:` was already
+   visible driving `CMenuManager` on the menu, so it is likely the sequencer.
+2. The caption glyphs are wrong — "fifi i", "yiiig", "iyxff" rather than words.
+   The font atlas (`Fonts/white.png`) loads, so this is glyph selection, not a
+   missing texture, and it may share a cause with the stall if both come from
+   the same string data. A `ns_string` "invalid UTF-8 sequence replaced with
+   U+FFFD" warning appears elsewhere in this app and is worth correlating.
+
+Do not resume by assuming the app has hung: it is alive, and before the stall it
+is demonstrably sequencing.
 
 ## 2026-08-12: the thing eating the tap is on screen, and it is Crystal's splash
 
