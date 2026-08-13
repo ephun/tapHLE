@@ -217,13 +217,48 @@ The curtain frames do exist in the bundle, at
 `Images/Screen Curtain/ChapterStart_N.png`; the warnings are the usual
 doubled-path first attempts.
 
-### Next step, and it is a single one
+### The transition chain, decoded — and it completes
 
-**Disassemble `-[Chapter1_Welcome animationOver:]`.** It is the last code that
-runs before the app goes permanently idle, so whatever it is supposed to do
-next — reveal the scene, open the curtain, schedule the first interactive
-state — is inside it or is the thing it calls. Every other thread of
-investigation on this app is now closed:
+`-[Chapter1_Welcome animationOver:]` is twenty bytes and does one thing:
+
+```objc
+- (void)animationOver:(id)sender { [self removeElementFromInterface:sender]; }
+```
+
+and the method that arms it is:
+
+```objc
+- (void)screenForwardTransitionDidEnd {
+    id curtain = [self getObjectByID:2];
+    [curtain setDelegate:self];
+    [curtain setAnimationDidEndSelector:@selector(animationOver:)];
+    [curtain beginAnimation];
+}
+```
+
+with `screenForwardTransitionWillBegin` setting `setMActive:`, referencing
+`closeCurtain`, and calling `playSoundWithName:` on the sound manager.
+
+So the sequence is: transition begins, the curtain element animates, its
+did-end selector fires, and the curtain is **removed from the interface**. All
+of that demonstrably happens — `animationOver:` appears in the trace, and it
+could not have fired at all if `getObjectByID:2` had returned nil.
+
+**The curtain is gone and the scene is still black.** That is the shape of the
+remaining bug, and it is not the transition: the chapter's own elements are
+invisible underneath a curtain that has already been taken away.
+
+### Next step
+
+Find what should make the scene's elements visible. `setMVisible:` is called
+some 800 times during scene setup and never again, so the state they are left in
+after `buildUIFromSchema` and `createMainCharacters` is the state they keep.
+Compare that against `Odyssey_MainMenu`, which builds the same way through the
+same `CRenderInterfaceManager` and is visible. `setMActive:` from
+`screenForwardTransitionWillBegin` and `Screen`'s own `mVisible` are the two
+flags worth reading first — the render loop asks both every frame.
+
+Everything else on this app is closed:
 
 - not a hang (the render loop and the selector queue both run forever)
 - not the network, not reachability, not audio (all fixed, all verified)
