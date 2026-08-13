@@ -248,9 +248,43 @@ could not have fired at all if `getObjectByID:2` had returned nil.
 remaining bug, and it is not the transition: the chapter's own elements are
 invisible underneath a curtain that has already been taken away.
 
+### The scene definition, so nobody has to extract it again
+
+`Chapter1_Welcome` is built from `Schemas/Chapter1_Welcome.plist`, an ordinary
+XML plist. Three elements, and the first is the one that matters:
+
+```text
+object_id 1  CControlElement  rect {{0,0},{1024,768}}
+             textures: Chapter1/Chapter1_Welcome/Chapter1_Welcome.png
+             isVisible: true   isActive: true   messageID: 1
+object_id 2  Screen  textures: Images/Screen Curtain/ChapterStart_11..19.png
+             isVisible: true   isActive: false
+             animationTime: 2.5   shouldStartAnimation: false
+object_id 3  Screen  textures: Images/Screen Curtain/ChapterStart_1..9.png
+```
+
+So the chapter's background **is declared visible in its own schema** and its
+texture exists in the bundle. Note the schema mixes two texture-path
+conventions — object 1 omits the `Images/` prefix, the curtains include it —
+which is what the engine's "try `Images/<path>`, then `<path>`" retry exists for,
+and it explains the doubled-path warnings for the curtains and their absence for
+the background.
+
+Two things checked and cleared while here, to save repeating them:
+
+- The **only** structural difference between this schema and
+  `Odyssey_MainMenu.plist`, which renders correctly, is that this one contains a
+  `<real>` (`animationTime`). tapHLE handles `Value::Real` in
+  `ns_property_list_serialization.rs`, and `NSNumber` implements
+  `initWithDouble:`, `floatValue` and `doubleValue`, so the plist parses. It is
+  a tempting difference and it is not the fault.
+- `object_id 2` is the curtain the transition animates and
+  `-[Chapter1_Welcome animationOver:]` removes, which matches
+  `getObjectByID:2` in the disassembly above.
+
 ### Next step
 
-Find what should make the scene's elements visible. `setMVisible:` is called
+Find why element 1 does not draw when its schema says visible. `setMVisible:` is called
 some 800 times during scene setup and never again, so the state they are left in
 after `buildUIFromSchema` and `createMainCharacters` is the state they keep.
 Compare that against `Odyssey_MainMenu`, which builds the same way through the
