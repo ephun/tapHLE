@@ -188,14 +188,54 @@ which were "something that should re-show or advance never fires". The scene
 draws, a transition takes it away, and whatever should bring the next state in
 does not run.
 
-Where to look next:
+### The exact last thing that runs
 
-0. **Start here.** Find what sets `mVisible` false and what should set it true
-   again. `CSelectorsQueue performSelector:onDelegate:withObject:` is the
-   engine's own deferred-call mechanism and is visible driving `CMenuManager`
-   on the menu, so trace it through the chapter transition. `CDelegatedAnimator`,
-   `CRenderTimedAnimator`, `CFader` and `ScreenFader` are the other candidates.
-   The question is narrow now: one callback that never arrives.
+Traced `CSelectorsQueue`, `setMVisible:` and `animationOver:` through to the
+black scene. The engine's deferred-call queue is **healthy** — `fireSelectors`
+and `flushPrimaryQueue` run 14,741 times, every frame, forever — and it is
+**empty**. Nothing is queued and nothing is waiting on it, which rules out the
+"a queued callback never fires" family that the three fixes above belonged to.
+
+The last meaningful activity in the whole run, with 21,000 pump lines after it
+and nothing else:
+
+```text
+[CompositeRenderElement setMVisible:]
+Warning: couldn't read image ".../Images/Images/Screen Curtain/ChapterStart_11.png"
+  ... and 1, 14, 15, 17, 18, 19
+[CSelectorsQueue performSelector:onDelegate:withObject:]
+[Chapter1_Welcome animationOver:]
+```
+
+So the chapter loads a **"Screen Curtain" chapter-start animation**, runs it,
+and `-[Chapter1_Welcome animationOver:]` fires. After that the scene never does
+anything again: every element is invisible, the queue stays empty, and taps
+anywhere produce no response at all (verified — four taps, no trace activity, no
+frame change).
+
+The curtain frames do exist in the bundle, at
+`Images/Screen Curtain/ChapterStart_N.png`; the warnings are the usual
+doubled-path first attempts.
+
+### Next step, and it is a single one
+
+**Disassemble `-[Chapter1_Welcome animationOver:]`.** It is the last code that
+runs before the app goes permanently idle, so whatever it is supposed to do
+next — reveal the scene, open the curtain, schedule the first interactive
+state — is inside it or is the thing it calls. Every other thread of
+investigation on this app is now closed:
+
+- not a hang (the render loop and the selector queue both run forever)
+- not the network, not reachability, not audio (all fixed, all verified)
+- not the offscreen framebuffer or GL state (complete, no errors, and the scene
+  demonstrably renders real pixels before it stops)
+- not missing artwork (the curtain, scene and font assets are all in the bundle
+  and the retry path loads them)
+- not input (taps reach nothing because nothing is listening)
+
+Use `dev-scripts/objc-method-at.py` and `disasm-guest-fault.py` on that method's
+`imp`, the way `sizeThatFits:` and `animationDidStop:` were read earlier in this
+note.
 
 1. Whether the textures have a real `glID` and non-zero dimensions — the trace
    shows the accessors being called but not what they return. A texture upload
