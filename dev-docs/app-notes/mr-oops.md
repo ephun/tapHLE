@@ -10,8 +10,8 @@
   - SHA-256: `bced8e7e8e9cfd0d9c80264b0a6919746aed44b7530bbe58cd7e08c5fb43aa6d`
 - Embedded identity: bundle `jp.co.ponos.mroops`, version `1.2.2`, minimum
   OS `4.3`. Same developer as Mr. AahH!!, but a much later build.
-- tapHLEdb: App 18, version 18, report 26 (2026-07-26, tapHLE `8832a3e1`,
-  ★☆☆☆☆).
+- tapHLEdb: App 18, version 18. Report 26 (2026-07-26, tapHLE `8832a3e1`,
+  ★☆☆☆☆); report 67 (2026-08-12, tapHLE `e0645ce4`, ★★☆☆☆).
 
 ## 2026-08-12: two stars. The title screen, and a stage that starts
 
