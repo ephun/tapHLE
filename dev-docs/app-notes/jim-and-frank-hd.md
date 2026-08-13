@@ -122,7 +122,44 @@ What that rules out, so nobody re-tests it: the app is not hung, not waiting on
 audio, not waiting on the network, not missing its artwork, and not stuck in the
 cutscene. `Texture` objects exist and are bound by name every frame.
 
+### Measured: the scene renders into an offscreen framebuffer
+
+Instrumented `glViewport`, `glOrthof`, `glBindFramebufferOES`,
+`glCopyTexImage2D` and `glCopyTexSubImage2D` (diagnostics removed again; do not
+go looking for them). The menu and the chapter differ in exactly one way, and it
+is not the projection:
+
+```text
+menu    : glBindFramebufferOES(GL_FRAMEBUFFER, 1) only
+          glViewport(0, 0, 768, 1024)   glOrthof(0, 1024, 768, 0, -1, 1)
+
+chapter : glBindFramebufferOES(GL_FRAMEBUFFER, 1)  x45
+          glBindFramebufferOES(GL_FRAMEBUFFER, 2)  x41   <- an FBO of its own
+          glViewport(0, 0, 1024, 1024) glOrthof(0, 1024, 1024, 0, -1, 1)
+            while framebuffer 2 is bound
+```
+
+So a chapter renders into a **second, app-created framebuffer at 1024x1024** and
+then presumably draws that result to the screen. `EAGLView` has
+`copyOffScreenBufferEAGLViewToTexture:WithDimension:` and `copyCapturedEAGLView`,
+and the app owns `ScreenFader`, `FlipAnimator`, `TextureZoomer` and
+`ZoomAndFadeoutElement`, so an offscreen pass is exactly what this engine is
+built to do for its scene transitions.
+
+**There are no `glCopyTexImage2D` or `glCopyTexSubImage2D` calls at all**, so
+the texture is attached to the framebuffer with `glFramebufferTexture2DOES`
+rather than copied into. tapHLE forwards that, `CheckFramebufferStatusOES` and
+the rest straight through to the `EXT` entry points in `gles1_on_gl2.rs`, so
+they are present — whether the attachment is *complete* at 1024x1024 on this
+backend is the thing that has not been checked.
+
 Where to look next:
+
+0. **Start here.** Log `CheckFramebufferStatusOES` for framebuffer 2, and read
+   a few pixels back out of its texture after the scene has drawn into it. That
+   distinguishes "the offscreen pass draws nothing" from "it draws and the
+   result is never shown", which are different bugs, and no other measurement
+   here separates them.
 
 1. Whether the textures have a real `glID` and non-zero dimensions — the trace
    shows the accessors being called but not what they return. A texture upload
