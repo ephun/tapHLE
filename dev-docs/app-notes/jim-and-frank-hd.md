@@ -281,6 +281,11 @@ Two things checked and cleared while here, to save repeating them:
 - `object_id 2` is the curtain the transition animates and
   `-[Chapter1_Welcome animationOver:]` removes, which matches
   `getObjectByID:2` in the disassembly above.
+- The background texture is **the same shape as the menu's**:
+  `Chapter1_Welcome.png` is 1024x768 RGBA 8-bit, and so is
+  `Images/MainMenu/start.png`, which draws correctly. Size, format and bit
+  depth are therefore all cleared — a tempting explanation for a texture that
+  samples as fully transparent, and not this one.
 
 ### Next step
 
