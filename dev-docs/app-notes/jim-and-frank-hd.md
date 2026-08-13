@@ -114,6 +114,46 @@ sequence, and that something is Crystal's session state machine.
 - **Not a tap on the splash.** A click at the centre of the window leaves the
   frame byte-identical.
 
+### The network is not what it is waiting on. Three fixes prove it.
+
+Each of these was a real tapHLE defect, each is now on `trunk`, and each was
+measured to change Crystal's observable behaviour. **None of them dismisses the
+splash.** Recorded together because the network is the obvious suspect and this
+is the evidence that it is the wrong one:
+
+1. `62be5b70` — reachability answers "definitely offline" instead of "cannot
+   determine". Crystal now polls `remoteHostStatus` continuously where it
+   previously asked once and stopped.
+2. `4f5b7387` — `NSURLRequest` builds offline and `NSURLConnection` fails
+   asynchronously with `NSURLErrorNotConnectedToInternet`. The app's own
+   `CUsageStatisicsSender` receives `connection:didFailWithError:`. Crystal
+   itself **never constructs a connection during the splash at all**.
+3. `a6e6488c` — a scheduled reachability target gets its initial callback, as on
+   a device. The log shows `Delivering initial reachability callback` and
+   Crystal re-reading the flags in response.
+
+After all three, the screen is byte-identical to before: same mean, same
+distinct-colour count.
+
+### Also ruled out
+
+- **The theme is not missing.** On a first run Crystal unpacks
+  `iPadIndigo_004.crystaltheme` into
+  `Documents/crystal_themes/iPadIndigo_004/iPadIndigo/`, and it succeeds: 148
+  files including `images/splash/`. The
+  `open(..., 0x601) failed with: IsDirectory` warnings are a ZipArchive
+  unpacker calling `open()` on directory entries, which fails the same way on a
+  device. Do not chase them.
+- **Tapping the gem does nothing.** A click at the Crystal gem, client
+  `(57, 694)` in the 1024x768 window, produces no
+  `skinnedView:buttonPressedWithId:` and no frame change — only Crystal's
+  periodic reachability poll. The splash is not waiting for a tap on itself.
+- **Note that a first run behaves differently from a warm one.** With an empty
+  sandbox Crystal spends startup extracting the theme and never reaches the
+  reachability check; the callback path above only appears on the second and
+  later runs. Delete `tapHLE_sandbox` between experiments only when that is the
+  variable being tested.
+
 ### Next discriminator
 
 Find what calls `-[CCModalViewController dismiss]`, or the sibling of
