@@ -361,6 +361,32 @@ upload, not an unbound texture, not a transparent one, not GL state, not the
 framebuffer, not the scene failing to submit geometry. The background is
 submitted, opaque, every frame.
 
+### The vertex format, and what the chapter submits
+
+The engine uses one interleaved array, stride 32: **x, y, u, v, r, g, b, a**,
+with `glVertexPointer` and `glTexCoordPointer` pointing into the same buffer at
+different offsets. Alpha is therefore per-vertex, and the app never calls
+`glColor4f` at all — fades are done by writing vertex alpha. Menu elements
+mid-fade look like `[700, -108, 0, 0, 0, 0, 0, 0]`: positioned, and fully
+transparent.
+
+In the black chapter, the two quads drawn every frame are:
+
+```text
+750 x  [0, 0,  0, 0,  1, 1, 1, 1]   <- opaque white  (tex 1, the background)
+750 x  [0, 0,  0, 0,  0, 0, 0, 0]   <- alpha 0       (tex 3, a curtain)
+```
+
+So the background quad is submitted at origin `(0, 0)`, texture coordinate
+`(0, 0)`, with **opaque white vertex colour**. That kills the fade hypothesis
+too: nothing is being drawn at alpha 0 except the curtain, which is supposed to
+be invisible.
+
+Note the limitation of this measurement: it logs the **first vertex only**
+(eight floats). The quad's extent lives in vertices 1-3 and was not captured, so
+"the quad is degenerate or off-screen" is *not* ruled out — it is now the main
+surviving possibility.
+
 ### Next step
 
 What is left is **where** the quad lands. Log the modelview/projection state and
