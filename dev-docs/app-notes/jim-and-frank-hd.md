@@ -312,6 +312,27 @@ cleared buffer gives precisely the `[0, 0, 0, 0]` the framebuffer reads back.
 Note also that GL state is innocent: blending on, colour opaque white,
 framebuffer 1. Nothing here would hide a texture that had content.
 
+### The chapter uploads eleven textures and draws two of them
+
+Instrumented `glTexImage2D` as well (diagnostics removed). The engine deletes
+and recreates its textures per scene, reusing GL names from 1, and pads each
+image up to a power of two — a 1024x768 PNG becomes a 1024x1024 texture.
+
+Entering the chapter, it uploads eleven textures, **all with real pixel data**
+(`null false`), most of them 1024x1024:
+
+```text
+tex 1  1024x1024   tex 2  1024x1024   tex 3  1024x1024   tex 4  1024x1024
+tex 5  1024x1024   tex 6  1024x1024   tex 8  1024x1024   tex 12  512x512
+```
+
+and then draws **only tex 1 and tex 3**, two quads per frame, blended, white.
+
+So nothing is failing to load and nothing is failing to upload. The scene has
+its textures and submits two of them. The remaining question is which element
+owns the two that get drawn and why the other nine — one of which must be
+`Chapter1_Welcome.png` — are never bound.
+
 ### Next step
 
 **Work out which textures 1 and 3 are, and where the background went.** The
