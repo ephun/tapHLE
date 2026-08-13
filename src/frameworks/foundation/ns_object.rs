@@ -395,6 +395,26 @@ pub const CLASSES: ClassExports = objc_classes! {
     autorelease(env, dictionary)
 }
 
+// The write direction of `dictionaryWithValuesForKeys:`, and Apple implements
+// it the same way round: every pair goes through `setValue:forKey:`, so a class
+// that overrides that accessor sees these too.
+//
+// `NSNull` is how a property list or dictionary spells "no value", and it is
+// translated back to nil here rather than being assigned as an object — that
+// asymmetry is deliberate and matches the read direction above.
+- (())setValuesForKeysWithDictionary:(id)dictionary { // NSDictionary*
+    let keys: id = msg![env; dictionary allKeys];
+    let count: NSUInteger = msg![env; keys count];
+    let null: id = msg_class![env; NSNull null];
+
+    for index in 0..count {
+        let key: id = msg![env; keys objectAtIndex:index];
+        let value: id = msg![env; dictionary objectForKey:key];
+        let value = if value == null { nil } else { value };
+        () = msg![env; this setValue:value forKey:key];
+    }
+}
+
 - (id)valueForUndefinedKey:(id)key { // NSString*
     // TODO: Raise NSUnknownKeyException
     let class: Class = ObjC::read_isa(this, &env.mem);

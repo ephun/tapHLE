@@ -24,6 +24,7 @@ pub mod cf_dictionary;
 pub mod cf_locale;
 pub mod cf_number;
 pub mod cf_preferences;
+pub mod cf_property_list;
 pub mod cf_run_loop;
 pub mod cf_run_loop_timer;
 pub mod cf_socket;
@@ -62,6 +63,7 @@ pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
         cf_locale::FUNCTIONS,
         cf_number::FUNCTIONS,
         cf_preferences::FUNCTIONS,
+        cf_property_list::FUNCTIONS,
         cf_run_loop::FUNCTIONS,
         cf_run_loop_timer::FUNCTIONS,
         cf_string::FUNCTIONS,

@@ -9,9 +9,10 @@ pub mod ui_table_view;
 pub mod ui_text_view;
 use crate::frameworks::core_graphics::{CGFloat, CGPoint, CGRect, CGSize};
 use crate::frameworks::foundation::NSInteger;
+use crate::frameworks::uikit::ui_geometry::UIEdgeInsets;
 use crate::objc::{
-    id, impl_HostObject_with_superclass, msg, nil, objc_classes, todo_objc_setter, ClassExports,
-    NSZonePtr, SEL,
+    id, impl_HostObject_with_superclass, msg, msg_super, nil, objc_classes, todo_objc_setter,
+    ClassExports, NSZonePtr, SEL,
 };
 
 type UIScrollViewIndicatorStyle = NSInteger;
@@ -29,6 +30,19 @@ pub struct UIScrollViewHostObject {
     minimum_zoom_scale: CGFloat,
     maximum_zoom_scale: CGFloat,
     zoom_scale: CGFloat,
+    /// Scroll indicators are not drawn, so these are stored to be read back
+    /// rather than acted on. They still have to exist: an app that turns an
+    /// indicator off is describing a scroll view it does not want to look
+    /// scrollable, and it may check later that the setting took.
+    shows_horizontal_scroll_indicator: bool,
+    shows_vertical_scroll_indicator: bool,
+    scroll_indicator_insets: UIEdgeInsets,
+    /// Whether a touch is currently down on the scroll view, and whether that
+    /// touch has moved the content yet. Apps read these to tell "the user is
+    /// working the view right now" from "the view is idle", and defer work
+    /// accordingly, so answering has to follow the actual touches.
+    tracking: bool,
+    dragging: bool,
 }
 impl_HostObject_with_superclass!(UIScrollViewHostObject);
 impl Default for UIScrollViewHostObject {
@@ -45,6 +59,11 @@ impl Default for UIScrollViewHostObject {
             minimum_zoom_scale: 1.0,
             maximum_zoom_scale: 1.0,
             zoom_scale: 1.0,
+            shows_horizontal_scroll_indicator: true,
+            shows_vertical_scroll_indicator: true,
+            scroll_indicator_insets: Default::default(),
+            tracking: false,
+            dragging: false,
         }
     }
 }
@@ -108,6 +127,13 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (CGPoint)contentOffset {
     env.objc.borrow::<UIScrollViewHostObject>(this).content_offset
 }
+- (())setContentOffset:(CGPoint)offset
+              animated:(bool)_animated {
+    // Scrolling here is not animated, so this arrives where the animated
+    // version would have ended up, immediately. The destination is what the
+    // caller asked for; the travel was decoration.
+    () = msg![env; this setContentOffset:offset];
+}
 - (())setContentOffset:(CGPoint)offset {
     env.objc.borrow_mut::<UIScrollViewHostObject>(this).content_offset = offset;
     // Bounds origin should be equals to the content offset
@@ -126,6 +152,68 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())setIndicatorStyle:(UIScrollViewIndicatorStyle)style {
     todo_objc_setter!(this, style);
+}
+
+- (bool)showsHorizontalScrollIndicator {
+    env.objc.borrow::<UIScrollViewHostObject>(this).shows_horizontal_scroll_indicator
+}
+- (())setShowsHorizontalScrollIndicator:(bool)shows {
+    env.objc.borrow_mut::<UIScrollViewHostObject>(this).shows_horizontal_scroll_indicator = shows;
+}
+- (bool)showsVerticalScrollIndicator {
+    env.objc.borrow::<UIScrollViewHostObject>(this).shows_vertical_scroll_indicator
+}
+- (())setShowsVerticalScrollIndicator:(bool)shows {
+    env.objc.borrow_mut::<UIScrollViewHostObject>(this).shows_vertical_scroll_indicator = shows;
+}
+
+- (UIEdgeInsets)scrollIndicatorInsets {
+    env.objc.borrow::<UIScrollViewHostObject>(this).scroll_indicator_insets
+}
+- (())setScrollIndicatorInsets:(UIEdgeInsets)insets {
+    env.objc.borrow_mut::<UIScrollViewHostObject>(this).scroll_indicator_insets = insets;
+}
+
+- (())flashScrollIndicators {
+    // Nothing is drawn to flash. The call is a hint to the user that the view
+    // scrolls, never a change to what it contains, so ignoring it costs the
+    // hint and nothing else.
+}
+
+- (bool)isTracking {
+    env.objc.borrow::<UIScrollViewHostObject>(this).tracking
+}
+- (bool)isDragging {
+    env.objc.borrow::<UIScrollViewHostObject>(this).dragging
+}
+- (bool)isDecelerating {
+    // Scrolling here stops with the finger: there is no inertia to run down,
+    // so the view is never in the middle of coasting to a halt.
+    false
+}
+
+- (())touchesBegan:(id)touches // NSSet* of UITouch*
+         withEvent:(id)event { // UIEvent*
+    env.objc.borrow_mut::<UIScrollViewHostObject>(this).tracking = true;
+    // Forwarded so a scroll view stays an ordinary responder: something
+    // further up the chain may be the thing that actually handles the touch.
+    msg_super![env; this touchesBegan:touches withEvent:event]
+}
+
+- (())touchesEnded:(id)touches // NSSet* of UITouch*
+         withEvent:(id)event { // UIEvent*
+    let host_obj = env.objc.borrow_mut::<UIScrollViewHostObject>(this);
+    host_obj.tracking = false;
+    host_obj.dragging = false;
+    msg_super![env; this touchesEnded:touches withEvent:event]
+}
+
+- (())touchesCancelled:(id)touches // NSSet* of UITouch*
+             withEvent:(id)event { // UIEvent*
+    let host_obj = env.objc.borrow_mut::<UIScrollViewHostObject>(this);
+    host_obj.tracking = false;
+    host_obj.dragging = false;
+    msg_super![env; this touchesCancelled:touches withEvent:event]
 }
 
 - (())touchesMoved:(id)touches // NSSet* of UITouch*
@@ -165,6 +253,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     // Trigger rerender only if required.
     log_dbg!("content offset: old {:?}, new {:?}", offset, new_content_offset);
     if new_content_offset != offset {
+        env.objc.borrow_mut::<UIScrollViewHostObject>(this).dragging = true;
         () = msg![env; this setContentOffset:new_content_offset];
 
         let delegate: id = msg![env; this delegate];
