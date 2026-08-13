@@ -95,7 +95,44 @@ delegates release the player there and the first attempt crashed on the disposed
 queue.
 
 With both audio fixes the cutscene runs about two minutes and several shots
-further than it used to. **It then stalls anyway.** After roughly a minute the frame becomes identical for
+further than it used to.
+
+### It is not stalled: it reaches Chapter 1 and renders it black
+
+Traced with `TAPHLE_TRACE_SELECTORS=all` and left for four minutes, the app is
+not waiting on anything. `Chapter1_Welcome` is allocated, runs
+`buildUIFromSchema` and `createMainCharacters`, and the render loop is fully
+alive every frame:
+
+```text
+[Screen updateSelf:] / [Screen drawSelf] / [Chapter1_Welcome drawSelf]
+[CompositeRenderElement mVisible] / [CControlElement mVisible]
+[CTextureManager UseTextureWithName:] / [Texture width] [height] [glID]
+```
+
+So the introduction sequence *finishes* and the first playable scene starts.
+Everything it draws is invisible. The screen fingerprint at that point is mean
+RGB `(9.5, 9.3, 8.8)` with 661-667 distinct colours in the 1024x768 client area.
+
+**This is now a rendering question and nothing else**, and it is the last thing
+between this app and three stars: a scene that starts and persists but cannot be
+seen is not a gameplay loop a player could use.
+
+What that rules out, so nobody re-tests it: the app is not hung, not waiting on
+audio, not waiting on the network, not missing its artwork, and not stuck in the
+cutscene. `Texture` objects exist and are bound by name every frame.
+
+Where to look next:
+
+1. Whether the textures have a real `glID` and non-zero dimensions — the trace
+   shows the accessors being called but not what they return. A texture upload
+   that silently produced nothing would look exactly like this.
+2. Why the menu renders and a chapter does not, since both go through
+   `CRenderInterfaceManager`, `COpenGLStatus` and the same `Texture` objects.
+   The difference between those two paths is the shortest route to the answer.
+3. The garbled caption glyphs during the cutscene ("fifi i", "yiiig") are
+   probably the same fault seen through a font atlas, so a fix for one should
+   fix the other — and the captions are the cheaper of the two to iterate on. After roughly a minute the frame becomes identical for
 minutes on end — the fingerprint to compare against is mean RGB
 `(9.5, 9.3, 8.8)` with 661 distinct colours in the 1024x768 client area, which
 is the same frame it stalled on before the audio fix. So the voice-over was one
