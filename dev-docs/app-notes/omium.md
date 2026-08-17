@@ -11,17 +11,22 @@
 - Embedded identity (`tapHLE --info`): display `Omium`, bundle identifier
   **`com.eeenmachine.`** — with a trailing dot and no app segment. Version
   `1.0`, iPad. Same developer as Scoops (`com.eeenmachine.scoops`).
-- tapHLEdb: App 25, version 25, report 33 (2026-07-26, tapHLE `9d6ee348`,
-  ★★☆☆☆). Report 32 (app 24) is a **bad submission by the same agent** that
-  guessed `com.mrlacey.omium`; it should be rejected in moderation.
+- tapHLEdb: **app 41, version 42, report 88** (2026-08-17, tapHLE `02687d70`,
+  ★★★☆☆, pending moderation).
 
-## Highest milestone: 3-star (In game), tapHLE `6b4a2811`
+  The earlier records this note listed — app 25/version 25/report 33 at two
+  stars, and the bad app 24/report 32 that guessed `com.mrlacey.omium` — are
+  **both gone**: `/api/apps/25` now returns 404, so the moderator removed them.
+  That is why this submission created a fresh app row rather than adding a
+  version to an existing one.
 
-Dodge mode plays. From the menu, `(384, 631)` selects Dodge and `(384, 512)`
-("Press here to play") starts it; the round then runs with the ship, the AMMO
-and BAD GUYS gauges, particle effects and a **counting timer** (11.68 at one
-capture, with consecutive captures differing in size — the check that separates
-a live round from a static card).
+## Highest milestone: 3-star (In game), re-verified on tapHLE `02687d70`
+
+Dodge mode plays. The route is `dev-docs/clickmaps/omium.json`: from the menu,
+`(384, 631)` selects Dodge and `(384, 512)` ("Press here to play") starts it.
+The round then runs with the ship, the AMMO and BAD GUYS gauges, particle
+effects and a **counting timer** — the check that separates a live round from a
+static card.
 
 Note the screen is half upside-down by design: this is a two-player game with
 the players at opposite ends of the iPad. That is not a rendering fault.
