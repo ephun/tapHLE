@@ -114,10 +114,9 @@ const USAGE: &str = "\
 Usage:
     tapHLE [PATH] [OPTIONS]
 
-PATH should be a path to a .app bundle or .ipa file.
-
-If no app path or special option is specified, a simple built-in app picker is
-displayed. For a library, settings and a log, run tapHLE-gui instead.
+PATH should be a path to a .app bundle or .ipa file, and is required unless a
+special option below is used. For a library, settings and a log, run tapHLE-gui
+instead.
 
 Special options:
     --help
@@ -197,26 +196,13 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         return Ok(());
     }
 
-    let bundle_path = if let Some(bundle_path) = bundle_path {
-        bundle_path
-    } else {
-        let mut options = options::Options::default();
-        // Apply command-line options only (no app-specific options apply)
-        for option_arg in &option_args {
-            let parse_result = options.parse_argument(option_arg);
-            assert!(parse_result == Ok(true));
-        }
-        if options.headless {
-            return Err(
-                "No app specified. Use the --help flag to see command-line usage.".to_string(),
-            );
-        }
-        echo!(
-            "No app specified, opening the built-in app picker. Use the --help flag to see              command-line usage, or run tapHLE-gui for the desktop frontend."
+    let Some(bundle_path) = bundle_path else {
+        echo!("{}", USAGE);
+        return Err(
+            "No app specified. Pass the path to a .app bundle or .ipa file, or run tapHLE-gui \
+             to pick one from a library."
+                .to_string(),
         );
-        let (bundle_path, mut extra_options) = environment::app_picker::app_picker(options)?;
-        option_args.append(&mut extra_options);
-        bundle_path
     };
 
     // When PowerShell does tab-completion on a directory, for some reason it

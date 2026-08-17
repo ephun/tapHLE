@@ -150,9 +150,9 @@ The emulator is unchanged and still runs on its own:
 .\target\release\tapHLE.exe "C:\path\to\Game.ipa" --landscape-native
 ```
 
-With no app path it opens its own built-in picker. `--help` lists every option,
-`OPTIONS_HELP.txt` explains them, and `--info` prints what an app says about
-itself without running it. The frontend passes exactly these options, so
+An app path is required: picking one from a library is the frontend's job.
+`--help` lists every option, `OPTIONS_HELP.txt` explains them, and `--info`
+prints what an app says about itself without running it. The frontend passes exactly these options, so
 anything it does can be reproduced by hand — and `tapHLE_options.txt` applies
 to both.
 

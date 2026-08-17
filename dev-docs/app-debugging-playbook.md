@@ -92,7 +92,7 @@ Run exactly one step at a time and stop on any nonzero exit:
 # Build once.
 cargo build --release
 
-# Launch the picker, or append -AppPath with the exact verified IPA path.
+# Launch with -AppPath set to the exact verified IPA path.
 powershell -NoProfile -ExecutionPolicy Bypass -File `
     .\dev-scripts\agy-visible-taphle.ps1 -Action Launch
 
