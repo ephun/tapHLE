@@ -6722,6 +6722,22 @@ int test_NSObject_dictionaryWithValuesForKeys() {
   return result;
 }
 
+// A dictionary looks a key up under KVC by checking for the '@' prefix and
+// then falling through to objectForKey:. There is no text in a nil key and
+// nothing to find under it, so the lookup answers nil instead of ending the
+// emulator on the way to reading one.
+int test_NSDictionary_valueForKey_nil() {
+  NSMutableDictionary *dictionary = [NSMutableDictionary dictionaryWithCapacity:1];
+  [dictionary setObject:@"value" forKey:@"key"];
+
+  if ([dictionary valueForKey:nil] != nil)
+    return -1;
+  // The ordinary lookup still works either side of it.
+  if (![[dictionary valueForKey:@"key"] isEqual:@"value"])
+    return -2;
+  return 0;
+}
+
 // NSMutableDictionary inherits NSObject's allocation path, so its capacity
 // factory must still produce mutable dictionary storage.
 int test_NSMutableDictionary_dictionaryWithCapacity() {
@@ -7344,6 +7360,7 @@ struct {
     FUNC_DEF(test_NSNotificationCenter_removeObserver_duringPost),
     FUNC_DEF(test_NSObject_valueForKey),
     FUNC_DEF(test_NSObject_dictionaryWithValuesForKeys),
+    FUNC_DEF(test_NSDictionary_valueForKey_nil),
     FUNC_DEF(test_NSMutableDictionary_dictionaryWithCapacity),
     FUNC_DEF(test_NSAssertionHandler_currentHandler),
     FUNC_DEF(test_NSException_accessors_and_raise),
