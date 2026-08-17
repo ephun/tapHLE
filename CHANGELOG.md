@@ -94,7 +94,15 @@
   button labels, menu items, messages, whole paragraphs — was coming out
   mirrored top to bottom, with the lines of a paragraph stacked in reverse
   order, in any game that draws its interface rather than assembling it from
-  pictures. It reads correctly now.
+  pictures. It reads correctly now, wherever the game draws it: on its own
+  screens, and on the ones it composes for itself. OLO's menu, Warlords'
+  briefing and MazeFinger's in-game labels were all unreadable and are not.
+
+  This also got a game unstuck. Warlords' How To Play screen could not be
+  dismissed, because the button that dismisses it was being drawn upside down
+  into the dark space below the text, where there was no way to see or press
+  it. With the writing the right way up the button is where it looks, and the
+  battle behind it starts.
 
 - Shader-based games work and say so. Games needing the newer graphics
   standard drew their frame correctly but it was discarded a moment before
