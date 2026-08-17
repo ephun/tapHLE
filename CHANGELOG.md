@@ -476,6 +476,10 @@
   accented or non-English characters also no longer ends the game: the
   order is not yet the one a device would give, but that is a better
   answer than stopping.
+- Let a game respond when the player changes page with the row of dots at
+  the bottom of a screen. tapHLE treated that row as decoration rather than
+  as a control, so a game asking to be told about it ended there. Both
+  Carnivores games stopped during start-up.
 
 ### Known limitations
 

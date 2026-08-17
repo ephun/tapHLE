@@ -41,7 +41,10 @@ const UIControlContentVerticalAlignmentCenter: UIControlContentVerticalAlignment
 pub type UIControlContentHorizontalAlignment = NSInteger;
 const UIControlContentHorizontalAlignmentCenter: UIControlContentHorizontalAlignment = 0;
 
-struct UIControlHostObject {
+/// `pub(crate)` because a UIControl subclass need not live under this
+/// module: UIPageControl does not, and its host object still has to carry
+/// this as its superclass or UIControl's own methods cannot borrow it.
+pub(crate) struct UIControlHostObject {
     superclass: super::UIViewHostObject,
     enabled: bool,
     selected: bool,

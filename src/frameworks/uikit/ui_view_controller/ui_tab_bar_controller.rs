@@ -56,9 +56,16 @@ struct UIProgressViewHostObject {
 }
 impl_HostObject_with_superclass!(UIProgressViewHostObject);
 
+/// A page control is a `UIControl`, not a plain view: the dots are how the
+/// user changes page, so it has targets and actions like any other control.
+/// The superclass here has to say so too, or UIControl's own methods cannot
+/// borrow it.
+///
+/// TODO: this class would sit better under `ui_view/ui_control/` with the
+/// other controls; it is here because it arrived alongside the tab bar.
 #[derive(Default)]
 struct UIPageControlHostObject {
-    superclass: crate::frameworks::uikit::ui_view::UIViewHostObject,
+    superclass: crate::frameworks::uikit::ui_view::ui_control::UIControlHostObject,
     number_of_pages: NSInteger,
     current_page: NSInteger,
 }
@@ -262,7 +269,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 // The dots under a paged scroll view. Same reasoning: the page count and
 // current page are read back by the scroll view's delegate.
-@implementation UIPageControl: UIView
+@implementation UIPageControl: UIControl
 
 + (id)allocWithZone:(NSZonePtr)_zone {
     let host_object = Box::<UIPageControlHostObject>::default();
