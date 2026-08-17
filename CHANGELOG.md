@@ -426,6 +426,10 @@
   screen for it, so it was being rotated twice and the finished frame arrived
   as flat horizontal bands; it now launches in landscape-native mode. Racing,
   crashing, reading the results and starting another race all work.
+- Look up a value through a chain of properties rather than only one step. A
+  game asking for something two or three objects away — the name of the player
+  of the current game — was asking a question tapHLE had no answer for at all,
+  and the attempt ended it.
 
 ### Known limitations
 
