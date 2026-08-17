@@ -6722,6 +6722,63 @@ int test_NSObject_dictionaryWithValuesForKeys() {
   return result;
 }
 
+// Two ivars and no accessors at all, so every read and write below goes
+// through KVC's instance-variable fallback. That keeps the test about the key
+// path rather than about which accessor name was found.
+@interface KVCKeyPathNode : NSObject {
+@public
+  id child;
+  id label;
+}
+@end
+
+@implementation KVCKeyPathNode
+@end
+
+// A key path is resolved one component at a time through valueForKey:, so the
+// object reached mid-path answers for the remainder. A nil part-way along ends
+// the walk instead of looking the rest up on nothing, and
+// setValue:forKeyPath: writes through the same route: the prefix locates the
+// object, the last component is an ordinary setValue:forKey: on it.
+int test_NSObject_valueForKeyPath() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  KVCKeyPathNode *root = [KVCKeyPathNode new];
+  KVCKeyPathNode *middle = [KVCKeyPathNode new];
+  KVCKeyPathNode *leaf = [KVCKeyPathNode new];
+  root->child = middle;
+  middle->child = leaf;
+  leaf->label = @"leaf";
+
+  int result = 0;
+  if (![[root valueForKeyPath:@"child.child.label"] isEqual:@"leaf"]) {
+    result = -1;
+  } else if ([root valueForKeyPath:@"child"] != middle) {
+    // A single component is exactly valueForKey:.
+    result = -2;
+  } else if ([root valueForKeyPath:@"child.child.child"] != nil) {
+    result = -3;
+  } else if ([root valueForKeyPath:@"child.child.child.label"] != nil) {
+    result = -4;
+  } else {
+    [root setValue:@"written" forKeyPath:@"child.child.label"];
+    if (![leaf->label isEqual:@"written"]) {
+      result = -5;
+    } else {
+      [root setValue:@"single" forKeyPath:@"label"];
+      if (![root->label isEqual:@"single"]) {
+        result = -6;
+      }
+    }
+  }
+
+  [root release];
+  [middle release];
+  [leaf release];
+  [pool drain];
+  return result;
+}
+
 // NSMutableDictionary inherits NSObject's allocation path, so its capacity
 // factory must still produce mutable dictionary storage.
 int test_NSMutableDictionary_dictionaryWithCapacity() {
@@ -7343,6 +7400,7 @@ struct {
     FUNC_DEF(test_NSNotificationCenter_addObserver_nilName_removeObserver),
     FUNC_DEF(test_NSNotificationCenter_removeObserver_duringPost),
     FUNC_DEF(test_NSObject_valueForKey),
+    FUNC_DEF(test_NSObject_valueForKeyPath),
     FUNC_DEF(test_NSObject_dictionaryWithValuesForKeys),
     FUNC_DEF(test_NSMutableDictionary_dictionaryWithCapacity),
     FUNC_DEF(test_NSAssertionHandler_currentHandler),

@@ -26,7 +26,7 @@ use crate::libc::semaphore::{host_destroy_semaphore, sem_wait};
 use crate::mem::{ConstPtr, ConstVoidPtr, MutVoidPtr, Ptr};
 use crate::objc::{
     autorelease, id, msg, msg_class, msg_send, msg_send_no_type_checking, nil, objc_classes,
-    retain, Class, ClassExports, NSZonePtr, ObjC, TrivialHostObject, IMP, SEL,
+    release, retain, Class, ClassExports, NSZonePtr, ObjC, TrivialHostObject, IMP, SEL,
 };
 use crate::Environment;
 
@@ -374,6 +374,69 @@ pub const CLASSES: ClassExports = objc_classes! {
     // may provide key-specific behavior.
     let sel = env.objc.lookup_selector("valueForUndefinedKey:").unwrap();
     msg_send(env, (this, sel, key))
+}
+
+// A key path is a dot-separated chain of keys, and Apple resolves it by
+// applying `valueForKey:` to one component at a time, so a class that
+// customises that accessor (or `valueForUndefinedKey:`) is honoured at every
+// step rather than only at the end.
+//
+// A nil part-way along ends the walk and the whole path is nil. That is not a
+// special case bolted on: messaging nil answers nil, so the remaining
+// components would be looked up on nothing anyway, and stopping says the same
+// thing without pretending to search.
+- (id)valueForKeyPath:(id)keyPath { // NSString*
+    let path_string = to_rust_string(env, keyPath);
+
+    // TODO: the collection operators — `@count`, and the `@sum`/`@avg`/`@max`/
+    // `@min`/`@unionOfObjects`/`@distinctUnionOfObjects` forms that take a
+    // right-hand key path. They are a different algorithm, applied to the
+    // collection reached so far rather than to an object's accessors, and
+    // nothing observed so far uses one. A path containing one reaches
+    // `valueForUndefinedKey:`, whose message names the offending component.
+
+    // The single-component case is exactly `valueForKey:`, and it is the
+    // common one. Answering it without splitting also passes the caller's own
+    // string straight through, so a class keyed on string identity sees it.
+    if !path_string.contains('.') {
+        return msg![env; this valueForKey:keyPath];
+    }
+
+    let components: Vec<String> = path_string.split('.').map(str::to_string).collect();
+    let mut value = this;
+    for component in components {
+        if value == nil {
+            break;
+        }
+        let key = from_rust_string(env, component);
+        value = msg![env; value valueForKey:key];
+        release(env, key);
+    }
+    value
+}
+
+// The write direction: everything but the final component locates the object
+// to write to, and that component is then an ordinary `setValue:forKey:` on it
+// — which is what makes a subclass's setter, and its `setValue:forUndefinedKey:`
+// fallback, apply here too.
+- (())setValue:(id)value
+    forKeyPath:(id)keyPath { // NSString*
+    let path_string = to_rust_string(env, keyPath);
+
+    let Some((prefix, last)) = path_string.rsplit_once('.') else {
+        () = msg![env; this setValue:value forKey:keyPath];
+        return;
+    };
+
+    let prefix_path = from_rust_string(env, prefix.to_string());
+    let target: id = msg![env; this valueForKeyPath:prefix_path];
+    release(env, prefix_path);
+
+    // A nil target discards the write, because messaging nil does nothing.
+    // Foundation behaves the same way, so this is not an error to report.
+    let last_key = from_rust_string(env, last.to_string());
+    () = msg![env; target setValue:value forKey:last_key];
+    release(env, last_key);
 }
 
 // Apple's KVC implementation obtains each requested value through
