@@ -54,7 +54,37 @@ applying the same band flip inside `CGContextShowGlyphsAtPoint` broke the text
 on this screen that was already correct — the app's own Core Graphics text runs
 — while leaving the six mirrored strings mirrored. Reverted.
 
-## Next discriminator
+## Replay on `e7138f01`, 2026-08-17
+
+The recorded route replays to its last step, but **the milestone was not
+confirmed on this run** and no report was filed for it. What was seen, from
+desktop screen captures rather than the runner's frames:
+
+- The campaign map, the territory panel with Attack and Cancel, and — after
+  Attack — the battlefield, with the spear/sword/archer icons, the dial and
+  the options gear.
+- On the battlefield, a **How To Play overlay** that did not clear. Tapping a
+  lane moves the yellow lane arrow, and tapping the spear icon then a lane
+  spawned nothing; the overlay stayed up and no battle was fought.
+
+Do not read that as a regression without more evidence. The earlier 3-star run
+did not report an overlay, and this run had save state present, so the likeliest
+explanation is that it is a first-battle screen the earlier route never met
+rather than something that broke. Either way the honest position is that the
+recorded milestone is currently unverified.
+
+**Do not trust the runner's frames for this app.** Step 07 captured the
+campaign map while the battlefield was actually on screen — `PrintWindow`
+returned stale content, exactly as it does for OLO. Replay with `-KeepOpen`
+and capture the window off the desktop.
+
+### Next discriminator here
+
+Find what dismisses the How To Play overlay. Until that is known, the route
+cannot reach a fought battle, and the map's last two steps describe a screen
+this run never got to.
+
+## Next discriminator for the text
 
 Decide the orientation from the destination rather than from the CTM. The
 question to answer first is how `CGBitmapContextDrawer` can tell a
@@ -62,3 +92,17 @@ compositor-flipped layer bitmap from an app-owned one; if the layer's bitmap
 carries that flag, both cases can be served without guessing, and the six
 strings here are the check for one side while any `UILabel` is the check for
 the other.
+
+The flag belongs on `CGBitmapContextData`, which `CGBitmapContextDrawer`
+already carries, set where `ca_layer.rs` creates a layer's backing context.
+`composition.rs` is the other half of the evidence: it draws a layer bitmap
+with flipped UVs (`rows_are_top_to_bottom = host_obj.contents == nil`) and a
+`CGImage` in `contents` unflipped, which is precisely the difference between
+the two destinations.
+
+Two more mirrored screens were seen on this run, both consistent with that
+account and neither previously recorded: the territory panel on the campaign
+map (`Difficulty`, `Owned By:`, the owner's name) and the whole How To Play
+paragraph on the battlefield, whose **lines are stacked in reverse order** —
+the band-level flip, not a per-glyph one. The headings beside them read
+correctly, because those are artwork rather than drawn text.
