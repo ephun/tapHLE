@@ -301,7 +301,10 @@ pub fn handle_events(env: &mut Environment) -> Option<Instant> {
     use crate::window::Event;
     use crate::window::TextInputEvent;
 
-    // NSRunLoop will never call this function in headless mode.
+    // The run loop checks for a window before calling this, so reaching it in
+    // headless mode is a caller's mistake rather than something to tolerate
+    // here: there is no event source to drain, and returning quietly would hide
+    // that whoever called it thought there was one.
     while let Some(event) = env.window_mut().pop_event() {
         match event {
             Event::Quit => {
