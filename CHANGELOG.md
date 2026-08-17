@@ -464,6 +464,12 @@
   while building its screen, and the instruction was not understood at all,
   so the game ended there. Zippo Lighter 1.1 stopped during start-up.
   tapHLE still stretches contents to fit, as it always has.
+- Stop games quitting when they ask an object for a setting it does not
+  have. Asking for something that may not be there is how optional
+  configuration is read, and a game handles being told there is nothing —
+  but tapHLE ended the game over the question. All four versions of
+  Spaceteam stopped during start-up. Setting an absent value was already
+  survivable; now reading one is too.
 
 ### Known limitations
 
