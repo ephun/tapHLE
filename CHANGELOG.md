@@ -426,6 +426,11 @@
   screen for it, so it was being rotated twice and the finished frame arrived
   as flat horizontal bands; it now launches in landscape-native mode. Racing,
   crashing, reading the results and starting another race all work.
+- Tell a game how the pixels of a picture are arranged. A game that asks
+  before reading a picture's pixels itself — which is what a game does to
+  build its own textures — was asking something tapHLE could not answer at
+  all, and the attempt ended it during start-up. Fieldrunners for iPad stopped
+  there.
 
 ### Known limitations
 
