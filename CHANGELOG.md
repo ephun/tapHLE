@@ -449,6 +449,10 @@
   box, but not this third way, which is what a game uses to lay out a label
   before drawing it — so asking ended the game. Ragdoll Blaster 2 and its
   free version both stopped there.
+- Stop games ending when they look something up under a key that turned out
+  to be nothing. Finding nothing is an ordinary answer, and games are
+  written to take it, but tapHLE stopped on the spot instead. Every version
+  of Fieldrunners died this way while building its first screen.
 
 ### Known limitations
 
