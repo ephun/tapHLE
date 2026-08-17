@@ -426,6 +426,10 @@
   screen for it, so it was being rotated twice and the finished frame arrived
   as flat horizontal bands; it now launches in landscape-native mode. Racing,
   crashing, reading the results and starting another race all work.
+- Divide and take a remainder in one step, the way some games' arithmetic is
+  built. tapHLE understood one of the two spellings compilers use for this
+  and not the other, and a game built with the other could not do that
+  arithmetic at all, so it never started. OLO 1.31 stopped there.
 
 ### Known limitations
 
