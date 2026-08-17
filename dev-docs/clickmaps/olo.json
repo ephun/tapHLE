@@ -7,24 +7,46 @@
     "sha256": "6fe7e974dc700647650150c9282b8742b713e006c60eb880db26145faf627509"
   },
   "recorded": {
-    "date": "2026-08-16",
+    "date": "2026-08-17",
     "host": "Windows 11, Intel Iris Xe Graphics",
     "by": "Claude Code (Opus 5)"
   },
   "options": [],
-  "window": { "width": 320, "height": 480, "orientation": "portrait" },
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
   "milestone": {
     "rating": 3,
     "describes": "A two-player round starts: the board draws with its two coloured zones, both players' pieces down the sides, and a piece in play that keeps animating."
   },
-  "defaults": { "press_ms": 150, "settle_ms": 10000 },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 10000
+  },
   "steps": [
-    { "id": "boot", "action": "wait", "settle_ms": 26000, "expect": "The menu: a flat coloured background whose hue cycles, with 2 Player / 4 Player / Online across the middle and More at the bottom." },
-    { "id": "start", "action": "tap", "at": [160, 430], "settle_ms": 12000, "expect": "A round. The window turns landscape and the board appears: a pink zone and a mint zone, green pieces down the left, red down the right, and a glowing piece in play." }
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 26000,
+      "expect": "The menu: a flat coloured background whose hue cycles, with 2 Player / 4 Player / Online across the middle and More at the bottom."
+    },
+    {
+      "id": "start",
+      "action": "tap",
+      "at": [
+        61,
+        228
+      ],
+      "settle_ms": 12000,
+      "expect": "A round. The window turns landscape and the board appears: a pink zone and a mint zone, green pieces down the left, red down the right, and a glowing piece in play."
+    }
   ],
   "notes": [
     "The window turns landscape when the round starts and the board is drawn rotated a quarter turn inside it, so text reads bottom-to-top. That is a presentation fault, not a sign the replay went wrong.",
-    "The menu labels do not respond where they are drawn. Taps at 2 Player / 4 Player reach the app and are hit-tested against its buttons — ccTouchBegan: is sent — but no button claims them, so the app's idea of where its buttons are does not match where they appear. The tap that starts a round is the one recorded here.",
-    "Verification for this milestone is a screen capture, not the clickmap runner's frames: this app renders through OpenGL ES 2.0."
+    "The menu labels now respond where they are drawn, and this step taps 2 Player where it appears. The earlier map tapped (160,430) instead, because the app's hit testing did not then match where its buttons were drawn; that was a tapHLE fault and it has since been corrected, which is what made the old coordinate stop working.",
+    "Verification for this milestone is a screen capture, not the runner's frames: this app renders through OpenGL ES 2.0, so PrintWindow returns the last composited content. Replay with -KeepOpen and capture the window off the desktop.",
+    "The menu text draws mirrored top to bottom. It is legible enough to navigate by and does not block the milestone."
   ]
 }
