@@ -81,3 +81,18 @@ on both concrete classes.
 
 Complete level 1 and see whether the game advances to level 2; that is the
 boundary between this rating and a 4-star human test.
+
+## 2026-07-27: 3 stars re-confirmed, by OS screenshot
+
+Driven to gameplay on `73a43594`: title `(160, 128)`, then `(160, 150)`, then
+`(122, 320)` reaches **SELECT LEVEL PACK**, and `(160, 165)` picks the free pack
+and starts **Level 1** — the block tower renders with `SCORE: 0` and `LIVES: 10`.
+
+Verified with an **OS-level `PrintWindow` screenshot**, not tapHLE's frame
+capture: 1032 distinct sampled colours. See the playbook's "a frame capture is
+not necessarily the screen" — a capture can show a perfect image for an app that
+is presenting nothing, which is how The Jim & Frank Mysteries HD was rated two
+stars in error.
+
+The click map previously stopped at the level-pack selector, which is a menu and
+not gameplay; the missing fourth tap is recorded above.

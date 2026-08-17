@@ -27,6 +27,7 @@ use crate::window::DeviceOrientation;
 use crate::Environment;
 
 pub mod ui_navigation_controller;
+pub mod ui_tab_bar_controller;
 
 #[derive(Default)]
 struct UIViewControllerHostObject {
@@ -47,6 +48,10 @@ struct UIViewControllerHostObject {
     /// The full-screen view controller presented by this controller. Retained.
     /// `UIViewController*`
     modal_view_controller: id,
+    /// `UINavigationItem*`, retained. Created on first use, as UIKit's is: a
+    /// controller that is never pushed onto a navigation stack should not pay
+    /// for one.
+    navigation_item: id,
     /// Whether `viewDidLoad` has already been sent for the current view.
     /// UIKit sends it exactly once each time the view is loaded, whichever
     /// route loaded it; see [send_view_did_load_if_needed].
@@ -124,8 +129,10 @@ pub const CLASSES: ClassExports = objc_classes! {
         bundle,
         parent_view_controller: _,
         modal_view_controller,
+        navigation_item,
         view_did_load_sent: _,
     } = env.objc.borrow(this);
+    release(env, navigation_item);
 
     if modal_view_controller != nil {
         let modal_view = env
@@ -177,13 +184,21 @@ pub const CLASSES: ClassExports = objc_classes! {
         let _: id = msg![env; nib instantiateWithOwner:this options:nil];
 
         let view = env.objc.borrow::<UIViewControllerHostObject>(this).view;
-        // Having nil view at this point probably mean that
-        // out nib's parsing is wrong.
-        // Also we assume here the case of a "detached nib file"
-        // TODO: support "integrated nib file"
-        assert!(view != nil);
-
-        return;
+        if view == nil {
+            // The nib did not set the view outlet. That means tapHLE's nib
+            // parsing missed it, the nib is an "integrated" one this does not
+            // support yet, or the nib could not be loaded at all — and none of
+            // those is a reason to end the app. Falling through to the plain
+            // -loadView below gives the controller an empty view of the right
+            // size, so its screen is blank instead of absent and everything
+            // around it keeps working.
+            log!(
+                "Warning: the nib for {:?} did not set a view; using an empty one",
+                this
+            );
+        } else {
+            return;
+        }
     };
 
     // As a last resort, use plain UIVIew for the root view
@@ -219,13 +234,27 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (id)view {
     let view = env.objc.borrow_mut::<UIViewControllerHostObject>(this).view;
     if view == nil {
+        // Loading the view is what viewDidLoad reports, so it is sent here and
+        // only here. A controller whose view the app assigned with -setView:
+        // never loaded one, and must not be told that it did: an app that
+        // builds its OpenGL view by hand, hands it over, and implements
+        // viewDidLoad as a teardown has its game view destroyed immediately
+        // after it is created.
         () = msg![env; this loadView];
+        send_view_did_load_if_needed(env, this);
     }
-    // A nib-instantiated controller already has its view here, but may not
-    // have been sent viewDidLoad yet if nothing has asked for the view since
-    // the nib was loaded.
-    send_view_did_load_if_needed(env, this);
     env.objc.borrow_mut::<UIViewControllerHostObject>(this).view
+}
+
+- (id)navigationItem {
+    let existing = env.objc.borrow::<UIViewControllerHostObject>(this).navigation_item;
+    if existing != nil {
+        return existing;
+    }
+    let item: id = msg_class![env; UINavigationItem alloc];
+    let item: id = msg![env; item init];
+    env.objc.borrow_mut::<UIViewControllerHostObject>(this).navigation_item = item;
+    item
 }
 
 - (id)parentViewController {
@@ -283,6 +312,45 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 - (())viewDidDisappear:(bool)animated {
     log_dbg!("[(UIViewController*){:?} viewDidDisappear:{}]", this, animated);
+}
+
+// `didReceiveMemoryWarning` is the most-sent selector no tapHLE class
+// implemented: 863 of the 1192 distinct apps in the import-demand catalogue
+// send it. Almost none of them are *delivering* a memory warning — they are
+// overriding it and calling `[super didReceiveMemoryWarning]`, and it is that
+// super-send that had nowhere to go. The same is true of `viewDidUnload` (606).
+//
+// Nothing in tapHLE currently originates a memory warning, so this is reached
+// only through such an override. The unload behaviour is implemented anyway
+// rather than left as a log line, because the app's override runs around it and
+// expects it to have happened: an app that nils its outlets in `viewDidUnload`
+// is relying on the base class to be what triggers that.
+- (())didReceiveMemoryWarning {
+    log_dbg!("[(UIViewController*){:?} didReceiveMemoryWarning]", this);
+    let view = env.objc.borrow::<UIViewControllerHostObject>(this).view;
+    if view == nil {
+        return;
+    }
+    // UIKit only unloads a view that is not on screen, and that condition is
+    // the whole safety of this: discarding the view a game is currently drawing
+    // into would be far worse than using more memory. A view with no window is
+    // in no view hierarchy that is being displayed.
+    let window: id = msg![env; view window];
+    if window != nil {
+        log_dbg!("...view is on screen, keeping it");
+        return;
+    }
+    log_dbg!("...unloading the off-screen view");
+    // setView:nil also re-arms viewDidLoad, so the next -view reloads and
+    // reports properly.
+    () = msg![env; this setView:nil];
+    () = msg![env; this viewDidUnload];
+}
+
+// Usually overridden by the application, to release what it retained in
+// -viewDidLoad.
+- (())viewDidUnload {
+    log_dbg!("[(UIViewController*){:?} viewDidUnload]", this);
 }
 
 - (())setTitle:(id)title { // NSString *

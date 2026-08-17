@@ -31,12 +31,28 @@ type UITextAutocapitalizationType = NSInteger;
 type UITextAutocorrectionType = NSInteger;
 
 const UITextFieldTextDidChangeNotification: &str = "UITextFieldTextDidChangeNotification";
+// The begin/end pair is not posted yet — editing state changes do not run
+// through the notification centre here — but apps observe them, and observing
+// dereferences the name.
+const UITextFieldTextDidBeginEditingNotification: &str =
+    "UITextFieldTextDidBeginEditingNotification";
+const UITextFieldTextDidEndEditingNotification: &str = "UITextFieldTextDidEndEditingNotification";
 
 /// `NSNotificationName` values.
-pub const CONSTANTS: ConstantExports = &[(
-    "_UITextFieldTextDidChangeNotification",
-    HostConstant::NSString(UITextFieldTextDidChangeNotification),
-)];
+pub const CONSTANTS: ConstantExports = &[
+    (
+        "_UITextFieldTextDidChangeNotification",
+        HostConstant::NSString(UITextFieldTextDidChangeNotification),
+    ),
+    (
+        "_UITextFieldTextDidBeginEditingNotification",
+        HostConstant::NSString(UITextFieldTextDidBeginEditingNotification),
+    ),
+    (
+        "_UITextFieldTextDidEndEditingNotification",
+        HostConstant::NSString(UITextFieldTextDidEndEditingNotification),
+    ),
+];
 
 struct UITextFieldHostObject {
     superclass: super::UIControlHostObject,

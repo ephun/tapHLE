@@ -109,3 +109,19 @@ known to be wrong with it — it needed no fixes at all to render.
 Since point sprites are drawn at a uniform size here (tapHLE does not model
 `GL_POINT_SIZE_ARRAY_OES`), the particle title may also be visually wrong in a
 way that matters to hit-testing if the app picks by particle proximity.
+
+## 2026-07-27: 3 stars re-confirmed
+
+Re-driven after a session of broad UIKit and CoreGraphics changes. The
+instruction screen renders — the ship, the AMMO gauge, the mirrored two-player
+layout and a `0.00` timer — and **`Press here to play` is at `(384, 512)`**, not
+the `(384, 631)` this note listed first. Tapping it starts the round: two
+captures eight seconds apart differ by SHA-256.
+
+The stale first coordinate cost a run. Both are now listed in the order to try
+them, since the wrong one leaves the app sitting on the instruction screen
+looking exactly like a game that will not start.
+
+Verified on a build of `0d8f5ec8`. The only source file changed between that and
+`trunk` is `ca_eagl_layer.rs`, and that change adds a `log_dbg!` and nothing
+else, so the behaviour under test is identical to `trunk`.

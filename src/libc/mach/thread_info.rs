@@ -19,6 +19,11 @@ use crate::Environment;
 // TODO: Move these common definitions into separate modules
 pub type kern_return_t = i32;
 pub const KERN_SUCCESS: kern_return_t = 0;
+/// A parameter the call cannot make sense of, such as an unrecognised flavour.
+pub const KERN_INVALID_ARGUMENT: kern_return_t = 4;
+/// The generic refusal. Mach uses it where a call is well-formed but cannot be
+/// answered, for instance when the caller's reply buffer is too small.
+pub const KERN_FAILURE: kern_return_t = 5;
 
 pub type thread_inspect_t = mach_port_t;
 type thread_flavor_t = natural_t;

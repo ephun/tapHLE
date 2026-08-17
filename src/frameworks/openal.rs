@@ -471,7 +471,7 @@ fn alIsBuffer(env: &mut Environment, buffer: ALuint) -> ALboolean {
 }
 
 fn alGetBufferi(env: &mut Environment, buffer: ALuint, param: ALenum, value: MutPtr<ALint>) {
-    let value = env.mem.ptr_at(value, 1);
+    let value = env.mem.ptr_at_mut(value, 1);
     try_get_context!(env, context);
     unsafe { context.GetBufferi(buffer, param, value) }
 }
@@ -938,14 +938,52 @@ fn alcGetEnumValue(
 ) -> ALenum {
     todo!();
 }
+/// Query an integer property of a device.
+///
+/// A null device is legal for `ALC_MAJOR_VERSION` and `ALC_MINOR_VERSION`,
+/// which describe the implementation rather than any one device, so it is
+/// passed through rather than rejected. The attribute queries do need a real
+/// device, and OpenAL Soft raises `ALC_INVALID_DEVICE` for them itself.
+///
+/// `ALCint` is a C `int` on both sides and the guest is little-endian like the
+/// host, so the guest array is handed to OpenAL Soft directly, the same way the
+/// `alGet*v` functions do it.
 fn alcGetIntegerv(
-    _env: &mut Environment,
-    _device: MutPtr<GuestALCdevice>,
-    _param: ALenum,
-    _size: ALCsizei,
-    _values: MutPtr<ALCint>,
+    env: &mut Environment,
+    device: MutPtr<GuestALCdevice>,
+    param: ALenum,
+    size: ALCsizei,
+    values: MutPtr<ALCint>,
 ) {
-    todo!();
+    let host_device = if device.is_null() {
+        std::ptr::null_mut()
+    } else if let Some(&host_device) = State::get(env).devices.get(&device) {
+        host_device
+    } else {
+        if State::get(env).warned_invalid_devices.insert(device) {
+            log!(
+                "alcGetIntegerv({:?}): unknown guest device, ignoring",
+                device
+            );
+        }
+        return;
+    };
+
+    // Writing nothing is the correct response to a request for nothing, and
+    // ptr_at_mut would reject the zero-length range.
+    if size <= 0 || values.is_null() {
+        return;
+    }
+
+    let values = env.mem.ptr_at_mut(values, size as GuestUSize);
+    unsafe { al::alcGetIntegerv(host_device, param, size, values) };
+    log_dbg!(
+        "alcGetIntegerv({:?}, {:#x}, {}) => {:?}",
+        device,
+        param,
+        size,
+        unsafe { std::slice::from_raw_parts(values, size as usize) }
+    );
 }
 fn alcIsExtensionPresent(
     _env: &mut Environment,

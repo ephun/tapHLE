@@ -9,17 +9,31 @@
 //! than iPhone OS, but it preserves operation ordering and lifecycle semantics
 //! while making the common operation-based loading pattern functional.
 
+use super::ns_array;
 use super::{NSInteger, NSUInteger};
 use crate::objc::{
-    id, msg, msg_class, msg_send_no_type_checking, nil, objc_classes, release, retain,
+    autorelease, id, msg, msg_class, msg_send_no_type_checking, nil, objc_classes, release, retain,
     ClassExports, HostObject, NSZonePtr, SEL,
 };
+
+/// The `+mainQueue` singleton, which must be the same object every time an app
+/// asks for it: apps compare against it to decide whether they are already on
+/// the main queue.
+#[derive(Default)]
+pub struct State {
+    /// `NSOperationQueue*`
+    main_queue: Option<id>,
+}
 
 struct NSOperationHostObject {
     cancelled: bool,
     executing: bool,
     finished: bool,
     invocation: Option<OperationInvocation>,
+    /// Operations that must finish before this one, retained as NSOperation
+    /// does. This queue runs operations synchronously, so the ordering is
+    /// enforced in `-start` rather than by a scheduler.
+    dependencies: Vec<id>,
 }
 impl HostObject for NSOperationHostObject {}
 
@@ -44,6 +58,7 @@ fn alloc_operation(env: &mut crate::Environment, class: crate::objc::Class) -> i
         executing: false,
         finished: false,
         invocation: None,
+        dependencies: Vec::new(),
     };
     env.objc
         .alloc_object(class, Box::new(host_object), &mut env.mem)
@@ -59,7 +74,60 @@ pub const CLASSES: ClassExports = objc_classes! {
     alloc_operation(env, this)
 }
 
+// Dependencies. A real queue waits for them and only then reports the
+// operation ready; this queue runs an operation the moment it is added, so the
+// promise that matters — a dependency runs first — is kept in `-start`.
+- (())addDependency:(id)operation { // NSOperation*
+    if operation == nil || operation == this {
+        return;
+    }
+    retain(env, operation);
+    env.objc
+        .borrow_mut::<NSOperationHostObject>(this)
+        .dependencies
+        .push(operation);
+}
+
+- (())removeDependency:(id)operation { // NSOperation*
+    let dependencies = &mut env
+        .objc
+        .borrow_mut::<NSOperationHostObject>(this)
+        .dependencies;
+    let Some(index) = dependencies.iter().position(|&d| d == operation) else {
+        return;
+    };
+    dependencies.remove(index);
+    release(env, operation);
+}
+
+- (id)dependencies {
+    let dependencies = env
+        .objc
+        .borrow::<NSOperationHostObject>(this)
+        .dependencies
+        .clone();
+    for dependency in &dependencies {
+        retain(env, *dependency);
+    }
+    let array = ns_array::from_vec(env, dependencies);
+    autorelease(env, array)
+}
+
 - (())start {
+    // Anything this operation depends on runs first, which is the whole of what
+    // a dependency promises. One already finished is skipped.
+    let dependencies = env
+        .objc
+        .borrow::<NSOperationHostObject>(this)
+        .dependencies
+        .clone();
+    for dependency in dependencies {
+        let finished: bool = msg![env; dependency isFinished];
+        if !finished {
+            () = msg![env; dependency start];
+        }
+    }
+
     let cancelled = env.objc.borrow::<NSOperationHostObject>(this).cancelled;
     if cancelled {
         env.objc.borrow_mut::<NSOperationHostObject>(this).finished = true;
@@ -111,10 +179,20 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (())waitUntilFinished {
-    // Operations are currently run synchronously, so there is nothing to wait for.
+    // Operations are currently run synchronously, so there is nothing to wait
+    // for.
 }
 
 - (())dealloc {
+    let dependencies = std::mem::take(
+        &mut env
+            .objc
+            .borrow_mut::<NSOperationHostObject>(this)
+            .dependencies,
+    );
+    for dependency in dependencies {
+        release(env, dependency);
+    }
     if let Some(invocation) = env.objc.borrow::<NSOperationHostObject>(this).invocation {
         match invocation {
             OperationInvocation::TargetSelectorObject(target, _selector, object) => {
@@ -160,6 +238,24 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 
 @implementation NSOperationQueue: NSObject
+
+// The queue bound to the main thread. tapHLE has no separate main-queue
+// scheduling, so this is an ordinary queue that happens to be a singleton —
+// operations added to it run the same way they do on any other. Apps reach for
+// it constantly to hop work back to the main thread, which is why its absence
+// stopped seven apps in a 1501-app survey before they reached their own code.
++ (id)mainQueue {
+    if let Some(existing) = env.framework_state.foundation.ns_operation.main_queue {
+        return existing;
+    }
+    let queue: id = msg![env; this new];
+    env.framework_state.foundation.ns_operation.main_queue = Some(queue);
+    queue
+}
+
++ (id)currentQueue {
+    msg_class![env; NSOperationQueue mainQueue]
+}
 
 + (id)allocWithZone:(NSZonePtr)_zone {
     let host_object = NSOperationQueueHostObject {

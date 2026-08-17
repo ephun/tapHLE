@@ -86,7 +86,47 @@ fn OSMemoryBarrier(_env: &mut Environment) {
     // no-op
 }
 
+/// `OSSpinLock` is a bare `int32_t`, zero meaning unlocked.
+#[allow(non_camel_case_types)]
+type OSSpinLock = i32;
+
+/// Spin locks guard very short critical sections, and the whole design assumes
+/// the holder is running on another core and will release almost immediately.
+/// tapHLE's guest threads are cooperatively scheduled, so that assumption does
+/// not hold: a thread that spun here would never yield, and the holder could
+/// never run to release it — busy-waiting would be a guaranteed hang where the
+/// real thing merely burns a few cycles.
+///
+/// So the lock is recorded but never waited on. In practice these sections are
+/// short enough, and the scheduler coarse enough, that contention does not
+/// arise; the log below exists so that if it ever does, it is visible rather
+/// than silently mis-serialised.
+fn OSSpinLockLock(env: &mut Environment, lock: MutPtr<OSSpinLock>) {
+    if env.mem.read(lock) != 0 {
+        log_once!(
+            "Warning: OSSpinLockLock() on a lock that is already held. tapHLE does not \
+             block here, so this critical section is not actually serialised."
+        );
+    }
+    env.mem.write(lock, 1);
+}
+
+fn OSSpinLockUnlock(env: &mut Environment, lock: MutPtr<OSSpinLock>) {
+    env.mem.write(lock, 0);
+}
+
+fn OSSpinLockTry(env: &mut Environment, lock: MutPtr<OSSpinLock>) -> bool {
+    if env.mem.read(lock) != 0 {
+        return false;
+    }
+    env.mem.write(lock, 1);
+    true
+}
+
 pub const FUNCTIONS: FunctionExports = &[
+    export_c_func!(OSSpinLockLock(_)),
+    export_c_func!(OSSpinLockUnlock(_)),
+    export_c_func!(OSSpinLockTry(_)),
     export_c_func!(OSAtomicAdd32(_, _)),
     export_c_func!(OSAtomicAdd32Barrier(_, _)),
     export_c_func!(OSAtomicCompareAndSwap32(_, _, _)),

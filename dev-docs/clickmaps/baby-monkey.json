@@ -1,0 +1,29 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.kihon.babymonkey",
+    "display_name": "BabyMonkey",
+    "version": "1.01"
+  },
+  "recorded": {
+    "date": "2026-08-13",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": ["--landscape-right"],
+  "window": { "width": 480, "height": 320, "orientation": "landscape-right" },
+  "milestone": {
+    "rating": 3,
+    "describes": "The run starts: the pig is moving with the monkey on its back, the tutorial prompt is up, and both control buttons are live."
+  },
+  "defaults": { "press_ms": 150, "settle_ms": 6000 },
+  "steps": [
+    { "id": "boot", "action": "wait", "settle_ms": 45000, "expect": "Menu: Play across the middle, the monkey and pig below it, and four round buttons along the bottom." },
+    { "id": "play", "from": "menu", "action": "tap", "at": [240, 120], "settle_ms": 6000, "expect": "Gameplay. The pig runs, \"Tap [monkey] To grab the [banana]\" is shown, and the monkey and pig buttons sit in the bottom corners." }
+  ],
+  "notes": [
+    "This app used to carry --landscape-native. That was a workaround for a presentation bug, not a fact about the app; with the bug fixed it needs the ordinary rotation. If a replay shows the frame in a narrow portrait strip on the left with black beside it, check the launch options before anything else.",
+    "The button-to-touch mappings in tapHLE_default_options.txt are for controller play and are not needed to replay this route: A is the monkey button at (43, 274), B the pig button at (439, 274), Start pause at (22, 22).",
+    "Tilt steers the pig, so a replay cannot drive the run any further than its first seconds without accelerometer input. Reaching gameplay with the tutorial prompt live is the milestone this map records."
+  ]
+}

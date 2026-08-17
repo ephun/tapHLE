@@ -18,7 +18,7 @@ use crate::frameworks::core_audio_types::{
     fourcc, kAudioFormatFlagIsAlignedHigh, kAudioFormatFlagIsFloat, kAudioFormatFlagIsPacked,
     kAudioFormatFlagIsSignedInteger, kAudioFormatLinearPCM, AudioStreamBasicDescription,
 };
-use crate::mem::{ConstPtr, ConstVoidPtr, MutPtr, SafeRead};
+use crate::mem::{ConstPtr, ConstVoidPtr, MutPtr, Ptr, SafeRead};
 
 const kAudioUnitType_Output: u32 = fourcc(b"auou");
 const kAudioUnitSubType_RemoteIO: u32 = fourcc(b"rioc");
@@ -117,6 +117,17 @@ struct AudioComponentDescription {
 }
 unsafe impl SafeRead for AudioComponentDescription {}
 
+/// Render a four-character code the way Core Audio's headers write it, for log
+/// messages. Non-printable bytes are shown as a number instead.
+fn fourcc_to_string(code: u32) -> String {
+    let bytes = code.to_be_bytes();
+    if bytes.iter().all(|b| b.is_ascii_graphic() || *b == b' ') {
+        format!("'{}'", String::from_utf8_lossy(&bytes))
+    } else {
+        format!("{code:#x}")
+    }
+}
+
 fn AudioComponentFindNext(
     env: &mut Environment,
     in_component: AudioComponent,
@@ -125,9 +136,34 @@ fn AudioComponentFindNext(
     assert!(in_component.is_null());
 
     let audio_comp_descr = env.mem.read(in_desc);
-    assert!(audio_comp_descr.component_type == kAudioUnitType_Output);
-    assert!(audio_comp_descr.component_sub_type == kAudioUnitSubType_RemoteIO);
-    assert!(audio_comp_descr.component_manufacturer == kAudioUnitManufacturer_Apple);
+
+    // tapHLE provides one audio component: Apple's remote I/O output unit.
+    // Anything else is answered with NULL, which is what Core Audio says when
+    // no component matches — and every caller already handles it, because a
+    // device only has the units it has. Asserting instead ended the app over a
+    // component it was entitled to ask about and would have coped without.
+    //
+    // A zero field means "any", so a search that does not pin a field down
+    // still matches the unit we have.
+    let matches = |asked: u32, provided: u32| asked == 0 || asked == provided;
+    if !matches(audio_comp_descr.component_type, kAudioUnitType_Output)
+        || !matches(
+            audio_comp_descr.component_sub_type,
+            kAudioUnitSubType_RemoteIO,
+        )
+        || !matches(
+            audio_comp_descr.component_manufacturer,
+            kAudioUnitManufacturer_Apple,
+        )
+    {
+        log!(
+            "AudioComponentFindNext() for type {:?} subtype {:?} manufacturer {:?}: tapHLE only provides Apple's remote I/O output unit, returning NULL",
+            fourcc_to_string(audio_comp_descr.component_type),
+            fourcc_to_string(audio_comp_descr.component_sub_type),
+            fourcc_to_string(audio_comp_descr.component_manufacturer),
+        );
+        return Ptr::null();
+    }
 
     let state = State::get(&mut env.framework_state);
     if state.audio_component.is_null() {

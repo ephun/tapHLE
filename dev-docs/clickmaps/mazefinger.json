@@ -1,0 +1,32 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.ngmoco.MazeFinger",
+    "display_name": "MazeFinger+",
+    "version": "1.5.1"
+  },
+  "recorded": {
+    "date": "2026-08-16",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": { "width": 320, "height": 480, "orientation": "portrait" },
+  "milestone": {
+    "rating": 3,
+    "describes": "Level 1-1 is played: the corridor with its electric walls, the player's glow moving up it under a finger drag, and its lightning trail following."
+  },
+  "defaults": { "press_ms": 150, "settle_ms": 8000 },
+  "steps": [
+    { "id": "boot", "action": "wait", "settle_ms": 26000, "expect": "The what's-new panel over the MAZE FINGER logo, listing the Plus+ features, with an OK button." },
+    { "id": "ok", "action": "tap", "at": [160, 424], "expect": "The main menu: High Score and Level on the left, Tell A Friend, and Play / Awards / About." },
+    { "id": "play", "action": "tap", "at": [158, 255], "expect": "Level 1-1: a red corridor down the middle, electric walls either side, the player's glow at the bottom, score and lives across the top, and a Touch to go prompt." },
+    { "id": "go", "action": "tap", "at": [158, 437], "expect": "The prompt clears and the walls animate: the level is running." },
+    { "id": "steer", "action": "swipe", "from_xy": [139, 437], "to_xy": [139, 94], "duration_ms": 3000, "expect": "The player's glow travels up the corridor with a lightning trail behind it." }
+  ],
+  "notes": [
+    "Client coordinates for the 320x480 window. On a scaled display, measure the targets from a screen capture rather than converting through ClientToScreen.",
+    "The steer step is the one that proves play: without it the level is running but nothing has moved. A slow drag works; the player follows the finger.",
+    "Some in-game text — the level number, the Touch to go prompt — is drawn mirrored. That is the second text path recorded in warlords.md and does not affect the route."
+  ]
+}

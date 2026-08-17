@@ -1,0 +1,34 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.nocanwin.redline",
+    "display_name": "Redline",
+    "version": "1.32",
+    "sha256": "837ED1C107602EC6738CBD29DFE53BCD15F6DD57A429D7F9F88A6BDAD3F7DE87"
+  },
+  "recorded": {
+    "taphle_version": "58e8c1a6",
+    "date": "2026-08-13",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": ["--landscape-left"],
+  "window": { "width": 480, "height": 320, "orientation": "landscape-left" },
+  "milestone": {
+    "rating": 3,
+    "describes": "A race is driven end to end and the results screen reports distance, score and a new mission."
+  },
+  "defaults": { "press_ms": 300, "settle_ms": 6000 },
+  "steps": [
+    { "id": "boot", "action": "wait", "settle_ms": 50000, "expect": "Title menu: REDLINE over a green field, with the HUD strip along the top." },
+    { "id": "enter-menu", "from": "title", "action": "tap", "at": [245, 130], "expect": "Car select, with a car, its star rating and an UNLOCKED panel." },
+    { "id": "choose-car", "from": "car select", "action": "tap", "at": [238, 266], "settle_ms": 8000, "expect": "The controls card: LEFT / RIGHT / SLOW TIME and the legend." },
+    { "id": "dismiss-controls", "from": "controls card", "action": "tap", "at": [240, 297], "settle_ms": 9000, "expect": "LOADING, then the voxel landscape." },
+    { "id": "race", "action": "wait", "settle_ms": 25000, "expect": "A race in progress: the car on the voxel track with the distance, score and fuel HUD live. Leaving it longer ends at RESULT, showing DISTANCE, SCORE and NEW MISSION." }
+  ],
+  "notes": [
+    "Press duration matters: about 300 ms. A 90 ms press is not seen at all, and that produces a convincing false negative because the title screen animates on its own for a few seconds after load, so a frame comparison right after a missed tap still shows a change. Confirm the screen is static first, then tap.",
+    "This app used to carry --landscape-native. That was a workaround for a presentation bug, not a fact about the app; with the bug fixed it needs the ordinary rotation. If a replay shows the frame rotated a quarter turn and stretched, check the launch options before anything else.",
+    "The race drives itself far enough to reach a result without steering input, which is why no steering steps are recorded. Steering is on-screen left/right; tilt does not work because Core Motion is a no-op."
+  ]
+}

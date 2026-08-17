@@ -19,6 +19,43 @@ const SS_DISABLE: i32 = 0x0004;
 // https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c
 const ENFORCED_MINSIGSTKSZ: GuestUSize = 8 * 1024;
 
+// Signal numbers, also from sys/signal.h. Darwin inherits the BSD numbering,
+// which differs from Linux's above SIGCHLD, so these are not interchangeable
+// with the host's.
+const SIGHUP: i32 = 1;
+const SIGINT: i32 = 2;
+const SIGQUIT: i32 = 3;
+const SIGILL: i32 = 4;
+const SIGTRAP: i32 = 5;
+const SIGABRT: i32 = 6;
+const SIGEMT: i32 = 7;
+const SIGFPE: i32 = 8;
+const SIGKILL: i32 = 9;
+const SIGBUS: i32 = 10;
+const SIGSEGV: i32 = 11;
+const SIGSYS: i32 = 12;
+const SIGPIPE: i32 = 13;
+const SIGALRM: i32 = 14;
+const SIGTERM: i32 = 15;
+const SIGURG: i32 = 16;
+const SIGSTOP: i32 = 17;
+const SIGTSTP: i32 = 18;
+const SIGCONT: i32 = 19;
+const SIGCHLD: i32 = 20;
+const SIGTTIN: i32 = 21;
+const SIGTTOU: i32 = 22;
+const SIGIO: i32 = 23;
+const SIGXCPU: i32 = 24;
+const SIGXFSZ: i32 = 25;
+const SIGVTALRM: i32 = 26;
+const SIGPROF: i32 = 27;
+const SIGWINCH: i32 = 28;
+const SIGINFO: i32 = 29;
+const SIGUSR1: i32 = 30;
+const SIGUSR2: i32 = 31;
+/// `NSIG` is 32 and is one past the last valid signal, so this is the last one.
+const NSIG_MINUS_ONE: i32 = 31;
+
 #[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 struct stack_t {
@@ -101,6 +138,107 @@ fn sigprocmask(env: &mut Environment, how: i32, set: ConstVoidPtr, old_set: MutV
     0
 }
 
+/// What Darwin does to a process that receives a signal with no handler
+/// installed. From the table in `sys/signal.h`.
+#[derive(Debug, PartialEq, Eq)]
+enum DefaultAction {
+    /// Terminate the process, with or without a core dump — the difference is
+    /// invisible here.
+    Terminate,
+    /// Suspend the process until it is continued.
+    Stop,
+    /// Throw the signal away.
+    Discard,
+}
+
+fn default_action(signal: i32) -> Option<DefaultAction> {
+    Some(match signal {
+        SIGURG | SIGCONT | SIGCHLD | SIGIO | SIGWINCH | SIGINFO => DefaultAction::Discard,
+        SIGSTOP | SIGTSTP | SIGTTIN | SIGTTOU => DefaultAction::Stop,
+        // Every other signal in the 1..NSIG range terminates. Listing the two
+        // small sets and defaulting the rest is how the header reads, and it
+        // means a signal number nobody thought about here still gets the
+        // conservative answer rather than being silently discarded.
+        1..=NSIG_MINUS_ONE => DefaultAction::Terminate,
+        _ => return None,
+    })
+}
+
+fn signal_name(signal: i32) -> &'static str {
+    match signal {
+        SIGHUP => "SIGHUP",
+        SIGINT => "SIGINT",
+        SIGQUIT => "SIGQUIT",
+        SIGILL => "SIGILL",
+        SIGTRAP => "SIGTRAP",
+        SIGABRT => "SIGABRT",
+        SIGEMT => "SIGEMT",
+        SIGFPE => "SIGFPE",
+        SIGKILL => "SIGKILL",
+        SIGBUS => "SIGBUS",
+        SIGSEGV => "SIGSEGV",
+        SIGSYS => "SIGSYS",
+        SIGPIPE => "SIGPIPE",
+        SIGALRM => "SIGALRM",
+        SIGTERM => "SIGTERM",
+        SIGURG => "SIGURG",
+        SIGSTOP => "SIGSTOP",
+        SIGTSTP => "SIGTSTP",
+        SIGCONT => "SIGCONT",
+        SIGCHLD => "SIGCHLD",
+        SIGTTIN => "SIGTTIN",
+        SIGTTOU => "SIGTTOU",
+        SIGIO => "SIGIO",
+        SIGXCPU => "SIGXCPU",
+        SIGXFSZ => "SIGXFSZ",
+        SIGVTALRM => "SIGVTALRM",
+        SIGPROF => "SIGPROF",
+        SIGWINCH => "SIGWINCH",
+        SIGINFO => "SIGINFO",
+        SIGUSR1 => "SIGUSR1",
+        SIGUSR2 => "SIGUSR2",
+        _ => "an unknown signal",
+    }
+}
+
+/// Send a signal to the calling process, which here is the guest app.
+///
+/// The default disposition is applied, because that is what tapHLE's signal
+/// state can honestly report: [signal] and [sigaction] do not record the
+/// handler they are given, so there is never one to run. On a device an app
+/// that installs a handler and raises would reach it — a crash reporter does
+/// exactly this — and reaching the terminate branch below instead is that gap
+/// showing through, not a decision made here.
+///
+/// The common case by far is `abort()`, which is `raise(SIGABRT)` after
+/// unblocking it, so the message says the same thing `abort` says.
+fn raise(env: &mut Environment, signal: i32) -> i32 {
+    match default_action(signal) {
+        None => {
+            set_errno(env, EINVAL);
+            -1
+        }
+        Some(DefaultAction::Discard) => {
+            log_dbg!(
+                "raise({}) discarded: its default action is to ignore it",
+                signal_name(signal)
+            );
+            0
+        }
+        Some(DefaultAction::Stop) => panic!(
+            "The app raised {}, which would suspend it until something continued it. \
+             tapHLE has nothing that would, so the app cannot make progress from here.",
+            signal_name(signal)
+        ),
+        Some(DefaultAction::Terminate) => panic!(
+            "The app raised {}, whose default action is to terminate the process, and no \
+             handler is installed. This is the app deliberately terminating itself, not a \
+             tapHLE failure - the reason is usually logged just above.",
+            signal_name(signal)
+        ),
+    }
+}
+
 fn sigaltstack(env: &mut Environment, stack: ConstPtr<stack_t>, old_stack: MutPtr<stack_t>) -> i32 {
     let thread = env.current_thread;
     let previous = env.libc_state.signal.stack_for_thread(thread);
@@ -133,6 +271,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(signal(_, _)),
     export_c_func!(sigprocmask(_, _, _)),
     export_c_func!(sigaltstack(_, _)),
+    export_c_func!(raise(_)),
 ];
 
 #[cfg(test)]
@@ -144,6 +283,34 @@ mod tests {
             ss_sp: Ptr::from_bits(0x1000),
             ss_size: size,
             ss_flags: 0,
+        }
+    }
+
+    #[test]
+    fn default_signal_actions_follow_the_darwin_table() {
+        // The two small non-terminating sets, spot-checked at their edges.
+        assert_eq!(default_action(SIGCHLD), Some(DefaultAction::Discard));
+        assert_eq!(default_action(SIGINFO), Some(DefaultAction::Discard));
+        assert_eq!(default_action(SIGSTOP), Some(DefaultAction::Stop));
+        assert_eq!(default_action(SIGTTOU), Some(DefaultAction::Stop));
+        // Everything else in range terminates, including the ends of the range.
+        assert_eq!(default_action(SIGHUP), Some(DefaultAction::Terminate));
+        assert_eq!(default_action(SIGABRT), Some(DefaultAction::Terminate));
+        assert_eq!(default_action(SIGUSR2), Some(DefaultAction::Terminate));
+        // Out of range is an error, not a discard.
+        assert_eq!(default_action(0), None);
+        assert_eq!(default_action(32), None);
+        assert_eq!(default_action(-1), None);
+    }
+
+    #[test]
+    fn every_signal_in_range_has_a_name() {
+        for signal in 1..=NSIG_MINUS_ONE {
+            assert_ne!(
+                signal_name(signal),
+                "an unknown signal",
+                "signal {signal} is unnamed"
+            );
         }
     }
 

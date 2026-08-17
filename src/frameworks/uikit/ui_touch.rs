@@ -259,9 +259,20 @@ fn handle_touches_down(env: &mut Environment, map: HashMap<FingerId, Coords>) {
                 None
             }
         }) else {
+            // Say what the candidates were. "No window contains this point" is
+            // ambiguous between "there are no windows" and "the windows are the
+            // wrong size or in the wrong place", and those are different bugs —
+            // the first is a nib or startup problem, the second a geometry one.
+            let windows = env.framework_state.uikit.ui_view.ui_window.windows.clone();
+            let mut frames = Vec::with_capacity(windows.len());
+            for window in windows {
+                let frame: CGRect = msg![env; window frame];
+                frames.push(format!("{window:?} frame {frame:?}"));
+            }
             log!(
-                "Couldn't find a window for touch at {:?}, discarding",
+                "Couldn't find a window for touch at {:?}, discarding. Windows: {:?}",
                 location,
+                frames,
             );
             continue;
         };

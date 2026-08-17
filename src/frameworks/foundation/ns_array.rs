@@ -54,9 +54,23 @@ pub const CLASSES: ClassExports = objc_classes! {
 @implementation NSArray: NSObject
 
 + (id)allocWithZone:(NSZonePtr)zone {
-    // NSArray might be subclassed by something which needs allocWithZone:
-    // to have the normal behaviour. Unimplemented: call superclass alloc then.
-    assert!(this == env.objc.get_known_class("NSArray", &mut env.mem));
+    // A guest subclass of NSArray gets a working _tapHLE_NSArray rather than an
+    // instance of itself. That loses the subclass identity, so a check for the
+    // app's own class fails while -isKindOfClass:[NSArray class] still passes,
+    // and any method the subclass added is not found.
+    //
+    // It is the wrong answer, and it is a much better one than aborting.
+    // tapHLE's array primitives live on the concrete class, not on NSArray, so
+    // an instance of the subclass would have no storage and would fail on
+    // -count; there is no version of honouring the subclass that works without
+    // making NSArray itself concrete.
+    //
+    // In practice these subclasses are helpers — an app may ship an
+    // AS_NSArrayJSONSerializable — where the class exists to hang methods off
+    // and the instances are ordinary arrays.
+    if this != env.objc.get_known_class("NSArray", &mut env.mem) {
+        log_once!("TODO: a guest subclass of NSArray was allocated; it gets a plain array and loses its own class");
+    }
     msg_class![env; _tapHLE_NSArray allocWithZone:zone]
 }
 
@@ -118,6 +132,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 // These probably comes from some category related to plists.
 - (id)initWithContentsOfFile:(id)path { // NSString*
     release(env, this);
+    if path == nil {
+        // There is no file to read, so there is no array. Apps reach here by
+        // building a path out of something that turned out to be nil, and
+        // expect the same nil they would get for a file that does not exist.
+        return nil;
+    }
     let path = ns_string::to_rust_string(env, path);
     deserialize_plist_from_file(
         env,
@@ -165,6 +185,44 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
     NSNotFound as NSUInteger
 }
+// Send one message to every element.
+//
+// The elements are snapshotted first. UIKit and app code routinely use this to
+// tell every subview to remove itself, or to invalidate every timer in a list,
+// and those messages mutate the receiver mid-iteration; walking the live array
+// would skip elements or index past its end. Apple's documents the array as
+// not to be mutated during the call, but tolerating it costs one clone and
+// turns a crash into the obvious behaviour.
+//
+// A nil element is skipped rather than messaged. An array cannot hold nil, so
+// this only arises for the non-retaining variants, where an element may have
+// died.
+- (())makeObjectsPerformSelector:(SEL)selector {
+    let count: NSUInteger = msg![env; this count];
+    let mut objects = Vec::with_capacity(count as usize);
+    for i in 0..count {
+        objects.push(msg![env; this objectAtIndex:i]);
+    }
+    for object in objects {
+        if object != nil {
+            () = msg_send(env, (object, selector));
+        }
+    }
+}
+
+- (())makeObjectsPerformSelector:(SEL)selector withObject:(id)argument {
+    let count: NSUInteger = msg![env; this count];
+    let mut objects = Vec::with_capacity(count as usize);
+    for i in 0..count {
+        objects.push(msg![env; this objectAtIndex:i]);
+    }
+    for object in objects {
+        if object != nil {
+            () = msg_send(env, (object, selector, argument));
+        }
+    }
+}
+
 - (bool)containsObject:(id)object {
     let idx: NSUInteger = msg![env; this indexOfObject:object];
     idx != NSNotFound as NSUInteger
@@ -205,7 +263,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         let path: id = msg![env; this objectAtIndex:i];
         let path_extension: id = msg![env; path pathExtension];
         let path_extension = ns_string::to_rust_string(env, path_extension).to_lowercase();
-        if wanted.iter().any(|wanted| *wanted == path_extension) {
+        if wanted.contains(&path_extension) {
             () = msg![env; result addObject:path];
         }
     }
@@ -291,9 +349,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 @implementation NSMutableArray: NSArray
 
 + (id)allocWithZone:(NSZonePtr)zone {
-    // NSArray might be subclassed by something which needs allocWithZone:
-    // to have the normal behaviour. Unimplemented: call superclass alloc then.
-    assert!(this == env.objc.get_known_class("NSMutableArray", &mut env.mem));
+    // See the note on +[NSArray allocWithZone:]: the same trade, for the same
+    // reason.
+    if this != env.objc.get_known_class("NSMutableArray", &mut env.mem) {
+        log_once!("TODO: a guest subclass of NSMutableArray was allocated; it gets a plain array and loses its own class");
+    }
     msg_class![env; _tapHLE_NSMutableArray allocWithZone:zone]
 }
 
@@ -328,6 +388,9 @@ pub const CLASSES: ClassExports = objc_classes! {
 // These probably comes from some category related to plists.
 - (id)initWithContentsOfFile:(id)path { // NSString*
     release(env, this);
+    if path == nil {
+        return nil;
+    }
     let path = ns_string::to_rust_string(env, path);
     let tmp = deserialize_plist_from_file(
         env,
@@ -386,6 +449,14 @@ pub const CLASSES: ClassExports = objc_classes! {
         array: Vec::new(),
     });
     env.objc.alloc_object(this, host_object, &mut env.mem)
+}
+
+- (id)init {
+    // Adopt an instance a guest subclass allocated itself instead of through
+    // +alloc; see ObjC::ensure_host_object. For an object tapHLE did allocate
+    // this is a no-op, because +allocWithZone: already installed the storage.
+    env.objc.ensure_host_object::<ArrayHostObject>(this);
+    this
 }
 
 // NSCoding implementation
@@ -462,8 +533,23 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.objc.borrow::<ArrayHostObject>(this).array.len().try_into().unwrap()
 }
 - (id)objectAtIndex:(NSUInteger)index {
-    // TODO: throw real exception rather than panic if out-of-bounds?
-    env.objc.borrow::<ArrayHostObject>(this).array[index as usize]
+    // Foundation raises NSRangeException here. tapHLE cannot raise, and the
+    // Rust panic that stood in for it reported the app's own bounds bug as an
+    // emulator crash. Return nil and say what happened: an app with a @try
+    // around this survives on device, and one without at least fails somewhere
+    // it chose.
+    let array = &env.objc.borrow::<ArrayHostObject>(this).array;
+    match array.get(index as usize) {
+        Some(&object) => object,
+        None => {
+            let count = array.len();
+            log!(
+                "Warning: objectAtIndex:{} on array {:?} is out of bounds for {} elements, which Foundation would raise NSRangeException for; returning nil",
+                index, this, count
+            );
+            nil
+        }
+    }
 }
 
 - (id)description {
@@ -532,7 +618,15 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.objc.alloc_object(this, host_object, &mut env.mem)
 }
 
+- (id)init {
+    // See the immutable class's init: JSONKit's JKArray allocates its own
+    // instances and then sends init.
+    env.objc.ensure_host_object::<ArrayHostObject>(this);
+    this
+}
+
 - (id)initWithCapacity:(NSUInteger)capacity {
+    env.objc.ensure_host_object::<ArrayHostObject>(this);
     env.objc.borrow_mut::<ArrayHostObject>(this).array.reserve(capacity as usize);
     this
 }
@@ -716,8 +810,23 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.objc.borrow::<ArrayHostObject>(this).array.len().try_into().unwrap()
 }
 - (id)objectAtIndex:(NSUInteger)index {
-    // TODO: throw real exception rather than panic if out-of-bounds?
-    env.objc.borrow::<ArrayHostObject>(this).array[index as usize]
+    // Foundation raises NSRangeException here. tapHLE cannot raise, and the
+    // Rust panic that stood in for it reported the app's own bounds bug as an
+    // emulator crash. Return nil and say what happened: an app with a @try
+    // around this survives on device, and one without at least fails somewhere
+    // it chose.
+    let array = &env.objc.borrow::<ArrayHostObject>(this).array;
+    match array.get(index as usize) {
+        Some(&object) => object,
+        None => {
+            let count = array.len();
+            log!(
+                "Warning: objectAtIndex:{} on array {:?} is out of bounds for {} elements, which Foundation would raise NSRangeException for; returning nil",
+                index, this, count
+            );
+            nil
+        }
+    }
 }
 
 - (id)description {

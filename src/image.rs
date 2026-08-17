@@ -64,8 +64,20 @@ impl Image {
             )
         };
         if pixels.is_null() {
-            let reason = unsafe { CStr::from_ptr(stbi_failure_reason()) };
-            return Err(reason.to_str().unwrap().to_string());
+            // Reporting why an image would not decode must not itself be a
+            // way to fail. stb_image's reason is a C string it owns, and it
+            // is not guaranteed to be set, nor to be UTF-8 — and an app with
+            // a corrupt icon is ordinary input, not a reason to end the
+            // process.
+            let reason = unsafe { stbi_failure_reason() };
+            let reason = if reason.is_null() {
+                "the image could not be decoded".to_string()
+            } else {
+                unsafe { CStr::from_ptr(reason) }
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            return Err(reason);
         }
 
         let width: u32 = x.try_into().unwrap();
@@ -273,4 +285,26 @@ pub fn decode_pvrtc(pvrtc_data: &[u8], is_2bit: bool, width: u32, height: u32) -
         rgba8_data.set_len(rgba8_word_count);
     };
     rgba8_data
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Image;
+
+    /// An app whose icon will not decode is ordinary input. Reporting why
+    /// must not itself be a way to end the process, which it was: the
+    /// failure reason was read as UTF-8 and unwrapped, so a reason that was
+    /// not valid UTF-8 turned a rejected image into a panic.
+    #[test]
+    fn an_undecodable_image_is_an_error_rather_than_a_panic() {
+        for bytes in [
+            &b""[..],
+            &b"not an image"[..],
+            // A PNG signature followed by nothing that follows a signature.
+            &[137, 80, 78, 71, 13, 10, 26, 10, 0, 1, 2, 3][..],
+        ] {
+            let result = Image::from_bytes(bytes);
+            assert!(result.is_err(), "{bytes:?} should not decode");
+        }
+    }
 }

@@ -87,7 +87,7 @@ const CONSTANTS: ConstantExports = &[
     // globals; the two "best" variants are negative sentinels. Apps read them
     // by reference, so each is backed by a real guest allocation. Previously
     // unhandled non-lazy symbols left null, they crashed any app that read one
-    // (e.g. SPY mouse HD's startup location setup).
+    // (a startup location setup, typically).
     (
         "_kCLLocationAccuracyBestForNavigation",
         HostConstant::Custom(|env| env.mem.alloc_and_write(-2f64).cast().cast_const()),

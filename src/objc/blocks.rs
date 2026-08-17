@@ -262,6 +262,19 @@ fn _Block_copy(env: &mut Environment, block: ConstVoidPtr) -> MutVoidPtr {
 }
 
 #[allow(non_snake_case)]
+/// `objc_retainBlock` — what ARC emits when a block is stored somewhere that
+/// outlives the current scope.
+///
+/// A block starts on the stack, so retaining one in place would keep a pointer
+/// to a frame that is about to disappear. The runtime's answer is to copy it to
+/// the heap instead, and copying an already-heap block is what retains it — so
+/// this is `_Block_copy`, not a separate reference-count operation. Getting
+/// that wrong would not fail here; it would fail later, when the stack frame
+/// the block still pointed into was reused.
+fn objc_retainBlock(env: &mut Environment, block: ConstVoidPtr) -> MutVoidPtr {
+    _Block_copy(env, block)
+}
+
 fn _Block_release(env: &mut Environment, block: ConstVoidPtr) {
     block_release(env, block)
 }
@@ -392,6 +405,7 @@ pub const CONSTANTS: ConstantExports = &[
 
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(_Block_copy(_)),
+    export_c_func!(objc_retainBlock(_)),
     export_c_func!(_Block_release(_)),
     export_c_func!(_Block_object_assign(_, _, _)),
     export_c_func!(_Block_object_dispose(_, _)),

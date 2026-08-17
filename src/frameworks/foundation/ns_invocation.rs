@@ -5,8 +5,9 @@
  */
 //! `NSInvocation`.
 
-use crate::abi::{extend_stack_for_args, write_next_arg, GuestArg};
+use crate::abi::{extend_stack_for_args, write_next_arg, GuestArg, GuestRet};
 use crate::cpu::Cpu;
+use crate::frameworks::foundation::ns_method_signature::type_encoding_size;
 use crate::frameworks::foundation::{NSInteger, NSUInteger};
 use crate::libc::string::strdup;
 use crate::mem::{ConstPtr, MutPtr, MutVoidPtr};
@@ -21,6 +22,11 @@ struct NSInvocationHostObject {
     sig: id,
     /// Argument type strings resolved from `sig` at creation time
     argument_types: Vec<String>,
+    /// Return type string resolved from `sig` at creation time.
+    return_type: String,
+    /// Owned buffer holding the return value, allocated when there is one to
+    /// hold. `None` for a void method, or before the first `invoke`.
+    return_value: Option<MutVoidPtr>,
     target: id,
     selector: Option<SEL>,
     /// Per-slot owned buffer for each argument.
@@ -48,9 +54,13 @@ pub const CLASSES: ClassExports = objc_classes! {
         let type_ptr: ConstPtr<u8> = msg![env; sig getArgumentTypeAtIndex:i];
         argument_types.push(env.mem.cstr_at_utf8(type_ptr).unwrap().to_string());
     }
+    let return_type_ptr: ConstPtr<u8> = msg![env; sig methodReturnType];
+    let return_type = env.mem.cstr_at_utf8(return_type_ptr).unwrap().to_string();
     let host_object = Box::new(NSInvocationHostObject {
         sig,
         argument_types,
+        return_type,
+        return_value: None,
         target: nil,
         selector: None,
         arguments: vec![None; num_of_args as usize],
@@ -172,6 +182,20 @@ pub const CLASSES: ClassExports = objc_classes! {
             let arg = env.mem.read(arg_loc);
             env.mem.alloc_and_write(arg).cast()
         }
+        // Every one-word scalar. They are stored identically; the encoding
+        // only matters when the value is read back out, and the caller that
+        // set it is the one that knows. Listed in full rather than grown one
+        // crash at a time.
+        "c" | "C" | "B" | "s" | "S" | "i" | "I" | "l" | "L" => {
+            let arg_loc: MutPtr<u32> = arg_loc.cast();
+            let arg = env.mem.read(arg_loc);
+            env.mem.alloc_and_write(arg).cast()
+        }
+        "q" | "Q" | "d" => {
+            let arg_loc: MutPtr<u64> = arg_loc.cast();
+            let arg = env.mem.read(arg_loc);
+            env.mem.alloc_and_write(arg).cast()
+        }
         "*" => {
             assert!(!arguments_retained); // TODO
             let arg_loc: MutPtr<MutPtr<u8>> = arg_loc.cast();
@@ -196,15 +220,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (())invoke {
-    // Safeguard: all arguments must be set (except first two)
-    let arguments: &Vec<Option<MutVoidPtr>> = env.objc.borrow::<NSInvocationHostObject>(this).arguments.as_ref();
-    let set_count = arguments.iter().flatten().count();
-    let all_count = arguments.len();
-    assert_eq!(set_count + 2, all_count);
-
-    let sig = env.objc.borrow::<NSInvocationHostObject>(this).sig;
-    let ret_type: ConstPtr<u8> = msg![env; sig methodReturnType];
-    assert!(env.mem.read(ret_type) == b'v'); // TODO
+    // An argument that was never set is passed as zero, and that is not a
+    // caller error: the real runtime allocates the invocation's argument
+    // buffer zero-filled, so a caller that sets only the arguments it cares
+    // about gets nil or 0 for the rest. Requiring every slot to be set turned
+    // that ordinary pattern into an abort during launch.
 
     // `call_from_host` re-use
     // TODO: retval_ptr
@@ -217,7 +237,10 @@ pub const CLASSES: ClassExports = objc_classes! {
             "@" => <id as GuestArg>::REG_COUNT,
             ":" => <SEL as GuestArg>::REG_COUNT,
             "f" => <f32 as GuestArg>::REG_COUNT,
-            "c" => <u8 as GuestArg>::REG_COUNT,
+            "c" | "C" | "B" | "s" | "S" | "i" | "I" | "l" | "L" => {
+                <u32 as GuestArg>::REG_COUNT
+            }
+            "q" | "Q" | "d" => <u64 as GuestArg>::REG_COUNT,
             "*" => <MutPtr<u8> as GuestArg>::REG_COUNT,
             // pointer cases
             _ if arg_type.starts_with('^') => <MutVoidPtr as GuestArg>::REG_COUNT,
@@ -250,44 +273,46 @@ pub const CLASSES: ClassExports = objc_classes! {
             write_next_arg::<SEL>(&mut reg_offset, regs, &mut env.mem, selector);
             continue;
         }
-        let arg_slot = arguments[i].unwrap();
+        let arg_slot = arguments[i];
         let arg_type = argument_types[i].as_str();
         // TODO: refactor and simplify
         match arg_type {
             "@" => {
-                let arg: ConstPtr<id> = arg_slot.cast().cast_const();
-                let arg_val = env.mem.read(arg);
+                let arg_val = arg_slot.map_or(nil, |slot| env.mem.read(slot.cast().cast_const()));
                 let regs = env.cpu.regs_mut();
                 write_next_arg::<id>(&mut reg_offset, regs, &mut env.mem, arg_val);
             }
             ":" => {
-                let arg: ConstPtr<SEL> = arg_slot.cast().cast_const();
-                let arg_val = env.mem.read(arg);
+                let arg_val = arg_slot
+                    .map_or_else(SEL::null, |slot| env.mem.read(slot.cast().cast_const()));
                 let regs = env.cpu.regs_mut();
                 write_next_arg::<SEL>(&mut reg_offset, regs, &mut env.mem, arg_val);
             }
             "f" => {
-                let arg: ConstPtr<f32> = arg_slot.cast().cast_const();
-                let arg_val = env.mem.read(arg);
+                let arg_val = arg_slot.map_or(0f32, |slot| env.mem.read(slot.cast().cast_const()));
                 let regs = env.cpu.regs_mut();
                 write_next_arg::<f32>(&mut reg_offset, regs, &mut env.mem, arg_val);
             },
-            "c" => {
-                let arg: ConstPtr<u8> = arg_slot.cast().cast_const();
-                let arg_val = env.mem.read(arg);
+            "c" | "C" | "B" | "s" | "S" | "i" | "I" | "l" | "L" => {
+                let arg_val = arg_slot.map_or(0u32, |slot| env.mem.read(slot.cast().cast_const()));
                 let regs = env.cpu.regs_mut();
-                write_next_arg::<u8>(&mut reg_offset, regs, &mut env.mem, arg_val);
+                write_next_arg::<u32>(&mut reg_offset, regs, &mut env.mem, arg_val);
+            }
+            "q" | "Q" | "d" => {
+                let arg_val = arg_slot.map_or(0u64, |slot| env.mem.read(slot.cast().cast_const()));
+                let regs = env.cpu.regs_mut();
+                write_next_arg::<u64>(&mut reg_offset, regs, &mut env.mem, arg_val);
             }
             "*" => {
-                let arg: ConstPtr<MutPtr<u8>> = arg_slot.cast().cast_const();
-                let arg_val = env.mem.read(arg);
+                let arg_val = arg_slot
+                    .map_or(MutPtr::null(), |slot| env.mem.read(slot.cast().cast_const()));
                 let regs = env.cpu.regs_mut();
                 write_next_arg::<MutPtr<u8>>(&mut reg_offset, regs, &mut env.mem, arg_val);
             }
             // pointer cases
             _ if arg_type.starts_with('^') => {
-                let arg: ConstPtr<MutVoidPtr> = arg_slot.cast().cast_const();
-                let arg_val = env.mem.read(arg);
+                let arg_val = arg_slot
+                    .map_or(MutVoidPtr::null(), |slot| env.mem.read(slot.cast().cast_const()));
                 let regs = env.cpu.regs_mut();
                 write_next_arg::<MutVoidPtr>(&mut reg_offset, regs, &mut env.mem, arg_val);
             }
@@ -299,9 +324,101 @@ pub const CLASSES: ClassExports = objc_classes! {
     let &NSInvocationHostObject { target, selector, .. } = env.objc.borrow::<NSInvocationHostObject>(this);
     objc_msgSend(env, target, selector.unwrap());
 
-    let regs = env.cpu.regs_mut(); // re-borrow
-    regs[Cpu::SP] = old_sp;
-    // TODO: non-void return
+    // Capture the return value before anything else runs and clobbers the
+    // registers. `objc_msgSend` above is a complete synchronous call — a guest
+    // implementation runs to its `bx lr` inside it — so the result is sitting
+    // in the return registers right now and nowhere else.
+    let return_type = env.objc.borrow::<NSInvocationHostObject>(this).return_type.clone();
+    let size = type_encoding_size(&return_type);
+    if size != 0 {
+        // Reuse the buffer across repeat invocations; the size cannot change,
+        // because it comes from the signature this invocation was built with.
+        let buffer = match env.objc.borrow::<NSInvocationHostObject>(this).return_value {
+            Some(buffer) => buffer,
+            None => {
+                let buffer = env.mem.alloc(size);
+                env.objc.borrow_mut::<NSInvocationHostObject>(this).return_value = Some(buffer);
+                buffer
+            }
+        };
+        let regs = env.cpu.regs();
+        match (size, return_type.as_bytes()[0]) {
+            (8, b'd') => env.mem.write(buffer.cast(), <f64 as GuestRet>::from_regs(regs)),
+            (8, _) => env.mem.write(buffer.cast(), <u64 as GuestRet>::from_regs(regs)),
+            (4, b'f') => env.mem.write(buffer.cast(), <f32 as GuestRet>::from_regs(regs)),
+            (4, _) => env.mem.write(buffer.cast(), <u32 as GuestRet>::from_regs(regs)),
+            // A narrow integer is returned in the low bits of r0, widened by
+            // the callee; truncating is how the caller would read it too.
+            (2, _) => env.mem.write(buffer.cast(), <u32 as GuestRet>::from_regs(regs) as u16),
+            (_, _) => env.mem.write(buffer.cast(), <u32 as GuestRet>::from_regs(regs) as u8),
+        }
+
+        // The stack has to go back before the retain below, which is itself a
+        // message send and would otherwise run on the extended frame.
+        env.cpu.regs_mut()[Cpu::SP] = old_sp;
+
+        // -retainArguments covers the return value as well, and this is the
+        // only moment at which there is one to retain.
+        let &NSInvocationHostObject { arguments_retained, .. } =
+            env.objc.borrow::<NSInvocationHostObject>(this);
+        if arguments_retained && return_type.starts_with('@') {
+            let object: id = env.mem.read(buffer.cast().cast_const());
+            retain(env, object);
+            env.objc.borrow_mut::<NSInvocationHostObject>(this).retained_objects.push(object);
+        }
+    } else {
+        env.cpu.regs_mut()[Cpu::SP] = old_sp;
+    }
+}
+
+// Copy the return value out. The caller supplies a buffer of at least
+// -methodReturnLength bytes, as with -getArgument:atIndex:.
+//
+// Reading before invoking, or from a void method, leaves the buffer alone
+// rather than filling it with zeroes: the real runtime returns whatever the
+// uninitialised invocation held, and zeroing would turn "not run yet" into a
+// convincing nil.
+- (())getReturnValue:(MutVoidPtr)buffer {
+    if buffer.is_null() {
+        return;
+    }
+    let &NSInvocationHostObject { ref return_type, return_value, .. } =
+        env.objc.borrow::<NSInvocationHostObject>(this);
+    let size = type_encoding_size(return_type);
+    let Some(source) = return_value else {
+        log!("-[NSInvocation getReturnValue:] before -invoke, leaving the buffer unwritten");
+        return;
+    };
+    let bytes = env.mem.bytes_at(source.cast().cast_const(), size).to_vec();
+    env.mem.bytes_at_mut(buffer.cast(), size).copy_from_slice(&bytes);
+}
+
+// Set the return value directly, which is what a forwarding target does after
+// handling a message itself instead of invoking it.
+- (())setReturnValue:(MutVoidPtr)buffer {
+    if buffer.is_null() {
+        return;
+    }
+    let return_type = env.objc.borrow::<NSInvocationHostObject>(this).return_type.clone();
+    let size = type_encoding_size(&return_type);
+    if size == 0 {
+        return;
+    }
+    let destination = match env.objc.borrow::<NSInvocationHostObject>(this).return_value {
+        Some(destination) => destination,
+        None => {
+            let destination = env.mem.alloc(size);
+            env.objc.borrow_mut::<NSInvocationHostObject>(this).return_value = Some(destination);
+            destination
+        }
+    };
+    let bytes = env.mem.bytes_at(buffer.cast().cast_const(), size).to_vec();
+    env.mem.bytes_at_mut(destination.cast(), size).copy_from_slice(&bytes);
+}
+
+- (NSUInteger)methodReturnLength {
+    let return_type = &env.objc.borrow::<NSInvocationHostObject>(this).return_type;
+    type_encoding_size(return_type)
 }
 
 - (())dealloc {
@@ -327,6 +444,9 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
     for ptr in env.objc.borrow::<NSInvocationHostObject>(this).arguments.iter().flatten() {
         env.mem.free(ptr.cast());
+    }
+    if let Some(return_value) = env.objc.borrow::<NSInvocationHostObject>(this).return_value {
+        env.mem.free(return_value.cast());
     }
     env.objc.dealloc_object(this, &mut env.mem)
 }

@@ -1,0 +1,35 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "greyhoundgames.warlordsapp",
+    "display_name": "Warlords",
+    "version": "3.086"
+  },
+  "recorded": {
+    "date": "2026-08-16",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": { "width": 480, "height": 320, "orientation": "landscape" },
+  "milestone": {
+    "rating": 3,
+    "describes": "A campaign battle is fought and resolved: the territory map, an attack, the battlefield, and the map afterwards with the player's territory expanded."
+  },
+  "defaults": { "press_ms": 150, "settle_ms": 10000 },
+  "steps": [
+    { "id": "boot", "action": "wait", "settle_ms": 26000, "expect": "Main menu over a valley: Play, Instructions, Options, Credits." },
+    { "id": "play", "action": "tap", "at": [55, 168], "expect": "Mode menu: Campaign, Survival, Multiplayer, Back." },
+    { "id": "campaign", "action": "tap", "at": [89, 168], "expect": "Choose Your Race: two warriors, Archery and Halberd ratings, a difficulty and a race with arrows either side." },
+    { "id": "start", "action": "tap", "at": [386, 306], "expect": "Upgrade Army: Money 500, Kills 0, the unit row with Buy Unit and three Empty slots." },
+    { "id": "continue", "action": "tap", "at": [412, 306], "expect": "The campaign map: coloured territories with armies on them and yellow arrows showing where an attack is possible." },
+    { "id": "pick", "action": "tap", "at": [266, 140], "expect": "A panel over the map naming the territory, its difficulty and owner, with Attack and Cancel." },
+    { "id": "attack", "action": "tap", "at": [34, 133], "expect": "The battlefield: spear, sword and archer icons top left, a dial top right, options, and a How To Play overlay." },
+    { "id": "dismiss", "action": "tap", "at": [155, 291], "expect": "Back on the campaign map with the player's territory larger than before and new arrows — the battle has been fought and won." }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 480x320 landscape window. Driving this on a scaled display means measuring from a screen capture rather than converting through ClientToScreen; see the playbook.",
+    "Some text is drawn mirrored — the two buttons on the race screen, parts of the army screen, and the How To Play overlay — while other text on the same screens is correct. It does not stop the route.",
+    "The battle resolves on its own once the overlay is dismissed; no unit control is needed to see the campaign advance."
+  ]
+}

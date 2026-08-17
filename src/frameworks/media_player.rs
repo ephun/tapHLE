@@ -13,6 +13,7 @@ mod media_playlist;
 mod media_query;
 mod movie_player;
 mod music_player;
+mod volume_settings;
 
 pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
     path: "/System/Library/Frameworks/MediaPlayer.framework/MediaPlayer",
@@ -28,7 +29,7 @@ pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
         media_query::CLASSES,
     ],
     constant_exports: &[movie_player::CONSTANTS, music_player::CONSTANTS],
-    function_exports: &[],
+    function_exports: &[volume_settings::FUNCTIONS],
 };
 
 #[derive(Default)]

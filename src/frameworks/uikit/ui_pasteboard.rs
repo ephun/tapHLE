@@ -5,12 +5,45 @@
  */
 //! `UIPasteboard`.
 
+use crate::dyld::{ConstantExports, HostConstant};
 use crate::frameworks::foundation::{ns_string, NSInteger, NSUInteger};
 use crate::objc::{
     id, msg, msg_class, nil, objc_classes, release, retain, ClassExports, HostObject,
 };
 use crate::Environment;
 use std::collections::HashMap;
+
+// The pasteboard notification names and their userInfo keys.
+//
+// tapHLE does not post these yet: the pasteboard only changes when the guest
+// changes it, so an app that also observes the change learns nothing it did not
+// already know. They are exported because an app reads the name to subscribe,
+// and an unbound one is a null pointer it dereferences without checking —
+// which is how an app dies during startup, long before any pasteboard is
+// involved.
+const UIPasteboardChangedNotification: &str = "UIPasteboardChangedNotification";
+const UIPasteboardRemovedNotification: &str = "UIPasteboardRemovedNotification";
+const UIPasteboardChangedTypesAddedKey: &str = "UIPasteboardChangedTypesAddedKey";
+const UIPasteboardChangedTypesRemovedKey: &str = "UIPasteboardChangedTypesRemovedKey";
+
+pub const CONSTANTS: ConstantExports = &[
+    (
+        "_UIPasteboardChangedNotification",
+        HostConstant::NSString(UIPasteboardChangedNotification),
+    ),
+    (
+        "_UIPasteboardRemovedNotification",
+        HostConstant::NSString(UIPasteboardRemovedNotification),
+    ),
+    (
+        "_UIPasteboardChangedTypesAddedKey",
+        HostConstant::NSString(UIPasteboardChangedTypesAddedKey),
+    ),
+    (
+        "_UIPasteboardChangedTypesRemovedKey",
+        HostConstant::NSString(UIPasteboardChangedTypesRemovedKey),
+    ),
+];
 
 #[derive(Default)]
 pub struct State {

@@ -12,7 +12,9 @@
 mod generic_char;
 
 pub mod arpa;
+pub mod assert;
 pub mod clocale;
+pub mod compiler_rt;
 pub mod crypto;
 pub mod ctype;
 pub mod cxxabi;
@@ -46,6 +48,7 @@ pub mod sys;
 pub mod sysctl;
 pub mod time;
 pub mod unistd;
+pub mod unwind;
 pub mod wchar;
 pub mod zlib;
 
@@ -54,6 +57,7 @@ pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
     aliases: &["/usr/lib/libSystem.dylib"],
     class_exports: &[],
     constant_exports: &[
+        clocale::CONSTANTS,
         ctype::CONSTANTS,
         dispatch::CONSTANTS,
         stdio::CONSTANTS,
@@ -62,7 +66,9 @@ pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
     ],
     function_exports: &[
         arpa::inet::FUNCTIONS,
+        assert::FUNCTIONS,
         clocale::FUNCTIONS,
+        compiler_rt::FUNCTIONS,
         ctype::FUNCTIONS,
         cxxabi::FUNCTIONS,
         crypto::FUNCTIONS,
@@ -111,6 +117,7 @@ pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
         stdlib::FUNCTIONS,
         stdlib::qsort::FUNCTIONS,
         string::FUNCTIONS,
+        unwind::FUNCTIONS,
         sys::mman::FUNCTIONS,
         sys::mount::FUNCTIONS,
         sys::ptrace::FUNCTIONS,
@@ -128,6 +135,7 @@ pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
 /// Container for state of various child modules
 #[derive(Default)]
 pub struct State {
+    crypto: crypto::State,
     dirent: dirent::State,
     pub dispatch: dispatch::State,
     keymgr: keymgr::State,
@@ -147,4 +155,5 @@ pub struct State {
     mach_vm: mach::vm_map::State,
     malloc: malloc::State,
     mman: sys::mman::State,
+    unwind: unwind::State,
 }

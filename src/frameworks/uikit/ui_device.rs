@@ -43,10 +43,32 @@ pub struct State {
     current_device: Option<id>,
 }
 
-pub const CONSTANTS: ConstantExports = &[(
-    "_UIDeviceOrientationDidChangeNotification",
-    HostConstant::NSString(UIDeviceOrientationDidChangeNotification),
-)];
+// Battery notifications. tapHLE reads the host battery on demand rather than
+// watching it, so these are never posted; apps still observe them, and
+// observing dereferences the name.
+const UIDeviceBatteryStateDidChangeNotification: &str = "UIDeviceBatteryStateDidChangeNotification";
+const UIDeviceBatteryLevelDidChangeNotification: &str = "UIDeviceBatteryLevelDidChangeNotification";
+const UIDeviceProximityStateDidChangeNotification: &str =
+    "UIDeviceProximityStateDidChangeNotification";
+
+pub const CONSTANTS: ConstantExports = &[
+    (
+        "_UIDeviceOrientationDidChangeNotification",
+        HostConstant::NSString(UIDeviceOrientationDidChangeNotification),
+    ),
+    (
+        "_UIDeviceBatteryStateDidChangeNotification",
+        HostConstant::NSString(UIDeviceBatteryStateDidChangeNotification),
+    ),
+    (
+        "_UIDeviceBatteryLevelDidChangeNotification",
+        HostConstant::NSString(UIDeviceBatteryLevelDidChangeNotification),
+    ),
+    (
+        "_UIDeviceProximityStateDidChangeNotification",
+        HostConstant::NSString(UIDeviceProximityStateDidChangeNotification),
+    ),
+];
 
 pub const CLASSES: ClassExports = objc_classes! {
 
@@ -99,7 +121,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 // NSString
 - (id)systemVersion {
-    ns_string::get_static_str(env, "2.0")
+    ns_string::get_static_str(env, crate::frameworks::SYSTEM_VERSION)
 }
 
 - (id)uniqueIdentifier {

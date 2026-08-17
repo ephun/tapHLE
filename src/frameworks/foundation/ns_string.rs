@@ -10,6 +10,8 @@
 
 mod path_algorithms;
 
+use super::ns_error::NSFileWriteUnknownError;
+use super::ns_file_manager::write_error;
 use super::ns_keyed_archiver::set_value_to_encode_for_current_key;
 use super::{ns_array, ns_keyed_unarchiver};
 use super::{
@@ -97,17 +99,26 @@ enum StringHostObject {
 }
 impl HostObject for StringHostObject {}
 impl StringHostObject {
-    fn decode(bytes: Cow<[u8]>, encoding: NSStringEncoding) -> StringHostObject {
+    /// Decode bytes in `encoding`, or `None` if they are not valid in it.
+    ///
+    /// `None` is not an error condition to report: `initWithData:encoding:` and
+    /// its relatives are documented to return nil when the data cannot be
+    /// converted, and apps do pass data that cannot be — a binary property list
+    /// handed to the UTF-8 path is the case seen most. The caller returns nil
+    /// and the app takes the branch it already has for that.
+    fn decode(bytes: Cow<[u8]>, encoding: NSStringEncoding) -> Option<StringHostObject> {
         if bytes.is_empty() {
-            return StringHostObject::Utf8(Cow::Borrowed(""));
+            return Some(StringHostObject::Utf8(Cow::Borrowed("")));
         }
 
         // TODO: error handling
 
-        match encoding {
+        Some(match encoding {
             NSASCIIStringEncoding => {
-                assert!(bytes.iter().all(|byte| byte.is_ascii()));
-                // Safety: guaranteed by above assertion
+                if !bytes.iter().all(|byte| byte.is_ascii()) {
+                    return None;
+                }
+                // Safety: guaranteed by the check above
                 let string = unsafe { String::from_utf8_unchecked(bytes.into_owned()) };
                 StringHostObject::Utf8(Cow::Owned(string))
             }
@@ -119,7 +130,7 @@ impl StringHostObject {
                 StringHostObject::Utf8(Cow::Owned(string))
             }
             NSUTF8StringEncoding => {
-                let string = String::from_utf8(bytes.into_owned()).unwrap();
+                let string = String::from_utf8(bytes.into_owned()).ok()?;
                 StringHostObject::Utf8(Cow::Owned(string))
             }
             NSWindowsCP1252StringEncoding => {
@@ -154,9 +165,8 @@ impl StringHostObject {
                     },
                     _ => unreachable!(),
                 };
-                // TODO: Should the BOM be stripped? Always/sometimes/never?
 
-                StringHostObject::Utf16(if is_big_endian {
+                let units: Vec<u16> = if is_big_endian {
                     bytes
                         .chunks(2)
                         .map(|chunk| u16::from_be_bytes(chunk.try_into().unwrap()))
@@ -166,10 +176,24 @@ impl StringHostObject {
                         .chunks(2)
                         .map(|chunk| u16::from_le_bytes(chunk.try_into().unwrap()))
                         .collect()
-                })
+                };
+
+                // The mark is consumed, not kept: under
+                // NSUTF16StringEncoding it is how the byte order was just
+                // decided, so leaving it in would put an invisible character
+                // at the front of every file that has one. The
+                // explicitly-ordered encodings are different - nothing was
+                // decided from it there, so it stays as the zero width
+                // no-break space it nominally is.
+                let units = match units.split_first() {
+                    Some((0xFEFF, rest)) if encoding == NSUTF16StringEncoding => rest.to_vec(),
+                    _ => units,
+                };
+
+                StringHostObject::Utf16(units)
             }
             _ => panic!("Unimplemented encoding: {encoding:#x}"),
-        }
+        })
     }
     fn to_utf8(&self) -> Result<Cow<'static, str>, FromUtf16Error> {
         match self {
@@ -312,6 +336,40 @@ fn report_no_error(env: &mut Environment, error: MutPtr<id>) {
     }
 }
 
+/// The deprecated `initWithContentsOfFile:`/`initWithContentsOfURL:` take no
+/// encoding and are documented to determine one themselves. Honour a byte order
+/// mark when there is one, and otherwise assume the default C string encoding,
+/// which is right for the ASCII and UTF-8 text these apps actually ship.
+fn sniff_encoding(env: &mut Environment, bytes: &[u8]) -> NSStringEncoding {
+    if bytes.len() > 1 && (bytes[..2] == [0xFE, 0xFF] || bytes[..2] == [0xFF, 0xFE]) {
+        NSUTF16StringEncoding
+    } else if bytes.len() > 2 && bytes[..3] == [0xEF, 0xBB, 0xBF] {
+        NSUTF8StringEncoding
+    } else {
+        msg_class![env; NSString defaultCStringEncoding]
+    }
+}
+
+/// Body of the deprecated one-argument `initWithContentsOfURL:`, shared by the
+/// concrete string classes. They are siblings under NSString, so neither
+/// inherits the other's implementations and both have to declare it.
+fn init_with_contents_of_url(env: &mut Environment, this: id, url: id) -> id {
+    if url == nil {
+        release(env, this);
+        return nil;
+    }
+    let data: id = msg_class![env; NSData dataWithContentsOfURL:url];
+    if data == nil {
+        release(env, this);
+        return nil;
+    }
+    let bytes: ConstPtr<u8> = msg![env; data bytes];
+    let length: NSUInteger = msg![env; data length];
+    let prefix = env.mem.bytes_at(bytes, length.min(3)).to_vec();
+    let encoding = sniff_encoding(env, &prefix);
+    msg![env; this initWithData:data encoding:encoding]
+}
+
 pub const CLASSES: ClassExports = objc_classes! {
 
 (env, this, _cmd);
@@ -336,8 +394,20 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 + (id)stringWithString:(id)string { // NSString*
-    let new: id = msg![env; this alloc];
-    let new: id = msg![env; new initWithString:string];
+    // Foundation does not build a new string here: for an immutable receiver
+    // it returns the argument itself, and `-copyWithZone:` above already
+    // encodes that rule (retain for an immutable string, a real copy for a
+    // mutable one). Going through it rather than alloc/init keeps the two
+    // consistent.
+    //
+    // The identity matters, not just the allocation. An app that releases the
+    // result without owning it — which several SDKs do to constant strings,
+    // because on Apple's runtime a constant string's release is a no-op — kills
+    // a freshly allocated copy instead and crashes when the pool drains. Tap
+    // Tap Revenge 3's bundled comScore SDK does exactly this.
+    //
+    // NSMutableString overrides this; see below.
+    let new: id = msg![env; string copy];
     autorelease(env, new)
 }
 
@@ -379,6 +449,41 @@ pub const CLASSES: ClassExports = objc_classes! {
     let new: id = msg![env; new initWithContentsOfFile:path
                                               encoding:encoding
                                                  error:error];
+    autorelease(env, new)
+}
+
+// The variant that asks the file what encoding it is in rather than being told.
+// It is the modern replacement for the deprecated one-argument form, so an app
+// that reads a text file it did not write itself usually calls this one.
++ (id)stringWithContentsOfFile:(id)path // NSString*
+                  usedEncoding:(MutPtr<NSStringEncoding>)used_encoding
+                         error:(MutPtr<id>)error { // NSError**
+    if path == nil {
+        report_no_error(env, error);
+        return nil;
+    }
+    let path_string = to_rust_string(env, path).to_string();
+    let Ok(bytes) = env.fs.read(GuestPath::new(&path_string)) else {
+        report_no_error(env, error);
+        return nil;
+    };
+    let encoding = sniff_encoding(env, &bytes);
+    // Written before the string is built, and only on success, which is what
+    // Apple documents: a caller reads this to decide how to write the file back
+    // out again.
+    if !used_encoding.is_null() {
+        env.mem.write(used_encoding, encoding);
+    }
+    let new: id = msg![env; this alloc];
+    let new: id = msg![env; new initWithContentsOfFile:path
+                                              encoding:encoding
+                                                 error:error];
+    autorelease(env, new)
+}
+
++ (id)stringWithContentsOfURL:(id)url { // NSURL*
+    let new: id = msg![env; this alloc];
+    let new: id = msg![env; new initWithContentsOfURL:url];
     autorelease(env, new)
 }
 
@@ -444,6 +549,20 @@ pub const CLASSES: ClassExports = objc_classes! {
 // NSCoding is a property of the NSString class cluster, not only of the
 // immutable concrete class. Archived UITextView content can be an
 // NSMutableString, which must decode through this inherited implementation.
+//
+// Encoding belongs here for the same reason, and for a while did not: it sat on
+// _tapHLE_NSString, whose sibling _tapHLE_NSMutableString inherits nothing from
+// it, so archiving a mutable string died on a missing selector. The Jim and
+// Frank Mysteries hit that saving its state during startup.
+- (())encodeWithCoder:(id)coder {
+    let string = to_rust_string(env, this);
+    assert!(string.as_bytes().iter().all(|byte| byte.is_ascii())); // TODO
+
+    // TODO: use some kind of substitution instead?
+    // See "Making Substitutions During Coding" in the doc https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/Archiving/Articles/codingobjects.html
+    set_value_to_encode_for_current_key(env, coder, plist::Value::String(string.to_string()));
+}
+
 - (id)initWithCoder:(id)coder {
     let class: Class = msg![env; coder class];
     let keyed_unarch_class: Class = msg_class![env; NSKeyedUnarchiver class];
@@ -657,13 +776,26 @@ pub const CLASSES: ClassExports = objc_classes! {
     to_rust_string(env, this).ends_with(&str)
 }
 
+// The two localized comparisons. tapHLE has no locale-aware collation, so each
+// is its unlocalized counterpart, and the difference only shows on text a
+// locale would order differently.
+//
+// Neither asserts that its operands are ASCII any more. They used to, and that
+// turned an ordinary sort of ordinary text into a dead app — non-ASCII is not a
+// programming error, it is a name with an accent in it. Comparing by code unit
+// is the wrong *order* for such text, which is a defect worth fixing when
+// collation exists; ending the app is not a better answer than the wrong order.
+//
+// TODO: use the current locale, and support compatibility equivalence in the
+// Unicode standard. More info: https://www.objc.io/issues/9-strings/unicode/
 - (NSComparisonResult)localizedCompare:(id)other { // NSString*
-    // TODO: use current locale
-    // TODO: support `compatibility equivalence` in the Unicode standard
-    // More info: https://www.objc.io/issues/9-strings/unicode/
-    assert!(to_rust_string(env, this).is_ascii());
-    assert!(to_rust_string(env, other).is_ascii());
+    log_once!("TODO: -[NSString localizedCompare:] ignores the locale");
     msg![env; this compare:other]
+}
+
+- (NSComparisonResult)localizedCaseInsensitiveCompare:(id)other { // NSString*
+    log_once!("TODO: -[NSString localizedCaseInsensitiveCompare:] ignores the locale");
+    msg![env; this caseInsensitiveCompare:other]
 }
 
 - (NSComparisonResult)compare:(id)other { // NSString*
@@ -693,7 +825,16 @@ pub const CLASSES: ClassExports = objc_classes! {
         num
     }
 
-    assert_ne!(other, nil);
+    // Comparing against nil is a programming error Apple answers with an
+    // exception, and tapHLE has nowhere to raise one, so the choice is between
+    // ending the app and giving the comparison a defined answer. A defined
+    // answer is far better: an app that looks up a setting that is not there
+    // and compares the nil it got back is doing something harmless, and killing
+    // it loses everything after that point. Any string sorts after nothing.
+    if other == nil {
+        log!("Warning: -[NSString compare:] with a nil argument; ordering it after nil");
+        return NSOrderedDescending;
+    }
 
     // TODO: support foreign subclasses (perhaps via a helper function that
     // copies the string first)
@@ -930,6 +1071,76 @@ pub const CLASSES: ClassExports = objc_classes! {
     autorelease(env, res)
 }
 
+- (id)stringByReplacingCharactersInRange:(NSRange)range
+                              withString:(id)replacement { // NSString*
+    // 425 of the 1192 distinct apps in the import-demand catalogue send this.
+    // Built from the three substring primitives rather than by splicing UTF-16
+    // directly, so it inherits their code-unit indexing: the range is in UTF-16
+    // code units, which is what the caller's -length and -rangeOfString: gave
+    // it.
+    let length: NSUInteger = msg![env; this length];
+    let end = range.location.checked_add(range.length).unwrap();
+    assert!(end <= length, "range {:?} is outside a string of {}", range, length);
+
+    let before: id = msg![env; this substringToIndex:(range.location)];
+    let after: id = msg![env; this substringFromIndex:end];
+    // A nil replacement is a deletion. Cocoa raises for it, but the range work
+    // is already done and returning the receiver minus the range is closer to
+    // what the caller meant than ending the app.
+    let joined: id = if replacement == nil {
+        log!("Warning: -[NSString stringByReplacingCharactersInRange:withString:nil], deleting the range");
+        msg![env; before stringByAppendingString:after]
+    } else {
+        let with_replacement: id = msg![env; before stringByAppendingString:replacement];
+        msg![env; with_replacement stringByAppendingString:after]
+    };
+    autorelease(env, joined)
+}
+
+- (id)stringByPaddingToLength:(NSUInteger)new_length
+                   withString:(id)pad_string // NSString*
+                  startingAtIndex:(NSUInteger)pad_index {
+    // 487 apps send this. It both pads and truncates: a new length shorter than
+    // the receiver is a truncation, which is how it gets used to fit a string
+    // into a fixed-width field.
+    let length: NSUInteger = msg![env; this length];
+    if new_length <= length {
+        let truncated: id = msg![env; this substringToIndex:new_length];
+        return autorelease(env, truncated);
+    }
+
+    // The pad string is repeated, and `pad_index` says where in it to start -
+    // not where in the receiver. Getting that backwards is the obvious mistake
+    // here, and it is why the parameter is named for the pad.
+    let pad_length: NSUInteger = if pad_string == nil {
+        0
+    } else {
+        msg![env; pad_string length]
+    };
+    assert!(
+        pad_length > 0,
+        "-[NSString stringByPaddingToLength:withString:startingAtIndex:] needs a \
+         non-empty pad string to reach {}",
+        new_length
+    );
+    assert!(pad_index < pad_length);
+
+    let mut padded: Utf16String = Vec::with_capacity(new_length as usize);
+    for_each_code_unit(env, this, |_idx, c| padded.push(c));
+    let mut pad_units: Utf16String = Vec::with_capacity(pad_length as usize);
+    for_each_code_unit(env, pad_string, |_idx, c| pad_units.push(c));
+
+    let mut cursor = pad_index as usize;
+    while (padded.len() as NSUInteger) < new_length {
+        padded.push(pad_units[cursor]);
+        cursor = (cursor + 1) % pad_units.len();
+    }
+
+    let res = msg_class![env; _tapHLE_NSString alloc];
+    *env.objc.borrow_mut(res) = StringHostObject::Utf16(padded);
+    autorelease(env, res)
+}
+
 - (id)stringByTrimmingCharactersInSet:(id)set { // NSCharacterSet*
     let initial_length: NSUInteger = msg![env; this length];
 
@@ -1085,7 +1296,42 @@ pub const CLASSES: ClassExports = objc_classes! {
     autorelease(env, new)
 }
 
+- (id)stringByReplacingPercentEscapesUsingEncoding:(NSStringEncoding)encoding {
+    // The inverse of -stringByAddingPercentEscapesUsingEncoding: above, and by
+    // some distance the most-sent selector no tapHLE class implemented: 653
+    // of the 1192 distinct apps in the import-demand catalogue send it,
+    // because any app reading a value back out of a URL needs it.
+    assert!(encoding == NSASCIIStringEncoding || encoding == NSUTF8StringEncoding); // TODO: other encodings
+    let str = to_rust_string(env, this);
+    match unescape_percent_escapes(&str) {
+        Some(decoded) => {
+            let new = from_rust_string(env, decoded);
+            autorelease(env, new)
+        }
+        None => {
+            // Cocoa returns nil when the escapes do not decode in the requested
+            // encoding, and callers check for it, so this is the specified
+            // answer rather than a failure to handle the input.
+            log_dbg!(
+                "-[NSString stringByReplacingPercentEscapesUsingEncoding:] => nil, \
+                 {:?} does not decode",
+                str
+            );
+            nil
+        }
+    }
+}
+
 - (id)stringByAppendingPathComponent:(id)component { // NSString*
+    // Cocoa raises NSInvalidArgumentException for a nil component. tapHLE
+    // cannot raise into guest code, and aborting the emulator is a far worse
+    // answer than the app's own mistake deserves, so treat nil as "nothing to
+    // append" and return the receiver. Log it, because a nil here usually
+    // means an earlier lookup silently failed and that is the real bug.
+    if component == nil {
+        log!("Warning: -[NSString stringByAppendingPathComponent:nil], returning the receiver unchanged");
+        return this;
+    }
     // TODO: avoid copying
     let base_str = to_rust_string(env, this);
     let component_str = to_rust_string(env, component);
@@ -1096,6 +1342,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (id)stringByAppendingPathExtension:(id)extension { // NSString*
+    // See the note on -stringByAppendingPathComponent:.
+    if extension == nil {
+        log!("Warning: -[NSString stringByAppendingPathExtension:nil], returning the receiver unchanged");
+        return this;
+    }
     // FIXME: handle edge cases like trailing '/' (may differ from Rust!)
     let mut combined = to_rust_string(env, this).into_owned();
     // TODO: avoid copying
@@ -1190,6 +1441,24 @@ pub const CLASSES: ClassExports = objc_classes! {
     let text = to_rust_string(env, this);
     ui_font::size_with_font(env, font, &text, None)
 }
+// The `forWidth:` measurement, whose drawing counterpart
+// -drawAtPoint:forWidth:withFont:lineBreakMode: is already below. UIKit keeps
+// this family on one line and lets the line break mode decide what happens to
+// the text that does not fit, where the `constrainedToSize:` family wraps into
+// a box. Both reach the same width-and-mode calculation here, which is exactly
+// what the drawing counterpart does — so a string measured this way and then
+// drawn that way agrees with itself, which is the property a caller is relying
+// on when it uses the two together.
+- (CGSize)sizeWithFont:(id)font // UIFont*
+              forWidth:(CGFloat)width
+         lineBreakMode:(UILineBreakMode)line_break_mode {
+    // TODO: avoid copy
+    let text = to_rust_string(env, this);
+    // Only the width is consulted; the height stands for "as tall as it needs
+    // to be", which is what a single line asks for.
+    let size = CGSize { width, height: CGFloat::INFINITY };
+    ui_font::size_with_font(env, font, &text, Some((size, line_break_mode)))
+}
 - (CGSize)sizeWithFont:(id)font // UIFont*
      constrainedToSize:(CGSize)size {
     msg![env; this sizeWithFont:font
@@ -1267,8 +1536,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     // TODO: write extended attributes about text encoding
     let success: bool = msg![env; data writeToFile:path atomically:use_aux_file];
-    if !success && !error.is_null() {
-        todo!(); // TODO: create an NSError if requested
+    if !success {
+        // Writing into a directory that does not exist is the ordinary way this
+        // fails, and an app that asked for an NSError** wants to be told so
+        // rather than have the emulator stop.
+        write_error(env, error, NSFileWriteUnknownError);
     }
     success
 }
@@ -1326,6 +1598,13 @@ pub const CLASSES: ClassExports = objc_classes! {
     // Unimplemented: call superclass alloc then.
     assert!(this == env.objc.get_known_class("NSMutableString", &mut env.mem));
     msg_class![env; _tapHLE_NSMutableString allocWithZone:zone]
+}
+
+// NSString's version returns the argument itself when it can, which would hand
+// back an immutable string to a caller that asked NSMutableString for one.
++ (id)stringWithString:(id)string { // NSString*
+    let new: id = msg![env; string mutableCopy];
+    autorelease(env, new)
 }
 
 + (id)stringWithCapacity:(NSUInteger)capacity {
@@ -1437,15 +1716,6 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 // TODO: more init methods
 
-- (())encodeWithCoder:(id)coder {
-    let string = to_rust_string(env, this);
-    assert!(string.as_bytes().iter().all(|byte| byte.is_ascii())); // TODO
-
-    // TODO: use some kind of substitution instead?
-    // See "Making Substitutions During Coding" in the doc https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/Archiving/Articles/codingobjects.html
-    set_value_to_encode_for_current_key(env, coder, plist::Value::String(string.to_string()));
-}
-
 - (id)initWithData:(id)data // NSData *
           encoding:(NSStringEncoding)encoding {
     if data == nil {
@@ -1473,9 +1743,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (id)initWithBytes:(ConstPtr<u8>)bytes
              length:(NSUInteger)len
            encoding:(NSStringEncoding)encoding {
-    // TODO: error handling
     let slice = env.mem.bytes_at(bytes, len);
-    let host_object = StringHostObject::decode(Cow::Borrowed(slice), encoding);
+    let Some(host_object) = StringHostObject::decode(Cow::Borrowed(slice), encoding) else {
+        release(env, this);
+        return nil;
+    };
 
     *env.objc.borrow_mut(this) = host_object;
 
@@ -1531,7 +1803,10 @@ pub const CLASSES: ClassExports = objc_classes! {
         msg_class![env; NSString defaultCStringEncoding]
     };
 
-    let host_object = StringHostObject::decode(Cow::Owned(bytes), encoding);
+    let Some(host_object) = StringHostObject::decode(Cow::Owned(bytes), encoding) else {
+        release(env, this);
+        return nil;
+    };
     *env.objc.borrow_mut(this) = host_object;
     this
 }
@@ -1555,10 +1830,17 @@ pub const CLASSES: ClassExports = objc_classes! {
         return nil;
     };
 
-    // TODO: error handling for encoding
-    let host_object = StringHostObject::decode(Cow::Owned(bytes), encoding);
+    let Some(host_object) = StringHostObject::decode(Cow::Owned(bytes), encoding) else {
+        report_no_error(env, error);
+        release(env, this);
+        return nil;
+    };
     *env.objc.borrow_mut(this) = host_object;
     this
+}
+
+- (id)initWithContentsOfURL:(id)url { // NSURL*
+    init_with_contents_of_url(env, this, url)
 }
 
 - (id)initWithContentsOfURL:(id)url // NSURL*
@@ -1717,12 +1999,79 @@ pub const CLASSES: ClassExports = objc_classes! {
     msg![env; this init]
 }
 
+// Reading a string from a file. Present on _tapHLE_NSString and needed here
+// too: the two concrete classes are siblings under NSString, so neither
+// inherits the other's implementations. This has now caught four separate
+// methods; when adding anything NSString declares, add it to both.
+- (id)initWithContentsOfFile:(id)path { // NSString*
+    if path == nil {
+        return nil;
+    }
+    let path = to_rust_string(env, path);
+    let Ok(bytes) = env.fs.read(GuestPath::new(&path)) else {
+        return nil;
+    };
+    let encoding = msg_class![env; NSString defaultCStringEncoding];
+    let Some(host_object) = StringHostObject::decode(Cow::Owned(bytes), encoding) else {
+        release(env, this);
+        return nil;
+    };
+    *env.objc.borrow_mut(this) = host_object;
+    this
+}
+
+- (id)initWithContentsOfURL:(id)url { // NSURL*
+    init_with_contents_of_url(env, this, url)
+}
+
+- (id)initWithContentsOfURL:(id)url // NSURL*
+                    encoding:(NSStringEncoding)encoding
+                       error:(MutPtr<id>)error { // NSError**
+    if url == nil {
+        report_no_error(env, error);
+        release(env, this);
+        return nil;
+    }
+    let data: id = msg_class![env; NSData dataWithContentsOfURL:url];
+    if data == nil {
+        report_no_error(env, error);
+        release(env, this);
+        return nil;
+    }
+    msg![env; this initWithData:data encoding:encoding]
+}
+
+- (id)initWithContentsOfFile:(id)path // NSString*
+                    encoding:(NSStringEncoding)encoding
+                       error:(MutPtr<id>)error { // NSError**
+    if path == nil {
+        report_no_error(env, error);
+        release(env, this);
+        return nil;
+    }
+    let path = to_rust_string(env, path);
+    let Ok(bytes) = env.fs.read(GuestPath::new(&path)) else {
+        report_no_error(env, error);
+        release(env, this);
+        return nil;
+    };
+    let Some(host_object) = StringHostObject::decode(Cow::Owned(bytes), encoding) else {
+        report_no_error(env, error);
+        release(env, this);
+        return nil;
+    };
+    *env.objc.borrow_mut(this) = host_object;
+    this
+}
+
 - (id)initWithBytes:(ConstPtr<u8>)bytes
              length:(NSUInteger)len
            encoding:(NSStringEncoding)encoding {
-    // TODO: error handling
     let slice = env.mem.bytes_at(bytes, len);
-    let host_object = StringHostObject::decode(Cow::Borrowed(slice), encoding);
+    let Some(host_object) = StringHostObject::decode(Cow::Borrowed(slice), encoding) else {
+        release(env, this);
+        return nil;
+    };
 
     *env.objc.borrow_mut(this) = host_object;
 
@@ -2263,4 +2612,89 @@ fn string_by_replacing_occurrences_inner(
     let result_ns_string = msg_class![env; _tapHLE_NSString alloc];
     *env.objc.borrow_mut(result_ns_string) = StringHostObject::Utf16(result);
     (autorelease(env, result_ns_string), replacements)
+}
+
+/// Decode `%XX` escapes, or [None] if the result is not valid text.
+///
+/// Two behaviours here are not guesses and both matter:
+///
+/// A `%` that is not followed by two hexadecimal digits is passed through
+/// literally rather than treated as an error. Strings containing a bare percent
+/// sign are common - "100% complete" - and Cocoa returns them unchanged.
+///
+/// A `+` is left alone. Converting it to a space is form encoding, a different
+/// specification, and doing it here would corrupt every base64 payload that
+/// travels through a URL.
+///
+/// [None] is returned when the decoded bytes are not valid UTF-8, which is what
+/// makes the Objective-C method return nil. That is a real answer callers test
+/// for, not a shortcut.
+pub fn unescape_percent_escapes(escaped: &str) -> Option<String> {
+    let bytes = escaped.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let high = (bytes[i + 1] as char).to_digit(16);
+            let low = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(high), Some(low)) = (high, low) {
+                decoded.push((high * 16 + low) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(decoded).ok()
+}
+
+#[cfg(test)]
+mod percent_escape_tests {
+    use super::unescape_percent_escapes;
+
+    #[test]
+    fn escapes_decode_to_their_bytes() {
+        assert_eq!(
+            unescape_percent_escapes("a%20b%2Fc").as_deref(),
+            Some("a b/c")
+        );
+        // Lower-case hex digits are as valid as upper-case ones.
+        assert_eq!(unescape_percent_escapes("%2f").as_deref(), Some("/"));
+    }
+
+    #[test]
+    fn multibyte_sequences_reassemble() {
+        assert_eq!(
+            unescape_percent_escapes("%C3%A9").as_deref(),
+            Some("\u{e9}")
+        );
+    }
+
+    #[test]
+    fn a_bare_percent_sign_survives() {
+        // "100% complete" is the case this protects: Cocoa passes a percent
+        // that is not followed by two hex digits through unchanged.
+        assert_eq!(
+            unescape_percent_escapes("100% complete").as_deref(),
+            Some("100% complete")
+        );
+        assert_eq!(unescape_percent_escapes("%").as_deref(), Some("%"));
+        assert_eq!(unescape_percent_escapes("%2").as_deref(), Some("%2"));
+        assert_eq!(unescape_percent_escapes("%zz").as_deref(), Some("%zz"));
+    }
+
+    #[test]
+    fn a_plus_is_not_a_space() {
+        // Converting it would be form encoding, and would corrupt base64.
+        assert_eq!(unescape_percent_escapes("a+b").as_deref(), Some("a+b"));
+    }
+
+    #[test]
+    fn undecodable_bytes_give_nothing() {
+        // A lone continuation byte is not valid UTF-8, and the Objective-C
+        // method returns nil for it.
+        assert_eq!(unescape_percent_escapes("%80"), None);
+        assert_eq!(unescape_percent_escapes("%C3"), None);
+    }
 }

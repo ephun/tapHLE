@@ -11,7 +11,7 @@ use crate::libc::mach::init::MACH_TASK_SELF;
 use crate::libc::mach::port::mach_port_t;
 use crate::libc::mach::thread_info::{kern_return_t, thread_state_flavor_t, KERN_SUCCESS};
 use crate::libc::mach::vm_map::vm_allocate;
-use crate::mem::{guest_size_of, GuestUSize, MutPtr};
+use crate::mem::{guest_size_of, GuestUSize, MutPtr, MutVoidPtr};
 use crate::Environment;
 
 pub type task_t = mach_port_t;
@@ -92,7 +92,38 @@ fn task_set_exception_ports(
     KERN_SUCCESS
 }
 
+/// `task_swap_exception_ports` — install exception handlers and hand back the
+/// ones they replaced.
+///
+/// Crash reporters call this at startup to take over Mach exception handling.
+/// tapHLE has no Mach exception delivery to take over, so nothing is installed;
+/// the important part is the *out* half of the contract. A caller that gets an
+/// uninitialised count reads that many garbage port names out of the arrays and
+/// then tries to use them, so reporting zero previous handlers is what makes
+/// this safe rather than merely quiet.
+#[allow(clippy::too_many_arguments)]
+fn task_swap_exception_ports(
+    env: &mut Environment,
+    _task: task_t,
+    _exception_mask: exception_mask_t,
+    _new_port: mach_port_t,
+    _behavior: i32,
+    _new_flavor: i32,
+    _masks: MutVoidPtr,
+    masks_count: MutPtr<mach_msg_type_number_t>,
+    _old_handlers: MutVoidPtr,
+    _old_behaviors: MutVoidPtr,
+    _old_flavors: MutVoidPtr,
+) -> kern_return_t {
+    log_once!("TODO: task_swap_exception_ports() reports no previous handlers");
+    if !masks_count.is_null() {
+        env.mem.write(masks_count, 0);
+    }
+    KERN_SUCCESS
+}
+
 pub const FUNCTIONS: FunctionExports = &[
+    export_c_func!(task_swap_exception_ports(_, _, _, _, _, _, _, _, _, _)),
     export_c_func!(task_threads(_, _, _)),
     export_c_func!(task_set_exception_ports(_, _, _, _, _)),
 ];

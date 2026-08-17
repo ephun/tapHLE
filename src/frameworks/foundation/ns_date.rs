@@ -158,6 +158,28 @@ pub const CLASSES: ClassExports = objc_classes! {
     () = msg![env; coder encodeDouble:time_interval forKey:key];
 }
 
+// Which of two dates comes first, and last. A nil argument is answered with the
+// receiver: Foundation treats "no other date" as nothing to be earlier or later
+// than, and an app comparing against a date it has not set yet takes exactly
+// that path.
+- (id)earlierDate:(id)other { // NSDate*
+    if other == nil {
+        return this;
+    }
+    let mine = env.objc.borrow::<NSDateHostObject>(this).time_interval;
+    let theirs = env.objc.borrow::<NSDateHostObject>(other).time_interval;
+    if theirs < mine { other } else { this }
+}
+
+- (id)laterDate:(id)other { // NSDate*
+    if other == nil {
+        return this;
+    }
+    let mine = env.objc.borrow::<NSDateHostObject>(this).time_interval;
+    let theirs = env.objc.borrow::<NSDateHostObject>(other).time_interval;
+    if theirs > mine { other } else { this }
+}
+
 - (NSTimeInterval)timeIntervalSinceDate:(id)anotherDate {
     assert!(!anotherDate.is_null());
     let host_object = env.objc.borrow::<NSDateHostObject>(this);

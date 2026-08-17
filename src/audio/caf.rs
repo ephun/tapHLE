@@ -75,8 +75,8 @@ pub fn decode_signed_8_bit_lpcm(bytes: &[u8]) -> Result<SymphoniaDecodedToPcm, (
                     return Err(());
                 }
                 // The edit count is metadata describing the data history. It
-                // may be nonzero in otherwise ordinary PCM CAF assets (Percy
-                // uses one), and does not change the sample payload layout.
+                // may be nonzero in otherwise ordinary PCM CAF assets, and
+                // does not change the sample payload layout.
                 let (_edit_count, samples) = chunk.split_at(4);
                 audio_data = Some(samples);
             }

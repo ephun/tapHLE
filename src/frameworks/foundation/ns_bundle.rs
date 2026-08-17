@@ -11,8 +11,9 @@ use crate::frameworks::core_foundation::cf_bundle::{
     CFBundleCopyBundleLocalizations, CFBundleCopyPreferredLocalizationsFromArray,
 };
 use crate::frameworks::foundation::ns_string::{
-    from_rust_string, to_rust_string, NSUTF8StringEncoding,
+    from_rust_string, to_rust_string, NSUTF16StringEncoding, NSUTF8StringEncoding,
 };
+use crate::fs::GuestPath;
 use crate::mem::{ConstVoidPtr, MutPtr, Ptr};
 use crate::objc::{
     autorelease, id, msg, msg_class, nil, objc_classes, release, retain, Class, ClassExports,
@@ -41,7 +42,10 @@ const LANG_ID_TO_LANG_PROJ: &[(&str, &[&str])] = &[
 #[derive(Default)]
 pub struct State {
     main_bundle: Option<id>,
-    localization_tables: HashMap<id, id>, // NSString* to NSDictionary*
+    /// (NSBundle*, NSString* table name) to NSDictionary*. The bundle is part
+    /// of the key because two bundles may each carry a `Localizable.strings`
+    /// and they are different tables.
+    localization_tables: HashMap<(id, id), id>,
 }
 
 pub struct NSBundleHostObject {
@@ -64,6 +68,21 @@ pub const CLASSES: ClassExports = objc_classes! {
 (env, this, _cmd);
 
 @implementation NSBundle: NSObject
+
++ (id)allocWithZone:(NSZonePtr)_zone {
+    // NSBundle's own allocation, for the alloc/init route below. Without this,
+    // +alloc falls through to NSObject and produces an object with no
+    // NSBundleHostObject behind it, which -initWithPath: would then panic on.
+    let host_object = NSBundleHostObject {
+        bundle: None,
+        bundle_path: nil,
+        bundle_identifier: nil,
+        bundle_url: None,
+        info_dictionary: None,
+    };
+    env.objc.alloc_object(this, Box::new(host_object), &mut env.mem)
+}
+
 
 // Every class a guest app can name lives either in its own executable or in a
 // framework tapHLE implements on the host; in both cases the bundle the app can
@@ -415,9 +434,11 @@ pub const CLASSES: ClassExports = objc_classes! {
     } else {
         table_name
     };
-    // TODO: support arbitrary bundles, not only main one
-    assert_eq!(this, env.framework_state.foundation.ns_bundle.main_bundle.unwrap());
-    let dict = if let Some(&table_dict) = env.framework_state.foundation.ns_bundle.localization_tables.get(&name) {
+    // The lookup below goes through URLForResource:withExtension:, which is
+    // already per-bundle, so the bundle only has to appear in the cache key.
+    // A framework or plug-in bundle asking for its own strings is ordinary.
+    let cache_key = (this, name);
+    let dict = if let Some(&table_dict) = env.framework_state.foundation.ns_bundle.localization_tables.get(&cache_key) {
         table_dict
     } else {
         let extension = ns_string::get_static_str(env, "strings");
@@ -425,7 +446,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         if dict_url == nil {
             log!("Warning: Unable to locate localization table named '{}', caching as nil", to_rust_string(env, name));
             retain(env, name);
-            env.framework_state.foundation.ns_bundle.localization_tables.insert(name, nil);
+            env.framework_state.foundation.ns_bundle.localization_tables.insert(cache_key, nil);
             nil
         } else {
             let dict = {
@@ -440,7 +461,7 @@ pub const CLASSES: ClassExports = objc_classes! {
             };
             retain(env, name);
             retain(env, dict);
-            env.framework_state.foundation.ns_bundle.localization_tables.insert(name, dict);
+            env.framework_state.foundation.ns_bundle.localization_tables.insert(cache_key, dict);
             dict
         }
     };
@@ -490,6 +511,34 @@ pub const CLASSES: ClassExports = objc_classes! {
     let preferred_localizations = CFBundleCopyPreferredLocalizationsFromArray(env, loc_array);
     autorelease(env, preferred_localizations)
 }
+
+// The alloc/init route to the same thing +bundleWithPath: produces.
+//
+// Returns nil when the path does not exist, which Apple documents and which
+// callers do check — it is how an app asks "is there a bundle here?". The
+// identifier and Info.plist are left unread, as +bundleWithPath: leaves them:
+// they are loaded lazily from the path when something asks.
+- (id)initWithPath:(id)path { // NSString*
+    if path == nil {
+        return nil;
+    }
+    let path_str = ns_string::to_rust_string(env, path).to_string();
+    if !env.fs.exists(GuestPath::new(&path_str)) {
+        log_dbg!("[NSBundle initWithPath:{:?}] no such path, returning nil", path_str);
+        return nil;
+    }
+
+    retain(env, path);
+    let host_object = env.objc.borrow_mut::<NSBundleHostObject>(this);
+    let old_path = std::mem::replace(&mut host_object.bundle_path, path);
+    let old_identifier = std::mem::replace(&mut host_object.bundle_identifier, nil);
+    host_object.bundle_url = None;
+    host_object.info_dictionary = None;
+    release(env, old_path);
+    release(env, old_identifier);
+    this
+}
+
 
 // TODO: constructors, more accessors
 
@@ -592,9 +641,18 @@ fn load_strings_as_standard_format(env: &mut Environment, dict_url: id) -> id {
     assert!(length > 2);
     let bytes: ConstVoidPtr = msg![env; data bytes];
     let maybe_bom = env.mem.bytes_at(bytes.cast(), 2);
-    assert!(maybe_bom[0..2] != [0xFE, 0xFF] && maybe_bom[0..2] != [0xFF, 0xFE]); // TODO: UTF-16 cases
+    // A .strings file is UTF-16 as often as it is UTF-8 - that is what Xcode
+    // writes when the file is edited as a property list - and the byte order
+    // mark is how the two are told apart. NSUTF16StringEncoding reads the mark
+    // itself, so the whole difference is which constant is handed over here.
+    let is_utf16 = maybe_bom[0..2] == [0xFE, 0xFF] || maybe_bom[0..2] == [0xFF, 0xFE];
+    let encoding = if is_utf16 {
+        NSUTF16StringEncoding
+    } else {
+        NSUTF8StringEncoding
+    };
     let strings_str = msg_class![env; NSString alloc];
-    let strings_str: id = msg![env; strings_str initWithData:data encoding:NSUTF8StringEncoding];
+    let strings_str: id = msg![env; strings_str initWithData:data encoding:encoding];
     assert!(strings_str != nil); // TODO
 
     let comment_start = ns_string::get_static_str(env, "/*");
@@ -653,18 +711,35 @@ fn scan_quoted_sanitized(env: &mut Environment, scanner: id) -> id {
     retain(env, orig_skip_set);
 
     let has_open_quote: bool = msg![env; scanner scanString:quote intoString:null_ptr];
-    assert!(has_open_quote);
-    // Should not skip chars at the beginning!
-    () = msg![env; scanner setCharactersToBeSkipped:nil];
-    let _: bool = msg![env; scanner scanUpToString:quote intoString:res_ptr];
-    () = msg![env; scanner setCharactersToBeSkipped:orig_skip_set];
-    release(env, orig_skip_set);
-    let has_end_quote: bool = msg![env; scanner scanString:quote intoString:null_ptr];
-    assert!(has_end_quote);
+    if has_open_quote {
+        // Should not skip chars at the beginning!
+        () = msg![env; scanner setCharactersToBeSkipped:nil];
+        let _: bool = msg![env; scanner scanUpToString:quote intoString:res_ptr];
+        () = msg![env; scanner setCharactersToBeSkipped:orig_skip_set];
+        release(env, orig_skip_set);
+        let has_end_quote: bool = msg![env; scanner scanString:quote intoString:null_ptr];
+        assert!(has_end_quote);
+    } else {
+        // The quotes around a key are optional in the standard format; a key
+        // with no spaces in it is often written bare. It runs until whitespace
+        // or the equals sign that follows it.
+        let delimiters = ns_string::get_static_str(env, " \t\r\n=;");
+        let delimiter_set: id =
+            msg_class![env; NSCharacterSet characterSetWithCharactersInString:delimiters];
+        () = msg![env; scanner setCharactersToBeSkipped:orig_skip_set];
+        release(env, orig_skip_set);
+        let _: bool = msg![env; scanner scanUpToCharactersFromSet:delimiter_set intoString:res_ptr];
+    }
 
     let res = env.mem.read(res_ptr);
     env.mem.free(res_ptr.cast());
-    assert!(res != nil); // TODO
+    // An empty quoted string scans nothing, and "" is a legal key and a legal
+    // value. Report it as the empty string it is.
+    let res = if res == nil {
+        ns_string::get_static_str(env, "")
+    } else {
+        res
+    };
 
     // TODO: implement generic parsing approach for unquoting
     let quoted_newline: id = ns_string::get_static_str(env, "\\n");

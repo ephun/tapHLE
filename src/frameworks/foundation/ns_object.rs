@@ -17,15 +17,16 @@
 
 use super::ns_string::{from_rust_string, to_rust_string};
 use super::{ns_dictionary, NSTimeInterval, NSUInteger};
+use crate::dyld::{export_c_func, ConstantExports, FunctionExports, HostConstant};
 use crate::frameworks::foundation::ns_run_loop::{
     add_perform_request, cancel_all_perform_requests_for_target, cancel_perform_requests,
 };
 use crate::frameworks::foundation::ns_thread::detach_new_thread_inner;
 use crate::libc::semaphore::{host_destroy_semaphore, sem_wait};
-use crate::mem::{ConstVoidPtr, MutVoidPtr};
+use crate::mem::{ConstPtr, ConstVoidPtr, MutVoidPtr, Ptr};
 use crate::objc::{
     autorelease, id, msg, msg_class, msg_send, msg_send_no_type_checking, nil, objc_classes,
-    retain, Class, ClassExports, NSZonePtr, ObjC, TrivialHostObject, IMP, SEL,
+    release, retain, Class, ClassExports, NSZonePtr, ObjC, TrivialHostObject, IMP, SEL,
 };
 use crate::Environment;
 
@@ -56,6 +57,23 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 + (bool)isSubclassOfClass:(Class)class {
     env.objc.class_is_subclass_of(this, class)
+}
+
+// Copying a *class* answers the class itself. A class object is a singleton,
+// so there is nothing to duplicate, and Foundation declares these on NSObject
+// for exactly that reason — note that the instance-side `copyWithZone:` is
+// deliberately not here, because NSObject does not adopt NSCopying and a class
+// that wants to be copied says so itself.
+//
+// This is not a curiosity: code that keeps classes in a collection gets them
+// copied by the collection, and without these the send reached the metaclass,
+// found nothing, and ended the app. That is what happens to a game storing
+// component classes in a dictionary.
++ (id)copyWithZone:(NSZonePtr)_zone {
+    this
+}
++ (id)mutableCopyWithZone:(NSZonePtr)_zone {
+    this
 }
 
 // See the instance method section for the normal versions of these.
@@ -159,6 +177,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     this
 }
 
+
 - (NSUInteger)retainCount {
     env.objc.get_refcount(this).into()
 }
@@ -235,9 +254,10 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     // When the value is a boxed scalar (NSNumber/NSValue) but the target
     // accessor takes a plain scalar (e.g. -[... setVolume:(double)]), KVC
-    // unwraps the box and passes the scalar by value. `kvc_set_unwrapped_scalar`
-    // consults the setter's type encoding and handles that; an object-typed
-    // setter falls through to receive the boxed value unchanged.
+    // unwraps the box and passes the scalar by value.
+    // `kvc_set_unwrapped_scalar` consults the setter's type encoding and
+    // handles that; an object-typed setter falls through to receive the boxed
+    // value unchanged.
     let value_is_boxed_scalar = if value == nil {
         false
     } else {
@@ -258,6 +278,15 @@ pub const CLASSES: ClassExports = objc_classes! {
                 .lookup_selector(&format!("_set{camel_case_key_string}:"))
                 .filter(|&sel| env.objc.class_has_method(class, sel))
         });
+    if crate::log::debug_enabled_for(module_path!()) {
+        let cls: Class = msg![env; this class];
+        let cls_name = env.objc.get_class_name(cls).to_string();
+        let found: String = match setter {
+            Some(sel) => sel.as_str(&env.mem).to_string(),
+            None => "<none — falling back to ivar>".to_string(),
+        };
+        log_dbg!("KVC set '{}' on {} -> {}", key_string, cls_name, found);
+    }
     if let Some(sel) = setter {
         // nil only means something to an object-typed setter. For any other
         // type there is no value to write, so Apple's documented behaviour is
@@ -364,6 +393,69 @@ pub const CLASSES: ClassExports = objc_classes! {
     msg_send(env, (this, sel, key))
 }
 
+// A key path is a dot-separated chain of keys, and Apple resolves it by
+// applying `valueForKey:` to one component at a time, so a class that
+// customises that accessor (or `valueForUndefinedKey:`) is honoured at every
+// step rather than only at the end.
+//
+// A nil part-way along ends the walk and the whole path is nil. That is not a
+// special case bolted on: messaging nil answers nil, so the remaining
+// components would be looked up on nothing anyway, and stopping says the same
+// thing without pretending to search.
+- (id)valueForKeyPath:(id)keyPath { // NSString*
+    let path_string = to_rust_string(env, keyPath);
+
+    // TODO: the collection operators — `@count`, and the `@sum`/`@avg`/`@max`/
+    // `@min`/`@unionOfObjects`/`@distinctUnionOfObjects` forms that take a
+    // right-hand key path. They are a different algorithm, applied to the
+    // collection reached so far rather than to an object's accessors, and
+    // nothing observed so far uses one. A path containing one reaches
+    // `valueForUndefinedKey:`, whose message names the offending component.
+
+    // The single-component case is exactly `valueForKey:`, and it is the
+    // common one. Answering it without splitting also passes the caller's own
+    // string straight through, so a class keyed on string identity sees it.
+    if !path_string.contains('.') {
+        return msg![env; this valueForKey:keyPath];
+    }
+
+    let components: Vec<String> = path_string.split('.').map(str::to_string).collect();
+    let mut value = this;
+    for component in components {
+        if value == nil {
+            break;
+        }
+        let key = from_rust_string(env, component);
+        value = msg![env; value valueForKey:key];
+        release(env, key);
+    }
+    value
+}
+
+// The write direction: everything but the final component locates the object
+// to write to, and that component is then an ordinary `setValue:forKey:` on
+// it — which is what makes a subclass's setter, and its
+// `setValue:forUndefinedKey:` fallback, apply here too.
+- (())setValue:(id)value
+    forKeyPath:(id)keyPath { // NSString*
+    let path_string = to_rust_string(env, keyPath);
+
+    let Some((prefix, last)) = path_string.rsplit_once('.') else {
+        () = msg![env; this setValue:value forKey:keyPath];
+        return;
+    };
+
+    let prefix_path = from_rust_string(env, prefix.to_string());
+    let target: id = msg![env; this valueForKeyPath:prefix_path];
+    release(env, prefix_path);
+
+    // A nil target discards the write, because messaging nil does nothing.
+    // Foundation behaves the same way, so this is not an error to report.
+    let last_key = from_rust_string(env, last.to_string());
+    () = msg![env; target setValue:value forKey:last_key];
+    release(env, last_key);
+}
+
 // Apple's KVC implementation obtains each requested value through
 // `valueForKey:` and represents nil values with the NSNull singleton.
 // See https://developer.apple.com/documentation/objectivec/nsobject-swift.class/dictionarywithvalues%28forkeys%3A%29.
@@ -383,16 +475,54 @@ pub const CLASSES: ClassExports = objc_classes! {
     autorelease(env, dictionary)
 }
 
+// The write direction of `dictionaryWithValuesForKeys:`, and Apple implements
+// it the same way round: every pair goes through `setValue:forKey:`, so a class
+// that overrides that accessor sees these too.
+//
+// `NSNull` is how a property list or dictionary spells "no value", and it is
+// translated back to nil here rather than being assigned as an object — that
+// asymmetry is deliberate and matches the read direction above.
+- (())setValuesForKeysWithDictionary:(id)dictionary { // NSDictionary*
+    let keys: id = msg![env; dictionary allKeys];
+    let count: NSUInteger = msg![env; keys count];
+    let null: id = msg_class![env; NSNull null];
+
+    for index in 0..count {
+        let key: id = msg![env; keys objectAtIndex:index];
+        let value: id = msg![env; dictionary objectForKey:key];
+        let value = if value == null { nil } else { value };
+        () = msg![env; this setValue:value forKey:key];
+    }
+}
+
 - (id)valueForUndefinedKey:(id)key { // NSString*
-    // TODO: Raise NSUnknownKeyException
+    // The read half of the same story as `setValue:forUndefinedKey:` below,
+    // and it ends the same way. Foundation raises NSUnknownKeyException, which
+    // an app can catch and routinely does — asking for a key that may not be
+    // there is how optional configuration is read. tapHLE cannot raise, and
+    // aborting turned a survivable miss into a dead app: all four versions of
+    // Spaceteam stop here during start-up.
+    //
+    // nil is what the caller of a caught exception ends up with anyway, and it
+    // is the answer the two halves of KVC now agree on.
     let class: Class = ObjC::read_isa(this, &env.mem);
-    let class_name_string = env.objc.get_class_name(class).to_owned(); // TODO: Avoid copying
+    let class_name_string = env.objc.get_class_name(class).to_owned();
     let key_string = to_rust_string(env, key);
-    panic!("Object {:?} of class {:?} ({:?}) does not have a getter for {} ({:?})\
-        \nAvailable selectors: {}\nAvailable ivars: {}",
-        this, class_name_string, class, key_string, key,
+    log!(
+        "Warning: {:?} of class {:?} has no getter or ivar for the key {:?}, which Foundation would raise NSUnknownKeyException for; returning nil",
+        this, class_name_string, key_string
+    );
+    // What the class *does* have is the useful half of the old panic, and it is
+    // what tells you whether the key is misspelled here or genuinely absent.
+    // It is far too long for a warning that can repeat, so it is kept behind
+    // the module's debug logging.
+    log_dbg!(
+        "{:?} available selectors: {}\navailable ivars: {}",
+        this,
         env.objc.debug_all_class_selectors_as_strings(&env.mem, class).join(", "),
-        env.objc.debug_all_class_ivars_as_strings(class).join(", "));
+        env.objc.debug_all_class_ivars_as_strings(class).join(", ")
+    );
+    nil
 }
 
 - (())setNilValueForKey:(id)key { // NSString*
@@ -407,15 +537,18 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())setValue:(id)_value
 forUndefinedKey:(id)key { // NSString*
-    // TODO: Raise NSUnknownKeyException
+    // Foundation raises NSUnknownKeyException, which an app can catch and
+    // routinely does: setting an unknown key is how nib loading tolerates an
+    // outlet the class no longer declares. tapHLE cannot raise, and aborting
+    // turned that survivable mismatch into a dead app. Log what was missing —
+    // that is the useful half of the exception — and carry on.
     let class: Class = ObjC::read_isa(this, &env.mem);
-    let class_name_string = env.objc.get_class_name(class).to_owned(); // TODO: Avoid copying
+    let class_name_string = env.objc.get_class_name(class).to_owned();
     let key_string = to_rust_string(env, key);
-    panic!("Object {:?} of class {:?} ({:?}) does not have a setter for {} ({:?})\
-        \nAvailable selectors: {}\nAvailable ivars: {}",
-        this, class_name_string, class, key_string, key,
-        env.objc.debug_all_class_selectors_as_strings(&env.mem, class).join(", "),
-        env.objc.debug_all_class_ivars_as_strings(class).join(", "));
+    log!(
+        "Warning: {:?} of class {:?} has no setter or ivar for the key {:?}, which Foundation would raise NSUnknownKeyException for; ignoring it",
+        this, class_name_string, key_string
+    );
 }
 
 - (())willChangeValueForKey:(id)_key { // NSString *
@@ -423,6 +556,40 @@ forUndefinedKey:(id)key { // NSString*
 }
 - (())didChangeValueForKey:(id)_key { // NSString *
     log_once!("TODO: NSObject didChangeValueForKey:");
+}
+
+// Whether the receiver's class declares that it adopts a protocol.
+//
+// The answer comes from the class's own adopted-protocol list in the binary,
+// walked up the superclass chain and through any protocols those protocols
+// adopt — so it is the truth for a class the app defined, which is what apps
+// ask about. A class tapHLE implements itself carries no such list and answers
+// false; that is a real limit, and preferable to claiming a conformance whose
+// methods may not exist.
+- (bool)conformsToProtocol:(ConstPtr<ConstPtr<u8>>)protocol { // Protocol *
+    if protocol.is_null() {
+        return false;
+    }
+    // A protocol structure begins with an isa word and then its name, in both
+    // the legacy and modern layouts. Same read as NSStringFromProtocol.
+    let name_ptr = env.mem.read(protocol + 1);
+    if name_ptr.is_null() {
+        return false;
+    }
+    let Ok(name) = env.mem.cstr_at_utf8(name_ptr) else {
+        return false;
+    };
+    let name = name.to_string();
+    let class = ObjC::read_isa(this, &env.mem);
+    let conforms = env.objc.class_conforms_to_protocol(&env.mem, class, &name);
+    log_dbg!(
+        "[{:?} conformsToProtocol:{:?}] ({}) => {}",
+        this,
+        protocol,
+        name,
+        conforms
+    );
+    conforms
 }
 
 - (bool)respondsToSelector:(SEL)selector {
@@ -585,22 +752,24 @@ forUndefinedKey:(id)key { // NSString*
 
 /// Key-Value Coding helper: if `setter` takes a plain scalar argument, unwrap
 /// the boxed scalar `value` (an `NSNumber`/`NSValue`) to that type and invoke
-/// the setter, returning `true`. Returns `false` when the setter takes an object
-/// (or a type we do not unwrap yet), so the caller passes the boxed value
-/// through unchanged.
+/// the setter, returning `true`. Returns `false` when the setter takes an
+/// object (or a type we do not unwrap yet), so the caller passes the boxed
+/// value through unchanged.
 ///
 /// The argument type comes from the setter's Objective-C method type encoding,
 /// which is authoritative for the wire type: e.g. `float` and `double` occupy a
-/// different number of argument registers, so choosing the wrong one would place
-/// the value incorrectly even when the `NSNumber`'s own `objCType` differs.
+/// different number of argument registers, so choosing the wrong one would
+/// place the value incorrectly even when the `NSNumber`'s own `objCType`
+/// differs.
 fn kvc_set_unwrapped_scalar(env: &mut Environment, this: id, setter: SEL, value: id) -> bool {
     let Some(arg_type) = kvc_setter_arg_type(env, this, setter) else {
         return false;
     };
 
-    // See `impl GuestArg` in abi.rs: scalar arguments (including `f32`/`f64`) are
-    // passed in the core argument registers, so unwrapping to the matching Rust
-    // type places the value the same way the guest compiler emitted the call.
+    // See `impl GuestArg` in abi.rs: scalar arguments (including `f32`/`f64`)
+    // are passed in the core argument registers, so unwrapping to the matching
+    // Rust type places the value the same way the guest compiler emitted the
+    // call.
     match arg_type {
         b'f' => {
             let v: f32 = msg![env; value floatValue];
@@ -643,8 +812,8 @@ fn kvc_setter_arg_type(env: &Environment, this: id, setter: SEL) -> Option<u8> {
     let signature = env.mem.cstr_at_utf8(signature).ok()?;
     // A method type encoding is <return><self@><cmd:><arg…> with a numeric byte
     // offset after each type. Dropping the digits leaves the ordered type
-    // tokens; a unary setter's value argument is the fourth token (return, self,
-    // _cmd, value).
+    // tokens; a unary setter's value argument is the fourth token (return,
+    // self, _cmd, value).
     let tokens: Vec<u8> = signature.bytes().filter(|b| !b.is_ascii_digit()).collect();
     let mut i = 3;
     // Skip any type qualifiers (const, in, out, …) that may precede the type.
@@ -734,3 +903,138 @@ fn kvc_get_boxed_value(env: &mut Environment, this: id, getter: SEL) -> id {
         ),
     }
 }
+
+/// Keys of the change dictionary passed to a key-value observer.
+///
+/// tapHLE accepts KVO registration but never delivers a change, so nothing here
+/// builds such a dictionary. The symbols still have to exist: an app that
+/// observes anything references them to read the change out, and an unbound one
+/// is a null pointer it dereferences to do so.
+const NSKeyValueChangeKindKey: &str = "NSKeyValueChangeKindKey";
+const NSKeyValueChangeNewKey: &str = "NSKeyValueChangeNewKey";
+const NSKeyValueChangeOldKey: &str = "NSKeyValueChangeOldKey";
+const NSKeyValueChangeIndexesKey: &str = "NSKeyValueChangeIndexesKey";
+const NSKeyValueChangeNotificationIsPriorKey: &str = "NSKeyValueChangeNotificationIsPriorKey";
+
+/// `NSAllocateObject(Class, extraBytes, zone)` — Foundation's own allocation
+/// entry point, which class methods call instead of `+alloc` when they were
+/// compiled against the C API. The extra bytes are for trailing storage a class
+/// declares beyond its ivars; nothing in tapHLE uses them, and a class that
+/// wanted them would need host-side support anyway, so a non-zero request is
+/// reported rather than silently under-allocated.
+fn NSAllocateObject(
+    env: &mut Environment,
+    class: Class,
+    extra_bytes: NSUInteger,
+    zone: MutVoidPtr,
+) -> id {
+    if extra_bytes != 0 {
+        log!(
+            "TODO: NSAllocateObject() asked for {} extra bytes, which are not allocated",
+            extra_bytes
+        );
+    }
+    msg![env; class allocWithZone:zone]
+}
+
+fn NSDeallocateObject(env: &mut Environment, object: id) {
+    () = msg![env; object dealloc];
+}
+
+/// `NSDefaultMallocZone` — the zone Foundation allocates from by default.
+///
+/// Zones were a way to place related allocations near each other, and have been
+/// vestigial since well before this era: on iPhone OS every zone is the one
+/// malloc heap. tapHLE has no zones at all, and its `allocWithZone:` ignores
+/// the argument, so a zone here is a token an app passes back rather than
+/// something it can act on.
+///
+/// The token is null, which is what Foundation itself accepts everywhere a zone
+/// is taken and what `+alloc` already passes. Handing back a fabricated
+/// non-null pointer would invite an app to dereference it.
+fn NSDefaultMallocZone(_env: &mut Environment) -> MutVoidPtr {
+    Ptr::null()
+}
+
+fn NSCreateZone(
+    _env: &mut Environment,
+    _start_size: NSUInteger,
+    _granularity: NSUInteger,
+    _can_free: bool,
+) -> MutVoidPtr {
+    // One heap, so a "new" zone is the same zone.
+    Ptr::null()
+}
+
+fn NSRecycleZone(_env: &mut Environment, _zone: MutVoidPtr) {}
+
+fn NSZoneFromPointer(_env: &mut Environment, _ptr: MutVoidPtr) -> MutVoidPtr {
+    Ptr::null()
+}
+
+fn NSZoneMalloc(env: &mut Environment, _zone: MutVoidPtr, size: NSUInteger) -> MutVoidPtr {
+    env.mem.alloc(size.max(1))
+}
+
+fn NSZoneCalloc(
+    env: &mut Environment,
+    _zone: MutVoidPtr,
+    count: NSUInteger,
+    size: NSUInteger,
+) -> MutVoidPtr {
+    env.mem.calloc(count.saturating_mul(size).max(1))
+}
+
+fn NSZoneRealloc(
+    env: &mut Environment,
+    _zone: MutVoidPtr,
+    ptr: MutVoidPtr,
+    size: NSUInteger,
+) -> MutVoidPtr {
+    if ptr.is_null() {
+        return env.mem.alloc(size.max(1));
+    }
+    env.mem.realloc(ptr, size.max(1))
+}
+
+fn NSZoneFree(env: &mut Environment, _zone: MutVoidPtr, ptr: MutVoidPtr) {
+    if !ptr.is_null() {
+        env.mem.free(ptr);
+    }
+}
+
+pub const FUNCTIONS: FunctionExports = &[
+    export_c_func!(NSDefaultMallocZone()),
+    export_c_func!(NSCreateZone(_, _, _)),
+    export_c_func!(NSRecycleZone(_)),
+    export_c_func!(NSZoneFromPointer(_)),
+    export_c_func!(NSZoneMalloc(_, _)),
+    export_c_func!(NSZoneCalloc(_, _, _)),
+    export_c_func!(NSZoneRealloc(_, _, _)),
+    export_c_func!(NSZoneFree(_, _)),
+    export_c_func!(NSAllocateObject(_, _, _)),
+    export_c_func!(NSDeallocateObject(_)),
+];
+
+pub const CONSTANTS: ConstantExports = &[
+    (
+        "_NSKeyValueChangeKindKey",
+        HostConstant::NSString(NSKeyValueChangeKindKey),
+    ),
+    (
+        "_NSKeyValueChangeNewKey",
+        HostConstant::NSString(NSKeyValueChangeNewKey),
+    ),
+    (
+        "_NSKeyValueChangeOldKey",
+        HostConstant::NSString(NSKeyValueChangeOldKey),
+    ),
+    (
+        "_NSKeyValueChangeIndexesKey",
+        HostConstant::NSString(NSKeyValueChangeIndexesKey),
+    ),
+    (
+        "_NSKeyValueChangeNotificationIsPriorKey",
+        HostConstant::NSString(NSKeyValueChangeNotificationIsPriorKey),
+    ),
+];

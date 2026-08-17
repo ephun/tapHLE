@@ -479,6 +479,9 @@ impl GLES for GLES1Native<'_> {
     unsafe fn TexParameterx(&mut self, target: GLenum, pname: GLenum, param: GLfixed) {
         gles11::TexParameterx(target, pname, param)
     }
+    unsafe fn GetTexParameteriv(&mut self, target: GLenum, pname: GLenum, params: *mut GLint) {
+        gles11::GetTexParameteriv(target, pname, params)
+    }
     unsafe fn TexParameteriv(&mut self, target: GLenum, pname: GLenum, params: *const GLint) {
         gles11::TexParameteriv(target, pname, params)
     }

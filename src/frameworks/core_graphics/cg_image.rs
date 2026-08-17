@@ -90,12 +90,6 @@ pub fn borrow_image(objc: &ObjC, image: CGImageRef) -> &Image {
     &objc.borrow::<CGImageHostObject>(image).image
 }
 
-/// Shortcut used by the app picker, counterpart to [borrow_image].
-/// FIXME: This should not exist!
-pub fn borrow_image_mut(objc: &mut ObjC, image: CGImageRef) -> &mut Image {
-    &mut objc.borrow_mut::<CGImageHostObject>(image).image
-}
-
 // TODO: More create methods.
 
 fn CGImageCreate(
@@ -212,6 +206,15 @@ fn CGImageGetAlphaInfo(_env: &mut Environment, _image: CGImageRef) -> CGImageAlp
     kCGImageAlphaPremultipliedLast
 }
 
+fn CGImageGetBitmapInfo(env: &mut Environment, image: CGImageRef) -> CGBitmapInfo {
+    // The bitmap info is the alpha info in its low bits together with the byte
+    // order in the byte-order field, so the two answers have to agree: an app
+    // that reads this and then reads the pixels itself would otherwise unpack
+    // them the wrong way round. Decoded images are premultiplied RGBA in host
+    // byte order, which is the default order.
+    CGImageGetAlphaInfo(env, image) | kCGImageByteOrderDefault
+}
+
 fn CGImageGetColorSpace(env: &mut Environment, _image: CGImageRef) -> CGColorSpaceRef {
     // Caller must release
     // FIXME: what if a loaded image is not sRGB?
@@ -316,6 +319,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CGImageCreateWithPNGDataProvider(_, _, _, _)),
     export_c_func!(CGImageCreateWithJPEGDataProvider(_, _, _, _)),
     export_c_func!(CGImageGetAlphaInfo(_)),
+    export_c_func!(CGImageGetBitmapInfo(_)),
     export_c_func!(CGImageGetColorSpace(_)),
     export_c_func!(CGImageGetWidth(_)),
     export_c_func!(CGImageGetHeight(_)),

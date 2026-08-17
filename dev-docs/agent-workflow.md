@@ -1,7 +1,8 @@
 # Agent workflow for game compatibility
 
 This guide expands the contribution loop in `AGENTS.md`. It is optimized for a
-maintainer who names a Windows game and wants useful iteration quickly.
+maintainer who names a game and supported host and wants useful iteration
+quickly.
 
 Use `app-debugging-playbook.md` for the efficient runtime/static-analysis
 protocol. If `app-notes/<app-slug>.md` exists, read it first and continue from
@@ -10,7 +11,8 @@ its highest proven milestone rather than rediscovering the same facts.
 Read `dev-docs/agent-capability-log.md` before choosing an agent. Its dated,
 task-specific observations are evidence rather than a standing ban: give every
 agent a narrow, independently reviewable task, then review and retest its work
-on Windows before relying on it as implementation or compatibility evidence.
+on the claimed host before relying on it as implementation or compatibility
+evidence.
 
 ## 1. Capture a reproducible case
 
@@ -20,7 +22,7 @@ Record these facts before diagnosing:
 | --- | --- |
 | Game identity | Title, version, regional/build identifier |
 | tapHLE identity | Release or Git commit |
-| Host | Windows version, CPU architecture, GPU and driver |
+| Host | Windows version/CPU/GPU/driver, or iOS device and OS version |
 | Launch | Exact path form and tapHLE options |
 | Progress | Last screen, sound, input, or log event that works |
 | Failure | Crash, hang, rendering defect, missing input, or wrong behavior |
@@ -93,7 +95,7 @@ Stop at the highest affordable level and report where you stopped:
 2. A TestApp probe for a guest-visible API or ABI behavior.
 3. `cargo test -- --skip test_app` when the custom SDK is unavailable.
 4. Full `cargo test` with the SDK and LLVM from `tests/README.md`.
-5. A release build and launch of the exact target game on Windows.
+5. A release build and launch of the exact target game on the claimed host.
 
 The fifth level is the only proof that a game compatibility claim is true.
 Passing lower levels still provides useful confidence when game access is
@@ -104,8 +106,9 @@ watch the agent's progress. Automated frame capture and coordinate-based input
 are encouraged for repeatability, but human-observed rendering, interaction,
 orientation, and audio remain distinct evidence.
 
-For database entry, level five must use an Archive content-hash-verified
-artifact against a committed tapHLE revision. Full playability is not required:
+For database entry, level five must name the app build it was earned on, read
+from `tapHLE --info`, against a committed tapHLE revision. Full playability is
+not required:
 a reproducible boot, menu, or in-game milestone can justify promoting the
 branch when its remaining blocker is recorded and regression checks pass.
 
@@ -117,14 +120,23 @@ Summarize:
 - the root cause or best-supported hypothesis;
 - files and subsystem changed;
 - checks run and their results;
-- exact game/Windows validation performed; and
+- exact game and host validation performed; and
 - the next observation needed if the target still fails.
+
+When a run reaches a rating milestone, record the route that got there as a
+clickmap in `dev-docs/clickmaps/`, in the same commit as the report. The route
+is fresh at that moment and never will be again, and the next agent — or the
+next version of the same app — starts by replaying it instead of rediscovering
+it. Replay before exploring, too. See `dev-docs/clickmaps/protocol.md`.
 
 When a verified result changes the app's star rating, submit it to the
 compatibility database at <https://taphle.ephun.net/compatibility> through
-`POST /api/report`, as described in `AGENTS.md`. Never edit an earlier report;
-each one is a dated snapshot. Do not add records under `compatibility/apps`:
-those predate the live database and remain only until they are migrated.
+`POST /api/report`, as described in `AGENTS.md`. Submit at *every* boundary the
+app crosses, as it crosses it — carrying two stars forward unreported because
+three looks reachable is how a rating goes unrecorded, and a boundary missed
+cannot be filled in afterwards. Never edit an earlier report; each one is a
+dated snapshot. Do not add records under `compatibility/apps`: those predate the
+live database and remain only until they are migrated.
 
 Agent work should make the next iteration cheaper, even when one turn cannot
 reach the game menu.

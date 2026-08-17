@@ -12,7 +12,7 @@ use crate::abi::DotDotDot;
 use crate::dyld::{export_c_func, FunctionExports};
 use crate::fs::{FsError, GuestFile, GuestOpenOptions, GuestPath};
 use crate::libc::errno::{
-    set_errno, EACCES, EBADF, EEXIST, EFAULT, EINTR, EINVAL, EIO, EISDIR, ENOENT, ENOTDIR,
+    set_errno, EACCES, EBADF, EEXIST, EFAULT, EINTR, EINVAL, EIO, EISDIR, ENOATTR, ENOENT, ENOTDIR,
     EOVERFLOW, ESPIPE,
 };
 use crate::libc::sys::socket::close_socket;
@@ -216,7 +216,18 @@ pub fn open_direct(env: &mut Environment, path: ConstPtr<u8>, flags: i32) -> Fil
             find_or_create_fd(env, host_object)
         }
         Err(error) => {
-            log!("Warning: open({path:?}, {flags:#x}) failed with: {error:?}, returning -1");
+            // Name the file. A failed open is one of the most common ways an
+            // app quietly loses content — a level that never loads, a save
+            // that never restores — and the guest address the path happened
+            // to sit at says nothing about which file was missing, so the
+            // warning could not be acted on without re-running under a
+            // debugger.
+            log!(
+                "Warning: open({:?}, {:#x}) failed with: {:?}, returning -1",
+                path_string,
+                flags,
+                error
+            );
             let errno = match error {
                 FsError::AccessDenied => EACCES,
                 FsError::AlreadyExist => EEXIST,
@@ -467,7 +478,8 @@ pub fn write(
 
 /// `struct iovec` from `<sys/uio.h>`: a base pointer and a length.
 #[repr(C, packed)]
-struct iovec {
+#[allow(non_camel_case_types)]
+pub struct iovec {
     iov_base: ConstVoidPtr,
     iov_len: GuestUSize,
 }
@@ -475,7 +487,7 @@ unsafe impl SafeRead for iovec {}
 
 /// `ssize_t writev(int fildes, const struct iovec *iov, int iovcnt)`. Scatter
 /// output: writes each `iov` buffer to `fd` in order and returns the total
-/// number of bytes written. Implemented on top of [write], which is the same
+/// number of bytes written. Implemented on top of [write()], which is the same
 /// destination handling every buffer would get individually.
 pub fn writev(
     env: &mut Environment,
@@ -999,7 +1011,101 @@ fn truncate(env: &mut Environment, path_ptr: ConstPtr<u8>, len: off_t) -> i32 {
     res
 }
 
+/// Extended attributes. tapHLE's guest filesystem stores file contents and
+/// nothing beside them, so there are no attributes to read and nowhere to keep
+/// one that is written.
+///
+/// The asymmetry below is deliberate and is what apps actually depend on.
+/// Setting is reported as success: overwhelmingly this is an app marking a
+/// downloaded file "do not back up", and failing that call makes a
+/// conscientious app treat an ordinary save as an error. Getting reports that
+/// the attribute is absent, which is true and is the answer every caller is
+/// written to handle — claiming success there would hand back an uninitialised
+/// buffer as if it were a value.
+fn setxattr(
+    env: &mut Environment,
+    _path: ConstPtr<u8>,
+    _name: ConstPtr<u8>,
+    _value: ConstVoidPtr,
+    _size: GuestUSize,
+    _position: u32,
+    _options: i32,
+) -> i32 {
+    set_errno(env, 0);
+    log_once!("TODO: setxattr() is accepted but the attribute is not stored");
+    0
+}
+
+fn fsetxattr(
+    env: &mut Environment,
+    _fd: FileDescriptor,
+    _name: ConstPtr<u8>,
+    _value: ConstVoidPtr,
+    _size: GuestUSize,
+    _position: u32,
+    _options: i32,
+) -> i32 {
+    set_errno(env, 0);
+    0
+}
+
+fn getxattr(
+    env: &mut Environment,
+    _path: ConstPtr<u8>,
+    _name: ConstPtr<u8>,
+    _value: MutVoidPtr,
+    _size: GuestUSize,
+    _position: u32,
+    _options: i32,
+) -> i32 {
+    set_errno(env, ENOATTR);
+    -1
+}
+
+fn fgetxattr(
+    env: &mut Environment,
+    _fd: FileDescriptor,
+    _name: ConstPtr<u8>,
+    _value: MutVoidPtr,
+    _size: GuestUSize,
+    _position: u32,
+    _options: i32,
+) -> i32 {
+    set_errno(env, ENOATTR);
+    -1
+}
+
+fn removexattr(
+    env: &mut Environment,
+    _path: ConstPtr<u8>,
+    _name: ConstPtr<u8>,
+    _options: i32,
+) -> i32 {
+    // Removing an attribute that was never stored is the state the caller
+    // wanted, so this succeeds rather than reporting it as missing.
+    set_errno(env, 0);
+    0
+}
+
+/// No attributes, so the list is empty and its length is zero.
+fn listxattr(
+    env: &mut Environment,
+    _path: ConstPtr<u8>,
+    _namebuf: MutPtr<u8>,
+    _size: GuestUSize,
+    _options: i32,
+) -> i32 {
+    set_errno(env, 0);
+    0
+}
+
 pub const FUNCTIONS: FunctionExports = &[
+    export_c_func!(setxattr(_, _, _, _, _, _)),
+    export_c_func!(fsetxattr(_, _, _, _, _, _)),
+    export_c_func!(getxattr(_, _, _, _, _, _)),
+    export_c_func!(fgetxattr(_, _, _, _, _, _)),
+    export_c_func!(removexattr(_, _, _)),
+    export_c_func!(listxattr(_, _, _, _)),
     export_c_func!(open(_, _, _)),
     export_c_func!(read(_, _, _)),
     export_c_func!(pread(_, _, _, _)),

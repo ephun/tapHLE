@@ -19,6 +19,7 @@
 //! categories and dynamic class editing).
 
 use crate::dyld::{export_c_func, ConstantExports, FunctionExports, HostConstant, HostDylib};
+use crate::mem::ConstPtr;
 use crate::objc::messages::ThreadInitializer;
 use crate::MutexId;
 use std::collections::HashMap;
@@ -26,6 +27,7 @@ use std::collections::HashMap;
 mod arc;
 mod blocks;
 mod classes;
+mod fast_enumeration;
 mod messages;
 mod methods;
 mod objects;
@@ -47,8 +49,11 @@ pub use selectors::{selector, SEL};
 
 pub(crate) use blocks::block_invoke_function;
 use classes::{
-    class_copyPropertyList, class_getInstanceSize, class_getProperty, class_getSuperclass,
-    objc_getClass, ClassHostObject, FakeClass, UnimplementedClass,
+    class_copyPropertyList, class_getInstanceSize, class_getName, class_getProperty,
+    class_getSuperclass, class_isMetaClass, class_respondsToSelector, objc_allocateClassPair,
+    objc_disposeClassPair, objc_getClass, objc_getClassList, objc_getMetaClass, objc_lookUpClass,
+    objc_registerClassPair, property_getAttributes, property_getName, ClassHostObject, FakeClass,
+    UnimplementedClass,
 };
 pub(crate) use messages::objc_msgSend;
 use messages::{
@@ -56,13 +61,20 @@ use messages::{
     MsgSendSuperSignature,
 };
 use methods::{
-    class_addMethod, class_getInstanceMethod, class_getMethodImplementation, class_replaceMethod,
+    class_addMethod, class_copyMethodList, class_getClassMethod, class_getInstanceMethod,
+    class_getIvarLayout, class_getMethodImplementation, class_replaceMethod,
     method_exchangeImplementations, method_getImplementation, method_getName,
     method_getTypeEncoding, method_list_t, method_setImplementation,
 };
-use objects::{objc_object, object_getClass, HostObjectEntry};
-use properties::{ivar_list_t, objc_copyStruct, objc_getProperty, objc_setProperty};
-use selectors::{sel_getUid, sel_registerName};
+use objects::{
+    objc_object, object_getClass, object_getClassName, object_setClass, HostObjectEntry,
+};
+use properties::{
+    ivar_list_t, objc_copyStruct, objc_getProperty, objc_property_t, objc_setProperty,
+    objc_setProperty_atomic, objc_setProperty_atomic_copy, objc_setProperty_nonatomic,
+    objc_setProperty_nonatomic_copy, property_list_t, IvarInfo,
+};
+use selectors::{sel_getName, sel_getUid, sel_registerName};
 use synchronization::{objc_sync_enter, objc_sync_exit};
 
 /// Typedef for `NSZone *`. This is a [fossil type] found in the signature of
@@ -85,6 +97,15 @@ pub struct ObjC {
     ///
     /// Look at the `isa` to get the metaclass for a class.
     classes: HashMap<String, Class>,
+
+    /// C strings handed out by `class_getName`, one per class.
+    ///
+    /// A class stores its name as a Rust `String`, but the caller wants a
+    /// `const char*` that stays valid, so one has to be written into guest
+    /// memory. Allocating on every call would leak a little each time an app
+    /// logged a class name, which some do per frame, so each class's string is
+    /// made once and reused.
+    class_name_strings: HashMap<Class, ConstPtr<u8>>,
 
     /// Mutexes used in @synchronized blocks (objc_sync_enter/exit).
     sync_mutexes: HashMap<id, MutexId>,
@@ -113,6 +134,7 @@ impl ObjC {
             selectors: HashMap::new(),
             objects: HashMap::new(),
             classes: HashMap::new(),
+            class_name_strings: HashMap::new(),
             sync_mutexes: HashMap::new(),
             initializer_threads: HashMap::new(),
             message_type_info: None,
@@ -127,7 +149,13 @@ pub const DYLIB: HostDylib = HostDylib {
     aliases: &["/usr/lib/libobjc.dylib"],
     class_exports: &[blocks::CLASSES],
     constant_exports: &[CONSTANTS, blocks::CONSTANTS],
-    function_exports: &[FUNCTIONS, arc::FUNCTIONS, blocks::FUNCTIONS],
+    function_exports: &[
+        FUNCTIONS,
+        arc::FUNCTIONS,
+        blocks::FUNCTIONS,
+        fast_enumeration::FUNCTIONS,
+        properties::FUNCTIONS,
+    ],
 };
 
 const CONSTANTS: ConstantExports = &[
@@ -142,8 +170,18 @@ const FUNCTIONS: FunctionExports = &[
     export_c_func!(class_copyPropertyList(_, _)),
     export_c_func!(class_getInstanceSize(_)),
     export_c_func!(class_getSuperclass(_)),
+    export_c_func!(class_getName(_)),
+    export_c_func!(class_isMetaClass(_)),
+    export_c_func!(class_respondsToSelector(_, _)),
+    export_c_func!(sel_getName(_)),
+    export_c_func!(object_getClassName(_)),
     export_c_func!(class_getProperty(_, _)),
+    export_c_func!(property_getName(_)),
+    export_c_func!(property_getAttributes(_)),
     export_c_func!(class_getInstanceMethod(_, _)),
+    export_c_func!(class_copyMethodList(_, _)),
+    export_c_func!(class_getIvarLayout(_)),
+    export_c_func!(class_getClassMethod(_, _)),
     export_c_func!(class_getMethodImplementation(_, _)),
     export_c_func!(class_addMethod(_, _, _, _)),
     export_c_func!(class_replaceMethod(_, _, _, _)),
@@ -152,17 +190,28 @@ const FUNCTIONS: FunctionExports = &[
     export_c_func!(method_getName(_)),
     export_c_func!(method_getTypeEncoding(_)),
     export_c_func!(method_exchangeImplementations(_, _)),
+    export_c_func!(objc_lookUpClass(_)),
+    export_c_func!(objc_allocateClassPair(_, _, _)),
+    export_c_func!(objc_registerClassPair(_)),
+    export_c_func!(objc_disposeClassPair(_)),
+    export_c_func!(objc_setProperty_nonatomic(_, _, _, _)),
+    export_c_func!(objc_setProperty_atomic(_, _, _, _)),
+    export_c_func!(objc_setProperty_nonatomic_copy(_, _, _, _)),
+    export_c_func!(objc_setProperty_atomic_copy(_, _, _, _)),
     export_c_func!(objc_msgSend(_, _)),
     export_c_func!(objc_msgSend_stret(_, _, _)),
     export_c_func!(objc_msgSendSuper2(_, _)),
     export_c_func!(objc_msgSendSuper2_stret(_, _, _)),
     export_c_func!(objc_getClass(_)),
+    export_c_func!(objc_getMetaClass(_)),
+    export_c_func!(objc_getClassList(_, _)),
     export_c_func!(objc_getProperty(_, _, _, _)),
     export_c_func!(objc_setProperty(_, _, _, _, _, _)),
     export_c_func!(objc_copyStruct(_, _, _, _, _)),
     export_c_func!(objc_sync_enter(_)),
     export_c_func!(objc_sync_exit(_)),
     export_c_func!(object_getClass(_)),
+    export_c_func!(object_setClass(_, _)),
     export_c_func!(sel_registerName(_)),
     export_c_func!(sel_getUid(_)),
 ];

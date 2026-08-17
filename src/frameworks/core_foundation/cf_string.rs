@@ -143,6 +143,84 @@ fn CFStringCreateWithBytes(
     msg![env; ns_string initWithBytes:bytes length:length encoding:encoding]
 }
 
+/// The UTF-16 counterpart of [CFStringCreateWithBytes]. A managed runtime
+/// reaches for this one rather than the byte-oriented entry points, because
+/// UTF-16 is already its native string representation and it has a pointer to
+/// the characters to hand.
+///
+/// The guest is little-endian and the buffer carries no byte-order mark, so the
+/// explicit little-endian encoding is the right one: plain
+/// `NSUTF16StringEncoding` would send the decoder looking for a BOM it will not
+/// find.
+fn CFStringCreateWithCharacters(
+    env: &mut Environment,
+    allocator: CFAllocatorRef,
+    chars: ConstPtr<unichar>,
+    num_chars: CFIndex,
+) -> CFStringRef {
+    assert!(allocator == kCFAllocatorDefault || env.mem.read(allocator).is_system_default()); // unimplemented
+    let length: NSUInteger = TryInto::<NSUInteger>::try_into(num_chars).unwrap() * 2;
+    let bytes: ConstPtr<u8> = chars.cast();
+    let encoding = ns_string::NSUTF16LittleEndianStringEncoding;
+    let ns_string: id = msg_class![env; NSString alloc];
+    msg![env; ns_string initWithBytes:bytes length:length encoding:encoding]
+}
+
+fn CFStringAppendCharacters(
+    env: &mut Environment,
+    the_string: CFMutableStringRef,
+    chars: ConstPtr<unichar>,
+    num_chars: CFIndex,
+) {
+    // TODO: avoid copying
+    let to_append: CFStringRef =
+        CFStringCreateWithCharacters(env, kCFAllocatorDefault, chars, num_chars);
+    let _: () = msg![env; the_string appendString:to_append];
+    let _: () = msg![env; to_append release];
+}
+
+fn CFStringCreateWithBytesNoCopy(
+    env: &mut Environment,
+    allocator: CFAllocatorRef,
+    bytes: ConstPtr<u8>,
+    num_bytes: CFIndex,
+    encoding: CFStringEncoding,
+    is_external: bool,
+    deallocator: CFAllocatorRef,
+) -> CFStringRef {
+    // As with CFStringCreateWithCStringNoCopy above, the caller is not entitled
+    // to assume the buffer was adopted, so copying satisfies the contract. That
+    // is only true while we are not asked to take ownership of the buffer: a
+    // deallocator would have to run against a buffer we never kept.
+    assert!(env.mem.read(deallocator).is_null()); // unimplemented
+    CFStringCreateWithBytes(env, allocator, bytes, num_bytes, encoding, is_external)
+}
+
+/// An upper bound on the bytes needed to hold `length` UTF-16 code units in
+/// `encoding`, excluding any terminator. Callers size a buffer with this and
+/// then convert into it, so it may overestimate but must never be short.
+///
+/// Three bytes per code unit covers UTF-8: a code point that needs four bytes
+/// is a surrogate pair, and so arrives as two units with six bytes of room.
+fn CFStringGetMaximumSizeForEncoding(
+    env: &mut Environment,
+    length: CFIndex,
+    encoding: CFStringEncoding,
+) -> CFIndex {
+    let encoding = CFStringConvertEncodingToNSStringEncoding(env, encoding);
+    let bytes_per_unit = match encoding {
+        ns_string::NSASCIIStringEncoding
+        | ns_string::NSMacOSRomanStringEncoding
+        | ns_string::NSISOLatin1StringEncoding => 1,
+        ns_string::NSUTF16StringEncoding
+        | ns_string::NSUTF16BigEndianStringEncoding
+        | ns_string::NSUTF16LittleEndianStringEncoding => 2,
+        ns_string::NSUTF8StringEncoding => 3,
+        _ => unimplemented!("Unhandled: NSStringEncoding {:#x}", encoding),
+    };
+    length * bytes_per_unit
+}
+
 fn CFStringCreateWithCString(
     env: &mut Environment,
     allocator: CFAllocatorRef,
@@ -308,7 +386,23 @@ fn CFStringGetBytes(
     max_buf_len: CFIndex,
     used_buf_len: MutPtr<CFIndex>,
 ) -> CFIndex {
-    assert_eq!(loss_byte, 0);
+    // A loss byte is the caller's permission to substitute, not a demand that
+    // anything be substituted: it names the character to use for anything the
+    // target encoding cannot represent, and '?' (63) is the conventional
+    // choice. Callers pass one routinely and most strings then convert without
+    // ever needing it, so refusing the call outright turned an ordinary,
+    // fully-representable conversion into an abort.
+    //
+    // Substitution itself is still not implemented. A string that genuinely
+    // cannot be represented fails below as it did before, rather than silently
+    // producing the caller's replacement character.
+    if loss_byte != 0 {
+        log_once!(
+            "TODO: CFStringGetBytes ignores its loss byte; a string that cannot \
+             be represented in the target encoding will fail rather than \
+             substitute."
+        );
+    }
     assert!(!is_external); // TODO
 
     let range_len = range.length;
@@ -320,10 +414,16 @@ fn CFStringGetBytes(
     let substring: id = msg![env; string substringWithRange:range];
 
     let encoding = CFStringConvertEncodingToNSStringEncoding(env, encoding);
-    let buffer_size: NSUInteger = max_buf_len.try_into().unwrap();
-    let success: bool =
-        ns_string::get_bytes_buffer_inner(env, substring, buffer, buffer_size, encoding, false);
-    assert!(success); // TODO
+    // A null buffer means "tell me how big one would have to be", and is the
+    // first half of the standard two-pass idiom: measure, allocate, convert.
+    // There is nothing to write in that pass, and writing anyway meant a
+    // guest-visible store through address zero.
+    if !buffer.is_null() {
+        let buffer_size: NSUInteger = max_buf_len.try_into().unwrap();
+        let success: bool =
+            ns_string::get_bytes_buffer_inner(env, substring, buffer, buffer_size, encoding, false);
+        assert!(success); // TODO
+    }
     let length: NSUInteger = msg![env; substring length];
     assert_eq!(length, range_len.try_into().unwrap());
 
@@ -454,6 +554,10 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CFStringCreateMutable(_, _)),
     export_c_func!(CFStringCreateMutableCopy(_, _, _)),
     export_c_func!(CFStringCreateWithBytes(_, _, _, _, _)),
+    export_c_func!(CFStringCreateWithBytesNoCopy(_, _, _, _, _, _)),
+    export_c_func!(CFStringCreateWithCharacters(_, _, _)),
+    export_c_func!(CFStringAppendCharacters(_, _, _)),
+    export_c_func!(CFStringGetMaximumSizeForEncoding(_, _)),
     export_c_func!(CFStringCreateWithCString(_, _, _)),
     export_c_func!(CFStringCreateWithCStringNoCopy(_, _, _, _)),
     export_c_func!(CFStringCreateWithFormat(_, _, _, _)),

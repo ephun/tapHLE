@@ -514,7 +514,8 @@ impl Mem {
     {
         let addr = ConstVoidPtr::from_bits(ptr.to_bits());
         let bytes = self.get_bytes_fallible(addr, guest_size_of::<T>())?;
-        // SafeRead and the unaligned load provide the same guarantees as read().
+        // SafeRead and the unaligned load provide the same guarantees as
+        // read().
         Some(unsafe { bytes.as_ptr().cast::<T>().read_unaligned() })
     }
     /// Write a value to memory. This is the preferred way to write memory in

@@ -21,7 +21,7 @@
 //! See also: [crate::frameworks::foundation::ns_object].
 
 use super::{Class, ClassHostObject};
-use crate::mem::{guest_size_of, GuestUSize, Mem, MutPtr, Ptr, SafeRead};
+use crate::mem::{guest_size_of, ConstPtr, GuestUSize, Mem, MutPtr, Ptr, SafeRead};
 use crate::Environment;
 use std::any::Any;
 use std::num::NonZeroU32;
@@ -186,6 +186,15 @@ impl super::ObjC {
         mem.read(object).isa
     }
 
+    /// Overwrite the `isa`, which is what isa-swizzling is.
+    ///
+    /// Deliberately not paired with any layout check: see [object_setClass],
+    /// whose caller is entitled to do this and is responsible for the
+    /// consequences.
+    pub fn write_isa(object: id, class: Class, mem: &mut Mem) {
+        mem.write(object, objc_object { isa: class });
+    }
+
     fn alloc_object_inner(
         &mut self,
         isa: Class,
@@ -276,6 +285,39 @@ impl super::ObjC {
         self.objects.get(&object).map(|entry| &*entry.host_object)
     }
 
+    /// Give `object` host storage of type `T` if tapHLE has none for it,
+    /// returning whether it had to be adopted.
+    ///
+    /// Guest code may create an Objective-C instance without going through
+    /// `+alloc`. JSONKit does exactly this for its private `JKArray` and
+    /// `JKDictionary` collections: it `calloc()`s `class_getInstanceSize()`
+    /// bytes, assigns `isa` directly, and then sends `init`. That is legal on
+    /// Apple's runtime, where an object is nothing but the memory holding its
+    /// `isa` and ivars. tapHLE keeps the other half of every object in a side
+    /// table, so an instance made this way is absent from it, and the first
+    /// host method to reach for host storage — `retain` and `release` included
+    /// — would otherwise abort the emulator.
+    ///
+    /// Adopting the instance at `init` is the natural repair: `init` is the
+    /// message such guest code sends immediately after assigning `isa`, and it
+    /// is exactly where tapHLE's own concrete classes set up their storage
+    /// anyway. The adopted object gets a refcount of 1, matching what `+alloc`
+    /// would have produced.
+    pub fn ensure_host_object<T: AnyHostObject + Default>(&mut self, object: id) -> bool {
+        if self.objects.contains_key(&object) {
+            return false;
+        }
+        self.objects.insert(
+            object,
+            HostObjectEntry {
+                host_object: Box::<T>::default(),
+                refcount: Some(NonZeroU32::new(1).unwrap()),
+                cxx_lifecycle: CxxLifecycle::Allocated,
+            },
+        );
+        true
+    }
+
     /// Get a reference to a host object and downcast it. Panics if there is
     /// no such object, or if downcasting fails.
     pub fn borrow<T: AnyHostObject + 'static>(&self, object: id) -> &T {
@@ -330,14 +372,16 @@ impl super::ObjC {
 
     /// Getting a refcount of an object.
     /// While Apple's docs advise to not relay on the returned value,
-    /// some games (like "Cut the Rope") does call `retainCount`.
+    /// some games do call `retainCount`.
     pub fn get_refcount(&mut self, object: id) -> NonZeroU32 {
         let Some(entry) = self.objects.get_mut(&object) else {
             panic!("No entry found for object {object:?}, it may have already been deallocated");
         };
         let Some(refcount) = entry.refcount.as_mut() else {
-            // Might mean a missing `retain` override.
-            panic!("Attempt to get refcount on static-lifetime object {object:?}!");
+            // Immortal objects have no count to report. Apple's runtime answers
+            // with a saturated value for these rather than treating the
+            // question as an error, and so does this.
+            return NonZeroU32::new(u32::MAX).unwrap();
         };
         *refcount
     }
@@ -350,8 +394,20 @@ impl super::ObjC {
             panic!("No entry found for object {object:?}, it may have already been deallocated");
         };
         let Some(refcount) = entry.refcount.as_mut() else {
-            // Might mean a missing `retain` override.
-            panic!("Attempt to increment refcount on static-lifetime object {object:?}!");
+            // A static-lifetime object is immortal, and retaining an immortal
+            // object is legal and does nothing — on Apple's runtime a constant
+            // string or a shared singleton behaves exactly this way. Aborting
+            // here treated ordinary, correct guest code as an error: it was the
+            // single largest tapHLE-side crash in a survey of 1300 apps.
+            //
+            // It can still indicate a missing `retain` override on a tapHLE
+            // class, which is why it is logged rather than passed over in
+            // silence.
+            log_once!(
+                "Note: retain on a static-lifetime object, which is a no-op. If an object \
+                 unexpectedly outlives its owner, a missing retain/release override is one cause."
+            );
+            return;
         };
         *refcount = refcount.checked_add(1).unwrap();
     }
@@ -368,8 +424,11 @@ impl super::ObjC {
             panic!("No entry found for object {object:?}, it may have already been deallocated");
         };
         let Some(refcount) = entry.refcount.as_mut() else {
-            // Might mean a missing `release` override.
-            panic!("Attempt to decrement refcount on static-lifetime object {object:?}!");
+            // The counterpart of the retain case above: releasing an immortal
+            // object is legal and does nothing. Returning false is what makes
+            // it a no-op — it says the object must not be deallocated, which is
+            // precisely what "immortal" means.
+            return false;
         };
         if refcount.get() == 1 {
             entry.refcount = None;
@@ -425,4 +484,83 @@ pub(super) fn object_getClass(env: &mut Environment, obj: id) -> Class {
     } else {
         super::ObjC::read_isa(obj, &env.mem)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::objc::ObjC;
+
+    #[derive(Debug, Default, PartialEq)]
+    struct TestHostObject {
+        value: u32,
+    }
+    impl HostObject for TestHostObject {}
+
+    /// An instance the guest allocated itself (JSONKit's `calloc()` + `isa`
+    /// pattern) is absent from the object table; adopting it must give it
+    /// storage and the same refcount `+alloc` would have.
+    #[test]
+    fn ensure_host_object_adopts_a_guest_allocated_instance() {
+        let mut objc = ObjC::new();
+        let object: id = Ptr::from_bits(0x2000);
+
+        assert!(objc.get_host_object(object).is_none());
+        assert!(objc.ensure_host_object::<TestHostObject>(object));
+
+        assert_eq!(
+            objc.borrow::<TestHostObject>(object),
+            &TestHostObject::default()
+        );
+        assert_eq!(objc.get_refcount(object).get(), 1);
+    }
+
+    /// Adoption must not disturb an object tapHLE allocated, or a second
+    /// `init` would silently discard the storage set up by `+allocWithZone:`.
+    #[test]
+    fn ensure_host_object_leaves_existing_storage_alone() {
+        let mut objc = ObjC::new();
+        let mut mem = Mem::new();
+        mem.set_null_segment_size(0x1000);
+        let object = objc.alloc_static_object(nil, Box::new(TestHostObject { value: 7 }), &mut mem);
+
+        assert!(!objc.ensure_host_object::<TestHostObject>(object));
+        assert_eq!(objc.borrow::<TestHostObject>(object).value, 7);
+    }
+
+    /// An adopted object must be releasable, since the guest owns it and will
+    /// send it `release`/`dealloc` like any other.
+    #[test]
+    fn an_adopted_object_can_be_released() {
+        let mut objc = ObjC::new();
+        let object: id = Ptr::from_bits(0x3000);
+        assert!(objc.ensure_host_object::<TestHostObject>(object));
+
+        objc.increment_refcount(object);
+        assert!(!objc.decrement_refcount(object));
+        assert!(objc.decrement_refcount(object));
+    }
+}
+
+/// The name of an object's class, as a C string.
+///
+/// Shares `class_getName`'s cache, so repeated calls do not allocate.
+/// `object_setClass` — repoint an object's `isa`, returning its previous class.
+///
+/// This is how isa-swizzling works, and it is deliberately blunt: the runtime
+/// does not check that the new class has a compatible instance layout, and
+/// neither does this. A caller that swaps in a class with different ivars gets
+/// the mess it asked for, on a device as here.
+pub(super) fn object_setClass(env: &mut Environment, obj: id, cls: Class) -> Class {
+    if obj == nil {
+        return nil;
+    }
+    let previous = super::ObjC::read_isa(obj, &env.mem);
+    super::ObjC::write_isa(obj, cls, &mut env.mem);
+    previous
+}
+
+pub(super) fn object_getClassName(env: &mut Environment, obj: id) -> ConstPtr<u8> {
+    let class = object_getClass(env, obj);
+    super::classes::class_getName(env, class)
 }

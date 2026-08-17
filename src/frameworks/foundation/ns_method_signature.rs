@@ -15,6 +15,30 @@ use crate::libc::string::strncpy;
 use crate::mem::{ConstPtr, GuestUSize};
 use crate::objc::{autorelease, id, objc_classes, ClassExports, HostObject};
 
+/// Size in bytes of a value with this Objective-C type encoding, as the guest
+/// lays it out.
+///
+/// Only the leading character is inspected, which is all that is needed to size
+/// a scalar or a pointer. Aggregates are the exception and are rejected: a
+/// struct return does not come back in `r0` at all, it is written through a
+/// hidden pointer by `objc_msgSend_stret`, so sizing one here would produce a
+/// plausible buffer filled with the wrong bytes.
+pub(super) fn type_encoding_size(type_string: &str) -> GuestUSize {
+    match type_string.as_bytes().first() {
+        Some(b'v') => 0,
+        Some(b'c' | b'C' | b'B') => 1,
+        Some(b's' | b'S') => 2,
+        Some(b'q' | b'Q' | b'd') => 8,
+        Some(b'{' | b'(' | b'[') => {
+            unimplemented!("Size of aggregate type encoding {type_string:?}")
+        }
+        // Every remaining encoding tapHLE can see is one guest word: the
+        // integer types, float, object, class, selector and every pointer.
+        Some(_) => 4,
+        None => 0,
+    }
+}
+
 struct NSMethodSignatureHostObject {
     return_type: ConstPtr<u8>,
     arg_types: Vec<(ConstPtr<u8>, GuestUSize)>,
@@ -47,6 +71,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (ConstPtr<u8>)methodReturnType {
     env.objc.borrow::<NSMethodSignatureHostObject>(this).return_type
+}
+
+- (NSUInteger)methodReturnLength {
+    let return_type = env.objc.borrow::<NSMethodSignatureHostObject>(this).return_type;
+    let return_type = env.mem.cstr_at_utf8(return_type).unwrap().to_string();
+    type_encoding_size(&return_type)
 }
 
 - (())dealloc {
@@ -106,7 +136,12 @@ fn parse_signature_inner(env: &mut Environment, curr: ConstPtr<u8>) -> (GuestUSi
             let (scanned, read, size) = parse_signature_inner(env, curr + 1);
             (scanned + 1, read + 1, size)
         }
-        b'v' | b'@' | b':' | b'f' | b'c' | b'*' | b'i' => {
+        // Every scalar, object, class, selector and C-string encoding. They
+        // all parse identically — one character, then an optional decimal
+        // offset — so the set is listed in full rather than grown one crash at
+        // a time, which is how 'I' came to be missing while 'i' was present.
+        b'v' | b'@' | b'#' | b':' | b'*' | b'c' | b'C' | b'B' | b's' | b'S' | b'i' | b'I'
+        | b'l' | b'L' | b'q' | b'Q' | b'f' | b'd' => {
             idx += 1;
             let mut size = 0;
             while let cc @ b'0'..=b'9' = env.mem.read(curr + idx) {

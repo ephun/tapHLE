@@ -35,9 +35,10 @@ fn CFDictionaryCreateMutable(
     value_callbacks: ConstPtr<CFDictionaryValueCallBacks>,
 ) -> CFMutableDictionaryRef {
     assert!(allocator == kCFAllocatorDefault || env.mem.read(allocator).is_system_default()); // unimplemented
-                                                                                              // `capacity` is a hint: Core Foundation documents 0 as "no limit" and does
-                                                                                              // not enforce a non-zero value, and the dictionary here grows dynamically
-                                                                                              // regardless. Asserting on it turned an ordinary sizing hint into a crash.
+
+    // `capacity` is a hint: Core Foundation documents 0 as "no limit" and does
+    // not enforce a non-zero value, and the dictionary here grows dynamically
+    // regardless. Asserting on it turned an ordinary sizing hint into a crash.
     if capacity != 0 {
         log_dbg!(
             "CFDictionaryCreateMutable() capacity hint {} ignored; the dictionary grows as needed",

@@ -447,6 +447,53 @@ fn rewind(env: &mut Environment, file_ptr: MutPtr<FILE>) {
     fseek(env, file_ptr, 0, SEEK_SET);
 }
 
+/// `freopen()`: open a new file on an existing stream.
+///
+/// Apps use this for one thing in practice — pointing `stdout` or `stderr` at a
+/// log file — and the standard's other uses (reopening with a new mode, a null
+/// filename) are rare enough to say so rather than guess at.
+///
+/// The stream object itself is reused, because the caller keeps using the
+/// pointer it already has, which is the whole point of the call.
+fn freopen(
+    env: &mut Environment,
+    filename: ConstPtr<u8>,
+    mode: ConstPtr<u8>,
+    file_ptr: MutPtr<FILE>,
+) -> MutPtr<FILE> {
+    if file_ptr.is_null() {
+        return Ptr::null();
+    }
+    if filename.is_null() {
+        // "Reopen this stream with a different mode", which needs a mode change
+        // on a file descriptor tapHLE does not model. The stream is left as it
+        // was, which is what the caller had anyway.
+        log!("TODO: freopen() with a null filename; leaving the stream as it is");
+        return file_ptr;
+    }
+
+    // Open the new file first: on failure the standard says the old stream is
+    // closed anyway, but leaving the caller with a usable stream is the kinder
+    // and safer answer, and no app depends on the difference.
+    let new_stream = fopen(env, filename, mode);
+    if new_stream.is_null() {
+        log!("freopen() could not open the new file; the stream is unchanged");
+        return Ptr::null();
+    }
+
+    // Move the new file's descriptor onto the caller's stream and discard the
+    // temporary one, so the pointer the caller holds now reads and writes the
+    // new file.
+    let new_fd = env.mem.read(new_stream).fd;
+    let old_fd = env.mem.read(file_ptr).fd;
+    posix_io::close(env, old_fd);
+    env.mem.write(file_ptr, FILE { fd: new_fd });
+    State::get_mut(env).file_streams.remove(&new_stream);
+    env.mem.free(new_stream.cast());
+
+    file_ptr
+}
+
 fn fclose(env: &mut Environment, file_ptr: MutPtr<FILE>) -> i32 {
     // TODO: handle errno properly
     set_errno(env, 0);
@@ -713,6 +760,7 @@ pub const CONSTANTS: ConstantExports = &[
 pub const FUNCTIONS: FunctionExports = &[
     // Standard C functions
     export_c_func!(fopen(_, _)),
+    export_c_func!(freopen(_, _, _)),
     export_c_func!(fread(_, _, _, _)),
     export_c_func!(fgetc(_)),
     export_c_func!(getc(_)),

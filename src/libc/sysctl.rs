@@ -45,6 +45,10 @@ const KERN_OSVERSION: i32 = 65;
 
 // KERN_PROC
 const KERN_PROC_ALL: i32 = 0;
+const KERN_PROC_PID: i32 = 1;
+/// `sizeof(struct kinfo_proc)` on 32-bit Darwin. Only used when a caller asks
+/// how large the answer would be without providing a buffer.
+const KINFO_PROC_SIZE: GuestUSize = 648;
 
 // CTL_HW
 const HW_MACHINE: i32 = 1;
@@ -254,6 +258,30 @@ fn sysctl(
                 set_errno(env, ENOENT);
                 log!("TODO: sysctl() for 'kern.proc.all', returning -1");
                 return -1;
+            }
+            if (name0, name1, name2) == (CTL_KERN, KERN_PROC, KERN_PROC_PID) {
+                // 'kern.proc.pid.<pid>' fills a struct kinfo_proc.
+                // Overwhelmingly this is an anti-debugging check reading
+                // kp_proc.p_flag for P_TRACED, so the answer that matters is a
+                // zeroed structure: every flag clear, which says the process is
+                // not being traced. That is also true — tapHLE is not attached
+                // as a debugger.
+                let length = if oldlenp.is_null() {
+                    KINFO_PROC_SIZE
+                } else {
+                    env.mem.read(oldlenp)
+                };
+                if !oldp.is_null() {
+                    env.mem.bytes_at_mut(oldp.cast(), length).fill(0);
+                }
+                if !oldlenp.is_null() {
+                    env.mem.write(oldlenp, length.min(KINFO_PROC_SIZE));
+                }
+                log_dbg!(
+                    "sysctl() for 'kern.proc.pid.{}', reporting an untraced process",
+                    name3
+                );
+                return 0;
             }
             sysctl_generic(
                 env,

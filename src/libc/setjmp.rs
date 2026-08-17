@@ -89,4 +89,38 @@ fn longjmp(env: &mut Environment, jmp_buf: MutPtr<JmpBuf>, status: u32) {
         .branch(GuestFunction::from_addr_with_thumb_bit(buf.lr));
 }
 
-pub const FUNCTIONS: FunctionExports = &[export_c_func!(setjmp(_)), export_c_func!(longjmp(_, _))];
+/// `_setjmp` and `_longjmp`, the variants that do not save or restore the
+/// signal mask.
+///
+/// They delegate rather than differing, because tapHLE has no signal mask to
+/// save — which is also why `setjmp` above never saved one. The distinction is
+/// real on a Unix but empty here, and an app picks whichever its headers
+/// declared; apps link `__setjmp`.
+#[allow(non_snake_case)]
+fn _setjmp(env: &mut Environment, jmp_buf: MutPtr<JmpBuf>) -> i32 {
+    setjmp(env, jmp_buf)
+}
+
+#[allow(non_snake_case)]
+fn _longjmp(env: &mut Environment, jmp_buf: MutPtr<JmpBuf>, status: u32) {
+    longjmp(env, jmp_buf, status)
+}
+
+/// `sigsetjmp`/`siglongjmp`. The `savemask` flag is accepted and ignored, for
+/// the same reason: there is no mask to save.
+fn sigsetjmp(env: &mut Environment, jmp_buf: MutPtr<JmpBuf>, _savemask: i32) -> i32 {
+    setjmp(env, jmp_buf)
+}
+
+fn siglongjmp(env: &mut Environment, jmp_buf: MutPtr<JmpBuf>, status: u32) {
+    longjmp(env, jmp_buf, status)
+}
+
+pub const FUNCTIONS: FunctionExports = &[
+    export_c_func!(setjmp(_)),
+    export_c_func!(longjmp(_, _)),
+    export_c_func!(_setjmp(_)),
+    export_c_func!(_longjmp(_, _)),
+    export_c_func!(sigsetjmp(_, _)),
+    export_c_func!(siglongjmp(_, _)),
+];

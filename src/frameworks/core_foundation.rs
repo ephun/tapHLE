@@ -24,8 +24,10 @@ pub mod cf_dictionary;
 pub mod cf_locale;
 pub mod cf_number;
 pub mod cf_preferences;
+pub mod cf_property_list;
 pub mod cf_run_loop;
 pub mod cf_run_loop_timer;
+pub mod cf_set;
 pub mod cf_socket;
 pub mod cf_string;
 pub mod cf_type;
@@ -50,6 +52,8 @@ pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
         cf_number::CONSTANTS,
         cf_preferences::CONSTANTS,
         cf_run_loop::CONSTANTS,
+        cf_set::CONSTANTS,
+        time::CONSTANTS,
     ],
     function_exports: &[
         FUNCTIONS,
@@ -61,8 +65,10 @@ pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
         cf_locale::FUNCTIONS,
         cf_number::FUNCTIONS,
         cf_preferences::FUNCTIONS,
+        cf_property_list::FUNCTIONS,
         cf_run_loop::FUNCTIONS,
         cf_run_loop_timer::FUNCTIONS,
+        cf_set::FUNCTIONS,
         cf_string::FUNCTIONS,
         cf_type::FUNCTIONS,
         cf_url::FUNCTIONS,
@@ -97,7 +103,7 @@ pub const kCFCoreFoundationVersionNumber_iPhoneOS_3_2: f64 = 478.61;
 /// The `kCFCoreFoundationVersionNumber` symbol is the *address of* that double,
 /// so we back it with a real guest allocation and point the symbol at it. This
 /// was previously an unhandled non-lazy symbol left null, which crashed any app
-/// that dereferenced it (e.g. SPY mouse HD's startup version check).
+/// that dereferenced it (a startup version check, typically).
 pub const CONSTANTS: ConstantExports = &[(
     "_kCFCoreFoundationVersionNumber",
     HostConstant::Custom(|env| {

@@ -270,18 +270,10 @@ fn glGetString(env: &mut Environment, name: GLenum) -> ConstPtr<GLubyte> {
         let new_str = with_ctx_and_mem(env, |_gles, mem| {
             // Those values are extracted from the iPod touch 2nd gen, iOS 4.2.1
             let s: &[u8] = match name {
-                gles11::VENDOR => {
-                    b"Imagination Technologies"
-                }
-                gles11::RENDERER => {
-                    b"PowerVR MBXLite with VGPLite"
-                }
-                gles11::VERSION => {
-                    b"OpenGL ES-CM 1.1 (76)"
-                }
-                gles11::EXTENSIONS => {
-                    b"GL_APPLE_framebuffer_multisample GL_APPLE_texture_max_level GL_EXT_discard_framebuffer GL_EXT_texture_filter_anisotropic GL_EXT_texture_lod_bias GL_IMG_read_format GL_IMG_texture_compression_pvrtc GL_IMG_texture_format_BGRA8888 GL_OES_blend_subtract GL_OES_compressed_paletted_texture GL_OES_depth24 GL_OES_draw_texture GL_OES_framebuffer_object GL_OES_mapbuffer GL_OES_matrix_palette GL_OES_point_size_array GL_OES_point_sprite GL_OES_read_format GL_OES_rgb8_rgba8 GL_OES_texture_mirrored_repeat GL_OES_vertex_array_object "
-                }
+                gles11::VENDOR => b"Imagination Technologies",
+                gles11::RENDERER => b"PowerVR MBXLite with VGPLite",
+                gles11::VERSION => b"OpenGL ES-CM 1.1 (76)",
+                gles11::EXTENSIONS => EXTENSIONS,
                 _ => unreachable!(),
             };
             mem.alloc_and_write_cstr(s).cast_const()
@@ -737,6 +729,28 @@ fn glVertexPointer(
     })
 }
 
+/// The extension string tapHLE reports to guest apps.
+///
+/// Listing an extension here is a promise that its entry points work, and an
+/// app takes that promise at face value: it checks this string and then uses
+/// the feature instead of the path it would otherwise take.
+///
+/// `GL_OES_vertex_array_object` used to be listed, and was not kept. tapHLE
+/// exports `glGenVertexArraysOES` and `glBindVertexArrayOES`, but the
+/// GLES1-on-GL2 backend — the one Windows runs — inherits the no-op defaults
+/// in [crate::gles::GLES], so binding a vertex array object does nothing and
+/// generating several hands out the same names. Unity checks for the
+/// extension, and on finding it configures each mesh's arrays once into a VAO
+/// and thereafter just binds the VAO before drawing. With binding a no-op,
+/// every such batch drew with whichever pointers the previous draw happened to
+/// leave behind. In one measured case a track mesh was drawn with its own
+/// vertex positions in place of its texture coordinates, sampling one white
+/// corner of the atlas, which is why the world was a flat grey sheet.
+///
+/// Not advertising it costs nothing: an app that cannot have vertex array
+/// objects simply sets its array pointers per draw, which works.
+const EXTENSIONS: &[u8] = b"GL_APPLE_framebuffer_multisample GL_APPLE_texture_max_level GL_EXT_discard_framebuffer GL_EXT_texture_filter_anisotropic GL_EXT_texture_lod_bias GL_IMG_read_format GL_IMG_texture_compression_pvrtc GL_IMG_texture_format_BGRA8888 GL_OES_blend_subtract GL_OES_compressed_paletted_texture GL_OES_depth24 GL_OES_draw_texture GL_OES_framebuffer_object GL_OES_mapbuffer GL_OES_matrix_palette GL_OES_point_size_array GL_OES_point_sprite GL_OES_read_format GL_OES_rgb8_rgba8 GL_OES_texture_mirrored_repeat GL_OES_texture_npot ";
+
 // Drawing
 fn glDrawArrays(env: &mut Environment, mode: GLenum, first: GLint, count: GLsizei) {
     with_ctx_and_mem(env, |gles, _mem| unsafe {
@@ -1003,6 +1017,24 @@ fn glTexParameterx(env: &mut Environment, target: GLenum, pname: GLenum, param: 
     }
     with_ctx_and_mem(env, |gles, _mem| unsafe {
         gles.TexParameterx(target, pname, param)
+    })
+}
+fn glGetTexParameteriv(
+    env: &mut Environment,
+    target: GLenum,
+    pname: GLenum,
+    params: MutPtr<GLint>,
+) {
+    with_ctx_and_mem(env, |gles, mem| unsafe {
+        // TEXTURE_CROP_RECT_OES is the only one of these that is four values
+        // wide; everything else is one.
+        let count = if pname == gles11::TEXTURE_CROP_RECT_OES {
+            4
+        } else {
+            1
+        };
+        let params = mem.ptr_at_mut(params, count);
+        gles.GetTexParameteriv(target, pname, params)
     })
 }
 fn glTexParameteriv(env: &mut Environment, target: GLenum, pname: GLenum, params: ConstPtr<GLint>) {
@@ -1522,7 +1554,28 @@ fn glMapBufferOES(env: &mut Environment, target: GLenum, access: GLenum) -> MutP
     assert!(access == WRITE_ONLY_OES);
     let buffer_object_name = _get_currently_bound_buffer_object_name(env, target);
     let host_buffer = with_ctx_and_mem_no_skip(env, |gles, _mem| unsafe {
-        gles.MapBufferOES(target, access)
+        // `OES_mapbuffer` only offers GL_WRITE_ONLY, and that is all the guest
+        // can ask for, but tapHLE has to *read* the buffer's current contents:
+        // the guest is handed a private copy, and whatever it does not
+        // overwrite is copied back at unmap. A write-only mapping is not
+        // required to expose the existing bytes, and desktop drivers commonly
+        // return fresh uninitialised memory instead so they can skip a
+        // readback stall. Seeding the copy from that hands the guest garbage,
+        // and unmap then writes the garbage into every part of the buffer the
+        // guest left alone.
+        //
+        // Ask for a readable mapping first, and fall back to the access the
+        // guest requested for a backend that has no such mode. GL_READ_WRITE
+        // is not a valid GLES 1.1 enum, so the failure has to be tidied up
+        // rather than left for the guest to find with glGetError.
+        const GL_READ_WRITE: GLenum = 0x88BA;
+        let readable = gles.MapBufferOES(target, GL_READ_WRITE);
+        if readable.is_null() {
+            while gles.GetError() != 0 {}
+            gles.MapBufferOES(target, access)
+        } else {
+            readable
+        }
     });
     if host_buffer.is_null() {
         nil.cast()
@@ -1693,11 +1746,8 @@ fn glCompileShader(env: &mut Environment, shader: GLuint) {
             let mut buf = [0u8; 1024];
             let mut len: GLsizei = 0;
             gles.GetShaderInfoLog(shader, 1024, &mut len, buf.as_mut_ptr() as *mut _);
-            let s = std::str::from_utf8(std::slice::from_raw_parts(
-                buf.as_ptr() as *const u8,
-                len as usize,
-            ))
-            .unwrap_or("?");
+            let s = std::str::from_utf8(std::slice::from_raw_parts(buf.as_ptr(), len as usize))
+                .unwrap_or("?");
             log!("Shader {} compile failed: {}", shader, s);
         }
     });
@@ -1721,11 +1771,8 @@ fn glLinkProgram(env: &mut Environment, program: GLuint) {
             let mut buf = [0u8; 1024];
             let mut len: GLsizei = 0;
             gles.GetProgramInfoLog(program, 1024, &mut len, buf.as_mut_ptr() as *mut _);
-            let s = std::str::from_utf8(std::slice::from_raw_parts(
-                buf.as_ptr() as *const u8,
-                len as usize,
-            ))
-            .unwrap_or("?");
+            let s = std::str::from_utf8(std::slice::from_raw_parts(buf.as_ptr(), len as usize))
+                .unwrap_or("?");
             log!("Program {} link failed: {}", program, s);
         }
     });
@@ -1969,7 +2016,7 @@ fn glUniform4f(
 }
 fn glUniform1iv(env: &mut Environment, location: GLint, count: GLsizei, value: ConstPtr<GLint>) {
     with_ctx_and_mem(env, |gles, mem| unsafe {
-        let n = (count as usize).max(0);
+        let n = count as usize;
         let ptr = mem.ptr_at(value, n.try_into().unwrap_or(0));
         gles.Uniform1iv(location, count, ptr);
     });
@@ -2235,6 +2282,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(glTexParameterf(_, _, _)),
     export_c_func!(glTexParameterx(_, _, _)),
     export_c_func!(glTexParameteriv(_, _, _)),
+    export_c_func!(glGetTexParameteriv(_, _, _)),
     export_c_func!(glTexParameterfv(_, _, _)),
     export_c_func!(glTexParameterxv(_, _, _)),
     export_c_func!(glTexImage2D(_, _, _, _, _, _, _, _, _)),
@@ -2367,4 +2415,35 @@ fn _get_buffer_size(env: &mut Environment, target: GLenum) -> GLint {
         unsafe { gles.GetBufferParameteriv(target, gles11::BUFFER_SIZE, &mut buffer_size) }
         buffer_size
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EXTENSIONS;
+
+    /// The entry points for these exist, so nothing fails loudly when an app
+    /// uses them — it just renders wrongly, somewhere else, much later. Only
+    /// re-add one here together with a backend that implements it.
+    #[test]
+    fn no_extension_is_advertised_that_the_gles1_backend_only_stubs() {
+        let advertised = std::str::from_utf8(EXTENSIONS).unwrap();
+        for stubbed in ["GL_OES_vertex_array_object"] {
+            assert!(
+                !advertised.contains(stubbed),
+                "{stubbed} is advertised but the GLES1-on-GL2 backend only stubs it",
+            );
+        }
+    }
+
+    /// Space-separated, with the trailing space the loop above relies on, and
+    /// no accidental doubling — apps split this string on single spaces.
+    #[test]
+    fn the_extension_string_is_well_formed() {
+        let advertised = std::str::from_utf8(EXTENSIONS).unwrap();
+        assert!(advertised.ends_with(' '));
+        assert!(!advertised.contains("  "));
+        for name in advertised.split_whitespace() {
+            assert!(name.starts_with("GL_"), "{name:?} is not an extension name");
+        }
+    }
 }

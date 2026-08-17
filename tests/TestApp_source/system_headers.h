@@ -49,6 +49,11 @@ static inline NSRange NSMakeRange(NSUInteger loc, NSUInteger len) {
 }
 + (Class)class;
 + (Class)superclass;
+// A class object is a singleton, so Foundation declares these on the class
+// side to answer the class itself. The zone is typed as void * because
+// struct _NSZone is not declared here.
++ (id)copyWithZone:(void *)zone;
++ (id)mutableCopyWithZone:(void *)zone;
 + (instancetype)alloc;
 + (instancetype)new;
 + (BOOL)respondsToSelector:(SEL)selector;
@@ -61,10 +66,13 @@ static inline NSRange NSMakeRange(NSUInteger loc, NSUInteger len) {
 - (void *)methodForSelector:(SEL)selector;
 - (id)performSelector:(SEL)selector;
 - (BOOL)respondsToSelector:(SEL)selector;
-// NSKeyValueCoding. NSString is not declared yet, so the key is typed as id.
+// NSKeyValueCoding. NSString and NSArray are not declared yet, so the key and
+// the key list are typed as id.
 - (id)valueForKey:(id)key;
-- (id)dictionaryWithValuesForKeys:(NSArray *)keys;
+- (id)valueForKeyPath:(id)keyPath;
+- (id)dictionaryWithValuesForKeys:(id)keys;
 - (void)setValue:(id)value forKey:(id)key;
+- (void)setValue:(id)value forKeyPath:(id)keyPath;
 - (void)setNilValueForKey:(id)key;
 @end
 
@@ -172,6 +180,7 @@ static inline NSRange NSMakeRange(NSUInteger loc, NSUInteger len) {
 - (ObjectType)anyObject;
 - (NSUInteger)count;
 - (BOOL)containsObject:(ObjectType)object;
+- (ObjectType)member:(ObjectType)object;
 - (BOOL)intersectsSet:(NSSet *)other;
 - (BOOL)isSubsetOfSet:(NSSet *)other;
 - (BOOL)isEqualToSet:(NSSet *)other;
@@ -206,6 +215,8 @@ enum { NSASCIIStringEncoding = 1, NSUTF8StringEncoding = 4 };
                                              range:(NSRange)range;
 - (BOOL)isEqualToString:(NSString *)other;
 - (NSInteger)compare:(NSString *)other;
+- (NSInteger)localizedCompare:(NSString *)other;
+- (NSInteger)localizedCaseInsensitiveCompare:(NSString *)other;
 - (NSString *)stringByAddingPercentEscapesUsingEncoding:(NSStringEncoding)encoding;
 @end
 @interface NSMutableString : NSString

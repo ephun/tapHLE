@@ -117,17 +117,18 @@ fn rotate_fullscreen_size(orientation: DeviceOrientation, screen_size: (u32, u32
 /// Tell SDL2 what orientation we want. Only useful on Android.
 fn set_sdl2_orientation(orientation: DeviceOrientation) {
     // Despite the name, this hint works on Android too.
-    sdl2::hint::set(
-        "SDL_IOS_ORIENTATIONS",
-        match orientation {
-            DeviceOrientation::Portrait => "Portrait",
-            // The inversion is deliberate. These probably correspond to
-            // iPhone OS content orientations?
-            DeviceOrientation::PortraitUpsideDown => "PortraitUpsideDown",
-            DeviceOrientation::LandscapeLeft => "LandscapeRight",
-            DeviceOrientation::LandscapeRight => "LandscapeLeft",
-        },
-    );
+    sdl2::hint::set("SDL_IOS_ORIENTATIONS", sdl2_orientation_hint(orientation));
+}
+
+fn sdl2_orientation_hint(orientation: DeviceOrientation) -> &'static str {
+    match orientation {
+        DeviceOrientation::Portrait => "Portrait",
+        DeviceOrientation::PortraitUpsideDown => "PortraitUpsideDown",
+        // The inversion is deliberate. These correspond to content
+        // orientations on Android rather than physical device rotation.
+        DeviceOrientation::LandscapeLeft => "LandscapeRight",
+        DeviceOrientation::LandscapeRight => "LandscapeLeft",
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -325,13 +326,9 @@ impl Window {
             set_sdl2_orientation(device_orientation);
             let screen_size = video_ctx.display_bounds(0).unwrap().size();
             let (width, height) = rotate_fullscreen_size(device_orientation, screen_size);
-            let window = video_ctx
-                .window(title, width, height)
-                .fullscreen()
-                .opengl()
-                .build()
-                .unwrap();
-            window
+            let mut window_builder = video_ctx.window(title, width, height);
+            window_builder.fullscreen().opengl();
+            window_builder.build().unwrap()
         } else if fullscreen {
             let (width, height) = video_ctx.display_bounds(0).unwrap().size();
             let window = video_ctx
@@ -1233,11 +1230,26 @@ impl Window {
     fn display_splash(&mut self) {
         assert!(self.splash_image.is_some());
 
-        // OpenGL ES expects bottom-to-top row order for image data, but our
-        // image data will be top-to-bottom. A reflection transform compensates.
-        let matrix = self.rotation_matrix().multiply(&Matrix::y_flip());
         let (vx, vy, vw, vh) = self.viewport();
         let viewport = (vx, vy + self.viewport_y_offset(), vw, vh);
+
+        // OpenGL ES expects bottom-to-top row order for image data, but our
+        // image data will be top-to-bottom. A reflection transform compensates.
+        //
+        // The device rotation is a separate question, and applying it
+        // unconditionally was wrong. It exists to turn a portrait image upright
+        // in a landscape window, which is what a landscape app's fallback
+        // `Default.png` needs — but an app that ships `Default-Landscape.png`
+        // gives us an image that is already the shape of the window, and
+        // rotating that lays it on its side and stretches it to fit. So rotate
+        // only when the image and the window disagree about which way up they
+        // are.
+        let (image_width, image_height) = self.splash_image.as_ref().unwrap().dimensions();
+        let matrix = if (image_width > image_height) == (vw > vh) {
+            Matrix::y_flip()
+        } else {
+            self.rotation_matrix().multiply(&Matrix::y_flip())
+        };
 
         let image = self.splash_image.as_ref().unwrap();
 
@@ -1485,7 +1497,9 @@ impl Window {
 }
 
 pub fn open_url(env: &mut Environment, url: &str) -> Result<(), String> {
-    env.on_parent_stack_in_coroutine(|_, _| sdl2::url::open_url(url).map_err(|e| e.to_string()))
+    env.on_parent_stack_in_coroutine_windowless(|_| {
+        sdl2::url::open_url(url).map_err(|e| e.to_string())
+    })
 }
 
 /// Show an SDL messagebox for an error (typically after a panic).
@@ -1567,7 +1581,7 @@ pub fn get_battery_status() -> (i32, BatteryState) {
 }
 
 pub fn get_preferred_language_codes(env: &mut Environment) -> Vec<String> {
-    env.on_parent_stack_in_coroutine(|_, _| {
+    env.on_parent_stack_in_coroutine_windowless(|_| {
         sdl2::locale::get_preferred_locales()
             .map(|loc| loc.lang)
             .collect()
@@ -1575,9 +1589,37 @@ pub fn get_preferred_language_codes(env: &mut Environment) -> Vec<String> {
 }
 
 pub fn get_preferred_country_codes(env: &mut Environment) -> Vec<String> {
-    env.on_parent_stack_in_coroutine(|_, _| {
+    env.on_parent_stack_in_coroutine_windowless(|_| {
         sdl2::locale::get_preferred_locales()
             .filter_map(|loc| loc.country)
             .collect()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{sdl2_orientation_hint, DeviceOrientation};
+
+    /// The landscape mapping is inverted on purpose: the hint names the
+    /// content orientation, not the way the device is held. It is easy to
+    /// "fix" by inspection, so it is pinned here.
+    #[test]
+    fn sdl_orientation_hints_preserve_the_android_mapping() {
+        assert_eq!(
+            sdl2_orientation_hint(DeviceOrientation::Portrait),
+            "Portrait"
+        );
+        assert_eq!(
+            sdl2_orientation_hint(DeviceOrientation::PortraitUpsideDown),
+            "PortraitUpsideDown"
+        );
+        assert_eq!(
+            sdl2_orientation_hint(DeviceOrientation::LandscapeLeft),
+            "LandscapeRight"
+        );
+        assert_eq!(
+            sdl2_orientation_hint(DeviceOrientation::LandscapeRight),
+            "LandscapeLeft"
+        );
+    }
 }

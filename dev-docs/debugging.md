@@ -3,8 +3,9 @@
 See also `building.md`.
 
 For selected-game work, begin with `app-debugging-playbook.md` and any existing
-`app-notes/<app-slug>.md`. They define the hash gate, evidence ladder, bounded
-instrumentation, isolated Windows run protocol, and continuation handoff.
+`app-notes/<app-slug>.md`. They define artifact identity, the evidence ladder,
+bounded instrumentation, the isolated Windows run protocol, and the continuation
+handoff.
 
 ## Logging
 
@@ -80,3 +81,50 @@ tapHLE only communicates with GDB while execution is paused. Beyond being paused
 [apitrace](https://apitrace.github.io/) is invaluable for figuring out OpenGL-related issues.
 
 More generally, and especially Outside the OpenGL realm, sometimes the most effective solution is dumping image data to a file. There's some functions in [`crate::debug`](../src/debug.rs) that might be useful for this. Don't forget that you can also use Rust's `std::fs::write` if necessary. GIMP and some other tools can read raw pixel data (easiest if the filename ends in `.data`).
+
+### Which way up: two flips, and both of them count
+
+Anything tapHLE draws that has a handedness — text above all — can be turned
+over twice on its way to the screen, and it only lands right when both are
+accounted for:
+
+1. **The transform.** UIKit lays out y-downward and Core Graphics y-upward, so
+   `UIView` installs a y-axis flip around every `-drawRect:` call. Read it as
+   the sign of `CGContextGetCTM(...).d`.
+2. **The destination.** The compositor draws a `CALayer`'s backing bitmap with
+   its vertical texture coordinate inverted, so everything in it is turned over
+   once more (`composition.rs`, `rows_are_top_to_bottom`). A bitmap an app
+   created itself and uses as a texture or assigns to `contents` is not.
+
+Two flips cancel. So drawing has to be turned back over exactly when the two
+**agree**, and left alone when they differ. Nothing about a bitmap's contents
+distinguishes the two destinations, so `CALayer` marks the one it owns and
+`CGBitmapContextData::flipped_on_presentation` carries the answer.
+
+**The trap is that the transform alone looks like it explains everything.** It
+is the visible half, it correlates with the common case, and a fix keyed to it
+passes the app in front of you. It was wrong twice:
+
+- Keying on the CTM alone fixed `-drawRect:` text and left every string an app
+  drew into its own bitmap mirrored — and newly mirrored strings that had been
+  correct, in apps that flip their own context first, which is the right way to
+  draw UIKit text into a bitmap.
+- Applying the same band flip inside `CGContextShowGlyphsAtPoint` broke text
+  that was already correct and fixed nothing, because it moved the same wrong
+  question one layer down.
+
+Two rules follow, and they generalise past text:
+
+- **Ask where the pixels are going, not only how they are being transformed.**
+  Handedness is a property of the whole path to the screen.
+- **Check both destinations before believing a fix.** One app whose text comes
+  right is a sample. A layer-drawn label (`UILabel`, a `-drawRect:` view) and
+  an app-owned bitmap are different halves of the same question, and a change
+  that fixes one can silently invert the other. `dev-docs/app-notes/warlords.md`
+  has the worked example, and Tap Tap Revenge 3's menu against OLO's menu is a
+  cheap pair to check against.
+
+The same reasoning applies to the *layout* being mirrored rather than the
+glyphs: flip about the band the text occupies, never per glyph. A per-glyph
+mirror turns the letters the right way up and leaves the lines of a paragraph
+stacked upwards, which looks like a font bug and is not one.

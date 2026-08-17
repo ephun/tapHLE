@@ -37,12 +37,20 @@ pub const UIControlEventValueChanged: UIControlEvents = 1 << 12;
 pub type UIControlContentVerticalAlignment = NSInteger;
 const UIControlContentVerticalAlignmentCenter: UIControlContentVerticalAlignment = 0;
 
-struct UIControlHostObject {
+// TODO: Add the other UIControlContentHorizontalAlignment enums
+pub type UIControlContentHorizontalAlignment = NSInteger;
+const UIControlContentHorizontalAlignmentCenter: UIControlContentHorizontalAlignment = 0;
+
+/// `pub(crate)` because a UIControl subclass need not live under this
+/// module: UIPageControl does not, and its host object still has to carry
+/// this as its superclass or UIControl's own methods cannot borrow it.
+pub(crate) struct UIControlHostObject {
     superclass: super::UIViewHostObject,
     enabled: bool,
     selected: bool,
     highlighted: bool,
     contentVerticalAlignment: UIControlContentVerticalAlignment,
+    contentHorizontalAlignment: UIControlContentHorizontalAlignment,
     /// `UITouch*` of the touch currently being tracked, [nil] if none
     tracked_touch: id,
     tracking: bool,
@@ -59,6 +67,7 @@ impl Default for UIControlHostObject {
             selected: false,
             highlighted: false,
             contentVerticalAlignment: UIControlContentVerticalAlignmentCenter,
+            contentHorizontalAlignment: UIControlContentHorizontalAlignmentCenter,
             tracked_touch: nil,
             tracking: false,
             action_targets: Vec::new(),
@@ -115,6 +124,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         selected: _,
         highlighted: _,
         contentVerticalAlignment: _,
+        contentHorizontalAlignment: _,
         tracking: _,
         action_targets: _, // targets are weak references, nothing to do
         tracked_touch,
@@ -173,6 +183,19 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())setContentVerticalAlignment:(UIControlContentVerticalAlignment)contentVerticalAlignment {
     env.objc.borrow_mut::<UIControlHostObject>(this).contentVerticalAlignment = contentVerticalAlignment;
+}
+
+// The horizontal counterpart of the pair above, kept and reported back the same
+// way. Neither is applied when the control draws itself yet — but a control is
+// configured long before it is drawn, and an app that says where its label sits
+// is not asking for anything unusual, so not understanding the question at all
+// ended the app rather than misplacing a label.
+- (NSInteger)contentHorizontalAlignment {
+    env.objc.borrow::<UIControlHostObject>(this).contentHorizontalAlignment
+}
+
+- (())setContentHorizontalAlignment:(UIControlContentHorizontalAlignment)contentHorizontalAlignment {
+    env.objc.borrow_mut::<UIControlHostObject>(this).contentHorizontalAlignment = contentHorizontalAlignment;
 }
 
 - (bool)tracking {

@@ -15,10 +15,49 @@
   universal iPhone/iPad.
 - Availability: not re-checked against Apple lookup yet.
 
-## Highest milestone
+## Highest milestone: 3-star (In game), tapHLE `a85548d6`
 
-None yet (no screen). Startup gets deep into the app but crashes inside the
-bundled **Scoreloop** SDK before any frame.
+Reproduced on a clean committed release build (window title
+`ParaPanicHD (tapHLE a85548d6)`, no `-dirty`). Filed as report 49.
+
+The title screen, the "What's New?" dialog, the main menu (New Game,
+Challenges, High Scores, Themes, Extras, How To Play, News) and the
+theme/difficulty screen all render, and **Easy starts a round**: the plane
+crosses the top, a parachutist falls, the boat sits on the water, and the score
+and lives HUD is drawn. Three captures six seconds apart were three distinct
+images, checked by SHA-256 rather than by eye.
+
+Not assessed past the first round, so this is three stars and not more — and
+four and five require human testing in any case.
+
+### Click map
+
+Window 320x480. Allow ~32 s for the title screen.
+
+1. Title, with the "What's New?" dialog -> `(160, 350)` OK. Allow 12 s.
+2. Main menu -> `(160, 165)` New Game. Allow 16 s.
+3. Theme / difficulty -> `(75, 395)` Easy -> the round starts after ~18 s.
+
+### What it took
+
+Five general gaps, all on `trunk` and none specific to this app:
+
+1. `-[NSNumberFormatter setMinusSign:]`. The app's `CreditsFormatter` is a
+   guest subclass of NSNumberFormatter and died on it before drawing anything.
+2. `glGetTexParameteriv`, which existed on no backend.
+3. Type encoding `I` in `NSMethodSignature`, then `I` again in `NSInvocation`.
+   Both are now handled as part of the **full** scalar set rather than one
+   character at a time — `I` was missing only because nothing had needed it,
+   and the next app would have found the next hole.
+4. `NSApplicationSupportDirectory` in
+   `NSSearchPathForDirectoriesInDomains()`.
+5. `-[NSFileManager copyItemAtPath:toPath:error:]` asserted that the caller had
+   *not* passed an `NSError**`, which is backwards: an app that passes one is
+   asking to be told what went wrong.
+
+The earlier note said startup crashed inside the bundled Scoreloop SDK. That
+was where it stopped, but none of the five fixes above is Scoreloop-specific —
+the SDK was simply the first code to exercise them.
 
 ## Fixes made (general; graduate to trunk)
 

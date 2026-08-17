@@ -52,6 +52,13 @@ pub mod alc_defines {
 
     pub const ALC_DEVICE_SPECIFIER: ALCenum = 0x1005;
 
+    // Queryable with alcGetIntegerv. The two version queries accept a null
+    // device; the two attribute queries do not.
+    pub const ALC_MAJOR_VERSION: ALCenum = 0x1000;
+    pub const ALC_MINOR_VERSION: ALCenum = 0x1001;
+    pub const ALC_ATTRIBUTES_SIZE: ALCenum = 0x1002;
+    pub const ALC_ALL_ATTRIBUTES: ALCenum = 0x1003;
+
     // Context attributes
     pub const ALC_FREQUENCY: ALCint = 0x1007;
     pub const ALC_REFRESH: ALCint = 0x1008;
@@ -84,6 +91,13 @@ extern "C" {
     pub fn alcGetError(device: *mut ALCdevice) -> ALCenum;
 
     pub fn alcGetString(device: *mut ALCdevice, param: ALCenum) -> *const ALCchar;
+
+    pub fn alcGetIntegerv(
+        device: *mut ALCdevice,
+        param: ALCenum,
+        size: ALCsizei,
+        values: *mut ALCint,
+    );
 }
 
 // === al.h ===
@@ -131,6 +145,12 @@ pub mod al_defines {
     pub const AL_BUFFERS_QUEUED: ALenum = 0x1015;
     pub const AL_BUFFERS_PROCESSED: ALenum = 0x1016;
 
+    pub const AL_SAMPLE_OFFSET: ALenum = 0x1025;
+
+    pub const AL_BITS: ALenum = 0x2002;
+    pub const AL_CHANNELS: ALenum = 0x2003;
+    pub const AL_SIZE: ALenum = 0x2004;
+
     pub const AL_FORMAT_MONO8: ALenum = 0x1100;
     pub const AL_FORMAT_MONO16: ALenum = 0x1101;
     pub const AL_FORMAT_STEREO8: ALenum = 0x1102;
@@ -150,7 +170,7 @@ extern "C" {
 
     pub fn alEnable(capability: ALenum);
 
-    pub fn alGetBufferi(buffer: ALuint, param: ALenum, value: *const ALint);
+    pub fn alGetBufferi(buffer: ALuint, param: ALenum, value: *mut ALint);
 
     pub fn alListenerf(param: ALenum, value: ALfloat);
     pub fn alListener3f(param: ALenum, value1: ALfloat, value2: ALfloat, value3: ALfloat);

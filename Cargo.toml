@@ -2,6 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 [workspace]
+# Path dependencies of the root package join the workspace automatically. The
+# desktop frontend depends on the root package rather than the other way round,
+# so it has to be listed. It is also a default member so that the ordinary
+# `cargo build` and the lint/format scripts cover it.
+members = ["src/gui"]
+default-members = [".", "src/gui"]
 
 [workspace.package]
 version = "0.3.0-alpha.1"

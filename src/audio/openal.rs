@@ -13,7 +13,7 @@ pub use al_sys::al_defines::*;
 pub use al_sys::al_types;
 pub use al_sys::alc_defines::*;
 pub use al_sys::alc_types;
-pub use al_sys::{alcCloseDevice, alcGetError, alcGetString, alcOpenDevice};
+pub use al_sys::{alcCloseDevice, alcGetError, alcGetIntegerv, alcGetString, alcOpenDevice};
 
 use al_types::*;
 
@@ -134,7 +134,7 @@ impl OpenAL<'_> {
         al_sys::alEnable(capability)
     }
 
-    pub unsafe fn GetBufferi(&self, buffer: ALuint, param: ALenum, value: *const ALint) {
+    pub unsafe fn GetBufferi(&self, buffer: ALuint, param: ALenum, value: *mut ALint) {
         al_sys::alGetBufferi(buffer, param, value)
     }
 

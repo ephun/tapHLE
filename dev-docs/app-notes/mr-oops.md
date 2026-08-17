@@ -55,3 +55,46 @@ instruction window from `LR 0x17b5d`, so the call site is immediately
 identifiable. Read which global the faulting load uses and match it against the
 list above. That is one lookup and it decides the fix, rather than adding all
 six constants speculatively.
+
+## 2026-07-27: the nil is in the OAuth path, not in UIWebView
+
+Still 1-star, still the same null dereference at `PC 0x17b82`. The earlier note
+guessed that the preceding `[(UIWebView*) loadRequest:(null)]` was a symptom
+rather than the cause. That was right, and tracing now says what the cause is.
+
+The last messages before the fault, with `TAPHLE_TRACE_SELECTORS=all`:
+
+```text
+[OAMutableURLRequest (0x30013250) dealloc]
+[nil ((null)) autorelease]
+[OARequestParameter alloc] / initWithName:value:
+[nil ((null)) key]
+[nil ((null)) setParameters:]
+[UIWebView loadRequest:]        <- the nil request finally arrives here
+```
+
+`OAMutableURLRequest` and `OARequestParameter` are **OAuthConsumer**, the
+OAuth 1.0 library. The request object is constructed and then **deallocated**
+before the parameters are attached, and `[nil key]` says the `OAConsumer` is
+nil too. So the chain fails at the top — no consumer, therefore no signed
+request — and a nil request is handed to the web view, after which the app
+dereferences a null in its own code.
+
+### What this means for the rating
+
+This is the ad/analytics sign-in path. tapHLE has no network stack for it, and
+the app's own offline handling is what runs. Whether the missing consumer is a
+tapHLE gap or the app's correct behaviour with no network is **not yet
+established** — and that is the question to answer first, before implementing
+anything. Two cheap discriminators:
+
+- Find what builds the `OAConsumer`. If it reads a key and secret out of a
+  bundled plist, tapHLE failing to load that plist is a real gap and a fixable
+  one.
+- If instead the consumer comes from a server round-trip, this path cannot
+  succeed offline and the bug is that the app does not survive its own failure
+  — which tapHLE cannot fix from the outside, and which makes this a poor
+  target until the rest of the app is reachable another way.
+
+Do not start by implementing OAuth. Nothing here has shown that the app needs a
+working OAuth exchange to reach its game.

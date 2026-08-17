@@ -122,8 +122,18 @@ impl Options {
             Ok(arg)
         }
 
+        // Every boolean option below has both an on and an off spelling. A
+        // one-way flag cannot be turned back off by a later argument, and
+        // options arrive in layers — the bundled defaults file, the user's
+        // options file, then the command line, then the frontend's per-app
+        // override — so without the off spelling a default set for an app
+        // could never be countermanded.
         if arg == "--fullscreen" {
             self.fullscreen = true;
+        } else if arg == "--windowed" {
+            self.fullscreen = false;
+        } else if arg == "--portrait" {
+            self.initial_orientation = DeviceOrientation::Portrait;
         } else if arg == "--upside-down" {
             self.initial_orientation = DeviceOrientation::PortraitUpsideDown;
         } else if arg == "--landscape-left" {
@@ -132,6 +142,8 @@ impl Options {
             self.initial_orientation = DeviceOrientation::LandscapeRight;
         } else if arg == "--landscape-native" {
             self.landscape_native = true;
+        } else if arg == "--no-landscape-native" {
+            self.landscape_native = false;
         } else if let Some(value) = arg.strip_prefix("--device-family=") {
             let parsed =
                 DeviceFamily::try_from(value).map_err(|_| "Invalid device family".to_string())?;
@@ -142,6 +154,8 @@ impl Options {
                 .map_err(|_| "Invalid scale hack factor".to_string())?;
         } else if arg == "--disable-analog-stick-tilt-controls" {
             self.analog_stick_tilt_controls = false;
+        } else if arg == "--enable-analog-stick-tilt-controls" {
+            self.analog_stick_tilt_controls = true;
         } else if let Some(value) = arg.strip_prefix("--deadzone=") {
             self.deadzone = parse_degrees(value, "deadzone")?;
         } else if let Some(value) = arg.strip_prefix("--x-tilt-range=") {
@@ -225,6 +239,8 @@ impl Options {
             );
         } else if arg == "--disable-direct-memory-access" {
             self.direct_memory_access = false;
+        } else if arg == "--enable-direct-memory-access" {
+            self.direct_memory_access = true;
         } else if let Some(address) = arg.strip_prefix("--gdb=") {
             let addrs = address
                 .to_socket_addrs()
@@ -239,6 +255,8 @@ impl Options {
             self.popup_errors = false;
         } else if arg == "--print-fps" {
             self.print_fps = true;
+        } else if arg == "--no-print-fps" {
+            self.print_fps = false;
         } else if let Some(value) = arg.strip_prefix("--fps-limit=") {
             if value == "off" {
                 self.fps_limit = None;
@@ -252,16 +270,24 @@ impl Options {
             }
         } else if arg == "--force-composition" {
             self.force_composition = true;
+        } else if arg == "--no-force-composition" {
+            self.force_composition = false;
         } else if arg == "--allow-network-access" {
             self.network_access = true;
+        } else if arg == "--deny-network-access" {
+            self.network_access = false;
         } else if arg == "--no-error-popup" {
             self.popup_errors = false;
+        } else if arg == "--error-popup" {
+            self.popup_errors = true;
         } else if let Some(values) = arg.strip_prefix("--dump=") {
             self.dumping_options = parse_dump_options(values)?;
         } else if let Some(path) = arg.strip_prefix("--dump-file=") {
             self.dumping_file = crate::paths::user_data_base_path().join(path);
         } else if arg == "--ignore-gl-errors" {
             self.ignore_gl_errors = true;
+        } else if arg == "--report-gl-errors" {
+            self.ignore_gl_errors = false;
         } else if let Some(value) = arg.strip_prefix("--zero-stack-after-guest-to-host-call=") {
             self.zero_stack_after_guest_to_host_call = Some(value.parse().map_err(|_| {
                 "Invalid value for --zero-stack-after-guest-to-host-call=".to_string()
@@ -329,6 +355,45 @@ impl DumpingOptions {
     }
 }
 
+/// Every boolean option's on spelling paired with its off spelling, and a way
+/// to read the field each pair controls.
+///
+/// The desktop frontend layers a per-app override on top of a global default
+/// on top of the options files, so each of these must be expressible in both
+/// directions from an argument list. Keeping the pairs in one table lets the
+/// tests below check that without restating them.
+#[cfg(test)]
+type BooleanOptionPair = (&'static str, &'static str, fn(&Options) -> bool);
+
+#[cfg(test)]
+const BOOLEAN_OPTION_PAIRS: &[BooleanOptionPair] = &[
+    ("--fullscreen", "--windowed", |o| o.fullscreen),
+    ("--landscape-native", "--no-landscape-native", |o| {
+        o.landscape_native
+    }),
+    (
+        "--enable-analog-stick-tilt-controls",
+        "--disable-analog-stick-tilt-controls",
+        |o| o.analog_stick_tilt_controls,
+    ),
+    (
+        "--enable-direct-memory-access",
+        "--disable-direct-memory-access",
+        |o| o.direct_memory_access,
+    ),
+    ("--print-fps", "--no-print-fps", |o| o.print_fps),
+    ("--force-composition", "--no-force-composition", |o| {
+        o.force_composition
+    }),
+    ("--allow-network-access", "--deny-network-access", |o| {
+        o.network_access
+    }),
+    ("--error-popup", "--no-error-popup", |o| o.popup_errors),
+    ("--ignore-gl-errors", "--report-gl-errors", |o| {
+        o.ignore_gl_errors
+    }),
+];
+
 fn parse_dump_options(options: &str) -> Result<DumpingOptions, String> {
     let mut dumping_options = DumpingOptions::default();
     for opt in options.split(",") {
@@ -343,4 +408,50 @@ fn parse_dump_options(options: &str) -> Result<DumpingOptions, String> {
         }
     }
     Ok(dumping_options)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Options, BOOLEAN_OPTION_PAIRS};
+    use crate::window::DeviceOrientation;
+
+    fn parse_all(args: &[&str]) -> Options {
+        let mut options = Options::default();
+        for arg in args {
+            assert_eq!(
+                options.parse_argument(arg),
+                Ok(true),
+                "option {arg:?} was not recognized"
+            );
+        }
+        options
+    }
+
+    /// Each boolean option's two spellings must actually set and clear the
+    /// field, in either order. A pair where both spellings set the same value
+    /// would silently make one layer of configuration unable to countermand
+    /// another.
+    #[test]
+    fn boolean_options_can_be_switched_both_ways() {
+        for &(on, off, read) in BOOLEAN_OPTION_PAIRS {
+            assert!(read(&parse_all(&[off, on])), "{on:?} did not switch on");
+            assert!(!read(&parse_all(&[on, off])), "{off:?} did not switch off");
+        }
+    }
+
+    /// Portrait is the default orientation, so it had no spelling of its own
+    /// and could not be asked for once another layer had chosen landscape.
+    #[test]
+    fn portrait_can_be_asked_for_explicitly() {
+        let options = parse_all(&["--landscape-left", "--portrait"]);
+        assert_eq!(options.initial_orientation, DeviceOrientation::Portrait);
+    }
+
+    /// An unrecognized option is reported as unrecognized rather than as an
+    /// error, because that is how a bundle path is told apart from a flag.
+    #[test]
+    fn an_unknown_option_is_not_an_error() {
+        let mut options = Options::default();
+        assert_eq!(options.parse_argument("--no-such-option"), Ok(false));
+    }
 }

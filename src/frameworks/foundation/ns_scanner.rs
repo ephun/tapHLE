@@ -149,17 +149,51 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (bool)scanHexInt:(MutPtr<u32>)result {
-    assert!(!result.is_null());
     skip_characters(env, this);
 
-    let NSScannerHostObject { to_be_skipped: _set, string, len, pos } = env.objc.borrow::<NSScannerHostObject>(this).clone();
-    assert!(pos < len);
-    let susbstring: id = msg![env; string substringFromIndex:pos];
-    let tmp = to_rust_string(env, susbstring);
-    assert!(!tmp.starts_with("0x") && !tmp.starts_with("0X"));
-    assert!(!tmp.chars().next().unwrap().is_ascii_hexdigit()); // TODO
-    env.mem.write(result, 0);
-    false
+    let NSScannerHostObject { to_be_skipped, string, len, pos } = env.objc.borrow::<NSScannerHostObject>(this).clone();
+
+    // An optional "0x" or "0X" prefix is consumed only when hex digits follow
+    // it, so that "0xzz" scans nothing at all rather than leaving the scanner
+    // part way through a prefix that led nowhere.
+    let mut scan = pos;
+    if len - scan >= 2 {
+        let second = scan + 1;
+        let c0: unichar = msg![env; string characterAtIndex:scan];
+        let c1: unichar = msg![env; string characterAtIndex:second];
+        if c0 == u16::from(b'0') && (c1 == u16::from(b'x') || c1 == u16::from(b'X')) {
+            scan += 2;
+        }
+    }
+
+    // NSScanner saturates rather than wrapping or refusing: a run of digits too
+    // long for 32 bits still scans, and reports UINT_MAX.
+    let digits_start = scan;
+    let mut value: u32 = 0;
+    let mut overflowed = false;
+    while scan < len {
+        let c: unichar = msg![env; string characterAtIndex:scan];
+        let Some(digit) = char::from_u32(u32::from(c)).and_then(|c| c.to_digit(16)) else {
+            break;
+        };
+        match value.checked_mul(16).and_then(|v| v.checked_add(digit)) {
+            Some(v) => value = v,
+            None => overflowed = true,
+        }
+        scan += 1;
+    }
+
+    if scan == digits_start {
+        // Nothing to scan. The scan location does not move and the caller is
+        // told so, which is how an app asks whether a string is a hex number.
+        return false;
+    }
+
+    if !result.is_null() {
+        env.mem.write(result, if overflowed { u32::MAX } else { value });
+    }
+    *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos: scan };
+    true
 }
 
 - (bool)scanUpToString:(id)stop_string // NSString *
@@ -254,6 +288,14 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos: pos + cutoff as NSUInteger };
     true
+}
+
+// NSInteger is 32-bit on the guest ABI, so this is the same scan and the same
+// out-parameter width as -scanInt:. On a 64-bit runtime the two differ and this
+// would need its own implementation; the forwarding is correct here and only
+// here.
+- (bool)scanInteger:(MutPtr<i32>)result {
+    msg![env; this scanInt:result]
 }
 
 @end

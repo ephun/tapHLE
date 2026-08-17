@@ -26,3 +26,28 @@
   publication and merge to `trunk`.
 - Next discriminator: submit the 3-star report, merge `169bf157` to `trunk`,
   and push both the integration branch and this continuation branch.
+
+## 2026-07-27: 3 stars re-confirmed on tapHLE `87acd74a`
+
+Re-driven end to end on a clean committed build after a session of broad UIKit
+changes: menu Play `(160, 240)` -> level pack `(160, 190)` -> level grid
+`(160, 250)` -> Level 1 `(50, 68)` -> tap the snapper `(160, 210)`.
+
+The result matches the original `169bf157` evidence exactly: `Level: 1-1`,
+`Taps left` goes 1 -> 0, and the screen shows **`Completed!` / `Score: 50`**.
+
+### Click map, recorded because it was missing
+
+The original note described the route in prose but gave no coordinates, which
+cost a re-verification run rediscovering them. 320x480 client, ~30 s launch:
+
+1. Title with the round Play button -> `(160, 240)`.
+2. Level pack (photo carousel) -> `(160, 190)`.
+3. -> `(160, 250)` reaches the 5x5 level grid; only Level 1 is unlocked.
+4. Level 1 -> `(50, 68)`.
+5. The snapper -> `(160, 210)` completes the level.
+
+**A static screen is not a failure here.** Snappers is a puzzle game: an
+unsolved board does not animate, so comparing two captures by hash — the check
+that works for an action game — reports "static" for a perfectly healthy
+Snappers. Drive it to a completed level instead.

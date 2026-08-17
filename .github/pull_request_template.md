@@ -15,11 +15,11 @@ implementation or game-specific workaround.
 - [ ] Relevant unit or TestApp test
 - [ ] `cargo test -- --skip test_app`
 - [ ] `cargo build --release`
-- [ ] Exact target game launched on Windows
+- [ ] Exact target game launched on the claimed host
 - [ ] `python dev-scripts/compatibility.py check`
 
-List the checks actually run, Windows/CPU/GPU details for game validation, and
-any skipped checks with their reason.
+List the checks actually run, host OS/device/CPU/GPU details for game
+validation, and any skipped checks with their reason.
 
 ## Provenance and agents
 
@@ -32,6 +32,6 @@ verified.
 - [ ] No leaked/private Apple implementation material or incompatible code was
       used.
 - [ ] Upstream changes were reviewed under `dev-docs/upstream-sync.md`.
-- [ ] Any compatibility result used an exact Archive content-hash-verified
-      artifact on a committed tapHLE revision; no dirty-worktree result was
-      entered in the database.
+- [ ] Any compatibility result named the app build it was earned on, read from
+      `tapHLE --info`, on a committed tapHLE revision; no dirty-worktree result
+      was entered in the database.

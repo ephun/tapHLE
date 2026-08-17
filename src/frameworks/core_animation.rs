@@ -14,6 +14,7 @@ pub mod ca_eagl_layer;
 pub mod ca_layer;
 pub mod ca_media_timing_function;
 pub mod ca_transaction;
+pub mod ca_transform_3d;
 
 mod animation;
 mod composition;
@@ -44,8 +45,9 @@ pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
         ca_layer::CONSTANTS,
         ca_media_timing_function::CONSTANTS,
         ca_transaction::CONSTANTS,
+        ca_transform_3d::CONSTANTS,
     ],
-    function_exports: &[FUNCTIONS],
+    function_exports: &[FUNCTIONS, ca_transform_3d::FUNCTIONS],
 };
 
 #[derive(Default)]

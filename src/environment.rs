@@ -8,7 +8,6 @@
 //! Unlike its siblings, this module should be considered private and only used
 //! via the re-exports one level up.
 
-pub mod app_picker;
 mod mutex;
 mod nullable_box;
 
@@ -112,9 +111,7 @@ pub struct Environment {
     pub options: NullableBox<options::Options>,
     gdb_server: Option<Box<gdb::GdbServer>>,
     pub env_vars: HashMap<Vec<u8>, MutPtr<u8>>,
-    /// Set to [true] when created using [Environment::new_without_app].
     pub dump_file: Option<std::fs::File>,
-    pub is_app_picker: bool,
     shutdown_requested_by: Option<ThreadId>,
     yielder: *const Yielder<Environment, Environment>,
     // The amount of ticks to run for Some(value), or single-stepping for None.
@@ -280,37 +277,46 @@ impl Environment {
         let supports_portrait = supported
             .iter()
             .any(|&o| o == "UIInterfaceOrientationPortrait" || o == "UIDeviceOrientationPortrait");
-        if options.initial_orientation == window::DeviceOrientation::Portrait && !supports_portrait
-        {
-            if let Some(&non_portrait_orientation) = supported
-                .iter()
-                .find(|&&o| o != "UIInterfaceOrientationPortrait")
-            {
+        if options.initial_orientation == window::DeviceOrientation::Portrait {
+            // An app that names the orientation it launches in is believed,
+            // even when it also says it supports portrait: those are different
+            // claims, and a game that rotates to portrait later still has to
+            // start the way it says. Ignore a launch orientation the same app
+            // lists as unsupported, which is a contradiction rather than an
+            // instruction.
+            let declared = bundle
+                .initial_interface_orientation()
+                .filter(|o| supported.contains(o));
+            // Otherwise, only override the default when the app cannot actually
+            // do portrait. Checking "is there a non-portrait entry?" is not the
+            // same question: an app that supports portrait *and* something else
+            // — very commonly portrait plus upside-down — would be rotated away
+            // from the orientation it already handles. That rotates input as
+            // well as display, so every touch arrives mirrored and nothing can
+            // be tapped.
+            let chosen = declared.or_else(|| {
+                (!supports_portrait)
+                    .then(|| {
+                        supported
+                            .iter()
+                            .copied()
+                            .find(|&o| o != "UIInterfaceOrientationPortrait")
+                    })
+                    .flatten()
+            });
+            if let Some(interface_orientation) = chosen {
                 // TODO: Overwriting the options might not be ideal; do we need
                 //       to distinguish this kind of orientation change from
                 //       others?
-                options.initial_orientation = match non_portrait_orientation {
-                    // UIInterfaceOrientation values are flipped relative to
-                    // (UI)DeviceOrientation values (content has to rotate in
-                    // the opposite direction to how the device rotates).
-                    "UIInterfaceOrientationPortrait" | "UIDeviceOrientationPortrait" => {
-                        window::DeviceOrientation::Portrait
+                match bundle::device_orientation_for_interface_orientation(interface_orientation) {
+                    Some(device_orientation) => {
+                        options.initial_orientation = device_orientation;
+                        log!("App launches in user interface orientation {:?}, applying device orientation {:?}.", interface_orientation, device_orientation);
                     }
-                    "UIInterfaceOrientationPortraitUpsideDown" => {
-                        window::DeviceOrientation::PortraitUpsideDown
+                    None => {
+                        log!("Warning: app names an unrecognised interface orientation {:?}; launching portrait.", interface_orientation);
                     }
-                    "UIInterfaceOrientationLandscapeLeft" => {
-                        window::DeviceOrientation::LandscapeRight
-                    }
-                    "UIInterfaceOrientationLandscapeRight" => {
-                        window::DeviceOrientation::LandscapeLeft
-                    }
-                    // This appears to be an older way set the orientation.
-                    // From testing, it seems to correspond to left.
-                    "UIInterfaceOrientationLandscape" => window::DeviceOrientation::LandscapeLeft,
-                    other => unimplemented!("Unsupported startup orientation: {:?}", other),
-                };
-                log!("App needs non-portrait user interface orientation {:?}, applying device orientation {:?}.", non_portrait_orientation, options.initial_orientation);
+                }
             }
         }
 
@@ -350,21 +356,31 @@ impl Environment {
                 log!("Warning: {}", e);
             }
 
-            let launch_image_path = bundle.launch_image_path();
-            let launch_image = if fs.is_file(&launch_image_path) {
-                let res = fs
-                    .read(launch_image_path)
-                    .map_err(|_| "Could not read launch image file".to_string())
-                    .and_then(|bytes| {
-                        image::Image::from_bytes(&bytes)
-                            .map_err(|e| format!("Could not parse launch image: {e}"))
-                    });
-                if let Err(ref e) = res {
-                    log!("Warning: {}", e);
-                };
-                res.ok()
-            } else {
-                None
+            // Ask for the launch image that matches the orientation the app is
+            // about to start in, most specific name first. A landscape app
+            // ships one, and its plain `Default.png` is the portrait image the
+            // real launcher would never show it.
+            let launch_image_suffixes = bundle::launch_image_suffixes(options.initial_orientation);
+            let launch_image = match bundle
+                .launch_image_paths(launch_image_suffixes)
+                .into_iter()
+                .find(|path| fs.is_file(path))
+            {
+                Some(launch_image_path) => {
+                    log_dbg!("Launch image: {:?}", launch_image_path);
+                    let res = fs
+                        .read(launch_image_path)
+                        .map_err(|_| "Could not read launch image file".to_string())
+                        .and_then(|bytes| {
+                            image::Image::from_bytes(&bytes)
+                                .map_err(|e| format!("Could not parse launch image: {e}"))
+                        });
+                    if let Err(ref e) = res {
+                        log!("Warning: {}", e);
+                    };
+                    res.ok()
+                }
+                None => None,
             };
 
             Some(Box::new(window::Window::new(
@@ -659,7 +675,6 @@ impl Environment {
             gdb_server: None,
             env_vars: Default::default(),
             dump_file: None,
-            is_app_picker: false,
             shutdown_requested_by: None,
             yielder: std::ptr::null(),
             remaining_ticks: None,
@@ -710,120 +725,6 @@ impl Environment {
         Ok(env)
     }
 
-    /// Set up the emulator environment without loading an app binary.
-    ///
-    /// This is a special mode that only exists to support the app picker, which
-    /// uses the emulated environment to draw its UI and process input. Filling
-    /// some of the fields with fake data is a hack, but it means the frameworks
-    /// do not need to be aware of the app picker's peculiarities, so it is
-    /// cleaner than the alternative!
-    pub fn new_without_app(
-        options: options::Options,
-        icon: image::Image,
-    ) -> Result<Environment, String> {
-        // Enforces a one (real) Environment limit. See `with_yielder` for
-        // why this is needed.
-        if ENVIRONMENT_INSTANCE_EXISTS.load(std::sync::atomic::Ordering::Relaxed) {
-            return Err("Only one (real) Environment can exist at a time!".to_string());
-        }
-        ENVIRONMENT_INSTANCE_EXISTS.store(true, std::sync::atomic::Ordering::Relaxed);
-        let bundle = bundle::Bundle::new_fake_bundle();
-        let fs = fs::Fs::new_fake_fs();
-
-        let startup_time = Instant::now();
-
-        let launch_image = None;
-
-        assert!(!options.headless);
-        let window = Some(Box::new(window::Window::new(
-            &format!(
-                "tapHLE {}{}{}",
-                super::branding(),
-                if super::branding().is_empty() {
-                    ""
-                } else {
-                    " "
-                },
-                super::VERSION
-            ),
-            Some(icon),
-            launch_image,
-            &options,
-        )));
-
-        let mut mem = mem::Mem::new();
-
-        let bins = Vec::new();
-
-        let mut objc = objc::ObjC::new();
-
-        let mut dyld = dyld::Dyld::new();
-        dyld.do_initial_linking_with_no_bins(&mut mem, &mut objc);
-
-        let cpu = cpu::Cpu::new(match options.direct_memory_access {
-            true => Some(&mut mem),
-            false => None,
-        });
-
-        let main_thread = Thread {
-            active: true,
-            blocked_by: ThreadBlock::NotBlocked,
-            return_value: None,
-            guest_context: None,
-            host_context: None,
-            stack: Some(mem::Mem::MAIN_THREAD_STACK_LOW_END..=0u32.wrapping_sub(1)),
-            framework_state: Default::default(),
-        };
-
-        let mut env = Environment {
-            startup_time,
-            bundle: NullableBox::new(bundle),
-            fs: NullableBox::new(fs),
-            window,
-            openal_manager: NullableBox::new(OpenALManager::new()?),
-            mem: NullableBox::new(mem),
-            bins,
-            objc: NullableBox::new(objc),
-            dyld: NullableBox::new(dyld),
-            cpu: NullableBox::new(cpu),
-            current_thread: 0,
-            threads: vec![main_thread],
-            libc_state: Default::default(),
-            mutex_state: Default::default(),
-            framework_state: Default::default(),
-            options: NullableBox::new(options),
-            gdb_server: None,
-            env_vars: Default::default(),
-            dump_file: None,
-            is_app_picker: true,
-            shutdown_requested_by: None,
-            yielder: std::ptr::null(),
-            remaining_ticks: None,
-            panic_cell: Rc::new(Cell::new(None)),
-        };
-
-        env.set_up_initial_env_vars();
-
-        // Dyld::do_late_linking() would be called here, but it doesn't do
-        // anything relevant here, so it's skipped.
-
-        {
-            let argv = &[];
-            let envp = &[];
-            let apple = &[];
-            stack::prep_stack_for_start(&mut env.mem, &mut env.cpu, argv, envp, apple);
-        }
-
-        env.cpu.set_cpsr(cpu::Cpu::CPSR_USER_MODE);
-
-        // GDB server setup would be done here, but there's no need for it.
-
-        // "CPU emulation begins now" would happen here, but there's nothing
-        // to emulate. :)
-
-        Ok(env)
-    }
-
     /// Create a new Environment to swap with.
     ///
     /// SAFETY: You must *NEVER, IN ANY CIRCUMSTANCE* dereference any fields or
@@ -855,7 +756,6 @@ impl Environment {
             gdb_server: None,
             env_vars: HashMap::new(),
             dump_file: None,
-            is_app_picker: true,
             shutdown_requested_by: None,
             yielder: std::ptr::null(),
             remaining_ticks: None,
@@ -1257,66 +1157,6 @@ impl Environment {
             joinee_thread
         );
         self.yield_thread(ThreadBlock::Joining(joinee_thread, ptr));
-    }
-
-    pub fn run_app_picker<F, R>(mut self, f: F) -> R
-    where
-        F: FnOnce(&mut Environment) -> R + 'static,
-        R: 'static,
-    {
-        let panic_cell = Rc::new(Cell::new(None));
-        let mut app_picker_coroutine = Coroutine::new(move |yielder, mut env: Environment| {
-            env.panic_cell = panic_cell.clone();
-            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                env.with_yielder(yielder, f)
-            }));
-            match res {
-                // We want the environment to be dropped outside of the
-                // coroutine, so send it back when we return.
-                Ok(r) => (r, env),
-                Err(e) => {
-                    let panic_cell = env.panic_cell.clone();
-                    panic_cell.set(Some(env));
-                    std::panic::resume_unwind(e);
-                }
-            }
-        });
-        loop {
-            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                app_picker_coroutine.resume(self)
-            }));
-            self = match res {
-                Ok(ret) => match ret {
-                    corosensei::CoroutineResult::Yield(env) => env,
-                    corosensei::CoroutineResult::Return((ret_val, _env)) => {
-                        return ret_val;
-                    }
-                },
-                Err(e) => {
-                    log_no_panic!("Crash in app picker!");
-                    // No need to get the environment back - It's local to this
-                    // function anyways.
-                    std::panic::resume_unwind(e);
-                }
-            };
-
-            self.window
-                .as_mut()
-                .unwrap()
-                .poll_for_events(self.options.as_ref());
-            assert!(self.threads.len() == 1);
-            match self.threads[0].blocked_by {
-                ThreadBlock::NotBlocked => {}
-                ThreadBlock::Sleeping(until) => {
-                    let duration = until.duration_since(Instant::now());
-                    std::thread::sleep(duration);
-                }
-                _ => {
-                    panic!("Unexpected ThreadBlock in app picker!");
-                }
-            }
-            self.threads[0].blocked_by = ThreadBlock::NotBlocked;
-        }
     }
 
     /// Run the emulator. This is the main loop and won't return until app exit.
@@ -1972,7 +1812,9 @@ impl Environment {
             unsafe {
                 let yielder = self.yielder.as_ref().unwrap();
                 let wrapped = WindowWrapper {
-                    window: self.window.as_mut().unwrap(),
+                    window: self.window.as_mut().expect(
+                        "Tried to do something that needs a window, but tapHLE is running in headless mode!",
+                    ),
                 };
                 let res = yielder.on_parent_stack(|| {
                     let wrapped = wrapped;
@@ -1986,7 +1828,40 @@ impl Environment {
             if let Some(w) = self.window.as_mut() {
                 w.on_main_stack = true;
             }
-            f(self.window.as_mut().unwrap(), self.options.as_mut())
+            f(
+                self.window.as_mut().expect(
+                    "Tried to do something that needs a window, but tapHLE is running in headless mode!",
+                ),
+                self.options.as_mut(),
+            )
+        }
+    }
+
+    /// Run a function on the parent stack, for work that does not involve the
+    /// window.
+    ///
+    /// Not everything that needs the parent stack is about the window. Asking
+    /// SDL for the host's preferred locales, or handing it a URL to open, needs
+    /// the main stack because SDL requires it, and nothing more.
+    ///
+    /// Routing those through [Environment::on_parent_stack_in_coroutine] meant
+    /// they took a `&mut Window` they never touched, which made them panic in
+    /// headless mode for no reason: two of four sampled apps died on it during
+    /// `UIApplicationMain`, before reaching anything that wanted a window.
+    /// `-[NSBundle preferredLocalizations]` reaches the locale query on almost
+    /// every launch, so this was close to a blanket failure of `--headless`
+    /// rather than an edge case.
+    pub fn on_parent_stack_in_coroutine_windowless<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut options::Options) -> R + Send,
+    {
+        if !self.yielder.is_null() {
+            unsafe {
+                let yielder = self.yielder.as_ref().unwrap();
+                yielder.on_parent_stack(|| f(self.options.as_mut()))
+            }
+        } else {
+            f(self.options.as_mut())
         }
     }
 }

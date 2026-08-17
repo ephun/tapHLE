@@ -112,12 +112,34 @@ pub const CLASSES: ClassExports = objc_classes! {
         ns_string::to_rust_string(env, mode),
     );
 
+    // Scheduling a timer that is already on this run loop is not an error: an
+    // app that adds the same timer for the default mode and again for the
+    // common modes is asking for one timer in two modes, and one that re-adds a
+    // timer it never invalidated is repeating a request already granted. Either
+    // way the device keeps a single registration, so the second call is
+    // finished here - before the retain, which would otherwise leave the timer
+    // over-retained and permanently alive.
+    if env
+        .objc
+        .borrow::<NSRunLoopHostObject>(this)
+        .timers
+        .contains(&timer)
+    {
+        log_dbg!("Timer {:?} is already on run loop {:?}, ignoring", timer, this);
+        return;
+    }
+
+    // A timer already scheduled on a different run loop keeps that
+    // registration; adding it here as well would fire it twice.
+    if !ns_timer::set_run_loop(env, timer, this) {
+        log_dbg!("Timer {:?} is already on another run loop, ignoring", timer);
+        return;
+    }
+
     retain(env, timer);
 
     let host_object = env.objc.borrow_mut::<NSRunLoopHostObject>(this);
-    assert!(!host_object.timers.contains(&timer)); // TODO: what do we do here?
     host_object.timers.push(timer);
-    ns_timer::set_run_loop(env, timer, this);
 }
 
 // NSMachPort delivery is not implemented. Older networking libraries may
@@ -223,7 +245,7 @@ pub(super) fn remove_timer(env: &mut Environment, run_loop: id, timer: id) {
 /// If should_sync is set to true, a semaphore that should
 /// be waited on by the calling thread is returned. Otherwise, a null value is
 /// returned.
-pub(super) fn add_perform_request(
+pub fn add_perform_request(
     env: &mut Environment,
     run_loop: id,
     target: id,
@@ -398,11 +420,29 @@ pub fn run_run_loop(
 
         // We want to process those only on the main run loop
         if is_main_run_loop {
-            let next_due = uikit::handle_events(env);
-            limit_sleep_time(&mut sleep_until, next_due);
+            // Draining events and compositing are both about a window: one
+            // reads what the window produced, the other draws into it. In
+            // headless mode there is neither, and asking for the window there
+            // panics — so they are skipped rather than reached. Everything
+            // else in this loop (timers, queued selectors, audio) has nothing
+            // to do with a window and still runs, which is what makes
+            // `-[NSRunLoop runMode:beforeDate:]` work without one.
+            if env.window.is_some() {
+                let next_due = uikit::handle_events(env);
+                limit_sleep_time(&mut sleep_until, next_due);
+            }
 
-            let next_due = core_animation::recomposite_if_necessary(env, false);
-            limit_sleep_time(&mut sleep_until, next_due);
+            // Not inside that condition: laying out a view runs the app's own
+            // `layoutSubviews`, which is guest code and is not about the
+            // window. It stays before compositing, because a view that asked
+            // for layout this turn must be laid out before the frame that
+            // shows it is drawn.
+            crate::frameworks::uikit::ui_view::handle_pending_layout(env);
+
+            if env.window.is_some() {
+                let next_due = core_animation::recomposite_if_necessary(env, false);
+                limit_sleep_time(&mut sleep_until, next_due);
+            }
         }
 
         assert!(timers_tmp.is_empty());
@@ -470,14 +510,37 @@ pub fn run_run_loop(
                     } = selector_objects.remove(index).unwrap();
                     log_dbg!("Running object selector request {target:?} {:?} {argument:?} on run loop {run_loop:?}", selector.as_str(env.mem.as_mut()));
 
-                    if selector.as_str(&env.mem).ends_with(':') {
-                        () = msg_send(env, (target, selector, argument));
-                    } else {
-                        // `performSelector:withObject:afterDelay:` may carry
-                        // an object even when the target selector has no
-                        // parameter. The Objective-C call has no slot for it,
-                        // so dispatch the selector and discard the object.
-                        () = msg_send(env, (target, selector));
+                    // `performSelector:withObject:afterDelay:` supplies at most
+                    // one object, but the selector it names may take a
+                    // different number of arguments. Foundation builds an
+                    // NSInvocation sized from the target's method signature and
+                    // sets only the argument it was given, so the rest arrive
+                    // as nil. Matching that matters: dispatching with too few
+                    // arguments leaves the remaining registers holding whatever
+                    // the last call left there, and the callee cannot tell that
+                    // from a real object — a nil check on it passes, and the
+                    // guest then messages a stale pointer.
+                    let parameters = selector.as_str(&env.mem).matches(':').count();
+                    match parameters {
+                        0 => {
+                            // No slot for the object, so discard it.
+                            () = msg_send(env, (target, selector));
+                        }
+                        1 => () = msg_send(env, (target, selector, argument)),
+                        2 => () = msg_send(env, (target, selector, argument, nil)),
+                        3 => () = msg_send(env, (target, selector, argument, nil, nil)),
+                        4 => () = msg_send(env, (target, selector, argument, nil, nil, nil)),
+                        _ => {
+                            // Beyond this the argument list would have to be
+                            // built dynamically. Dispatching anyway would leave
+                            // the extra arguments holding stale registers, so
+                            // say so rather than corrupt the call.
+                            log!(
+                                "TODO: performSelector: on {:?} takes {} arguments, which is more than can be filled in; not dispatching it",
+                                selector.as_str(&env.mem),
+                                parameters,
+                            );
+                        }
                     }
 
                     release(env, target);

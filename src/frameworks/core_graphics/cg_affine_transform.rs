@@ -122,23 +122,24 @@ impl CGAffineTransform {
     pub fn is_identity(self) -> bool {
         self == CGAffineTransformIdentity
     }
+    // These four build a matrix that is affine by construction, so they use the
+    // unchecked conversion. The checked one exists for a matrix arriving from
+    // outside, and it rejects on the bottom row - which a NaN anywhere in the
+    // transform makes it do, since NaN times zero is NaN rather than zero. A
+    // transform picks up a NaN from ordinary guest arithmetic such as scaling
+    // to the size of an image that failed to load, and Core Graphics simply
+    // lets it propagate.
     pub fn make_rotation(angle: CGFloat) -> Self {
-        Matrix::<3>::from(&Matrix::<2>::z_rotation(angle))
-            .try_into()
-            .unwrap()
+        affine_transform_from_matrix_unchecked(Matrix::<3>::from(&Matrix::<2>::z_rotation(angle)))
     }
     pub fn make_scale(x: CGFloat, y: CGFloat) -> Self {
-        Matrix::<3>::from(&Matrix::<2>::scale_2d(x, y))
-            .try_into()
-            .unwrap()
+        affine_transform_from_matrix_unchecked(Matrix::<3>::from(&Matrix::<2>::scale_2d(x, y)))
     }
     pub fn make_translation(x: CGFloat, y: CGFloat) -> Self {
-        Matrix::<3>::translate_2d(x, y).try_into().unwrap()
+        affine_transform_from_matrix_unchecked(Matrix::<3>::translate_2d(x, y))
     }
     pub fn concat(self, other: Self) -> Self {
-        Matrix::<3>::multiply(&self.into(), &other.into())
-            .try_into()
-            .unwrap()
+        affine_transform_from_matrix_unchecked(Matrix::<3>::multiply(&self.into(), &other.into()))
     }
     pub fn rotate(self, angle: CGFloat) -> Self {
         Self::make_rotation(angle).concat(self)

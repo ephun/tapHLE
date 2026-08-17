@@ -19,6 +19,7 @@ use std::fmt::Write;
 pub(super) struct NSDataHostObject {
     pub(super) bytes: MutVoidPtr,
     pub(super) length: NSUInteger,
+    capacity: NSUInteger,
     free_when_done: bool,
 }
 impl HostObject for NSDataHostObject {}
@@ -34,6 +35,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let host_object = Box::new(NSDataHostObject {
         bytes: Ptr::null(),
         length: 0,
+        capacity: 0,
         free_when_done: true,
     });
     env.objc.alloc_object(this, host_object, &mut env.mem)
@@ -102,6 +104,20 @@ pub const CLASSES: ClassExports = objc_classes! {
     autorelease(env, new)
 }
 
+// The URL form of the options/error variant, for the same reasons as the file
+// one above: the reading options are performance hints, and a failure is
+// reported by returning nil with the error left nil rather than by inventing an
+// NSError tapHLE cannot fill in truthfully.
++ (id)dataWithContentsOfURL:(id)url // NSURL*
+                    options:(NSUInteger)_options
+                      error:(MutPtr<id>)error { // NSError**
+    let new: id = msg![env; this dataWithContentsOfURL:url];
+    if new == nil && !error.is_null() {
+        env.mem.write(error, nil);
+    }
+    new
+}
+
 + (id)dataWithData:(id)data {
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithData:data];
@@ -123,6 +139,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     assert!(host_object.bytes.is_null() && host_object.length == 0);
     host_object.bytes = bytes;
     host_object.length = length;
+    host_object.capacity = length;
     host_object.free_when_done = free_when_done;
     this
 }
@@ -135,6 +152,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.mem.memmove(alloc, bytes, length);
     host_object.bytes = alloc;
     host_object.length = length;
+    host_object.capacity = length;
     this
 }
 
@@ -189,6 +207,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let host_object = env.objc.borrow_mut::<NSDataHostObject>(this);
     host_object.bytes = alloc;
     host_object.length = size;
+    host_object.capacity = size;
     this
 }
 
@@ -323,8 +342,14 @@ pub const CLASSES: ClassExports = objc_classes! {
     autorelease(env, new)
 }
 
-- (id)initWithCapacity:(NSUInteger)_capacity {
-    msg![env; this init]
+- (id)initWithCapacity:(NSUInteger)capacity {
+    let host_object = env.objc.borrow_mut::<NSDataHostObject>(this);
+    assert!(host_object.bytes.is_null() && host_object.length == 0 && host_object.capacity == 0);
+    if capacity != 0 {
+        host_object.bytes = env.mem.alloc(capacity);
+        host_object.capacity = capacity;
+    }
+    this
 }
 
 - (id)initWithLength:(NSUInteger)length {
@@ -333,6 +358,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let alloc = env.mem.calloc(length);
     host_object.bytes = alloc;
     host_object.length = length;
+    host_object.capacity = length;
     this
 }
 
@@ -344,13 +370,9 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (())increaseLengthBy:(NSUInteger)add_len {
-    let &NSDataHostObject { bytes, length, .. } = env.objc.borrow(this);
-    let new_len = length + add_len;
-    let new_bytes = env.mem.realloc(bytes, new_len);
-    let host = env.objc.borrow_mut::<NSDataHostObject>(this);
-    host.length = new_len;
-    host.bytes = new_bytes;
-    log_dbg!("increaseLengthBy bytes {:?}, new_bytes {:?}; length {}, new_len {}", bytes, new_bytes, length, new_len);
+    let length = env.objc.borrow::<NSDataHostObject>(this).length;
+    let new_len = length.checked_add(add_len).unwrap();
+    msg![env; this setLength:new_len]
 }
 
 - (())appendData:(id)other_data { // NSData *
@@ -372,21 +394,30 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (MutVoidPtr)mutableBytes {
-    let host_obj = env.objc.borrow_mut::<NSDataHostObject>(this);
-    assert!(host_obj.length != 0);
-    host_obj.bytes
+    // An empty mutable data object is legal, and asking it for its buffer is
+    // legal too: Apple documents the answer as NULL, which is what an
+    // unallocated host object already holds. Treating it as a programming
+    // error aborted apps following the ordinary create-then-grow sequence,
+    // where the pointer is fetched before the first `setLength:`. Note the
+    // immutable `bytes` accessor above never asserted this.
+    env.objc.borrow::<NSDataHostObject>(this).bytes
 }
 
 - (())setLength:(NSUInteger)new_length {
-    let &NSDataHostObject {bytes, length, .. } = env.objc.borrow(this);
-    let new_bytes = env.mem.realloc(bytes, new_length);
+    let &NSDataHostObject {bytes, length, capacity, .. } = env.objc.borrow(this);
+    let (new_bytes, new_capacity) = if new_length > capacity {
+        (env.mem.realloc(bytes, new_length), new_length)
+    } else {
+        (bytes, capacity)
+    };
     if new_length > length {
         env.mem.bytes_at_mut(new_bytes.cast(), new_length)[length as usize..].fill(0);
     }
     let host = env.objc.borrow_mut::<NSDataHostObject>(this);
     host.length = new_length;
     host.bytes = new_bytes;
-    log_dbg!("setLength bytes {:?}, new_bytes {:?}; length {}, new_len {}", bytes, new_bytes, length, new_length);
+    host.capacity = new_capacity;
+    log_dbg!("setLength bytes {:?}, new_bytes {:?}; length {}, new_len {}, capacity {}", bytes, new_bytes, length, new_length, new_capacity);
 }
 
 @end
@@ -395,7 +426,13 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 pub fn to_rust_slice(env: &mut Environment, data: id) -> &[u8] {
     let borrowed_data = env.objc.borrow::<NSDataHostObject>(data);
-    assert!(!borrowed_data.bytes.is_null() && borrowed_data.length != 0);
+    // Empty data is ordinary, not a mistake: a zero-length file read off disk,
+    // a response with no body, and a plain `[NSData data]` all arrive here, and
+    // the empty slice is the right answer for each. This used to assert, which
+    // ended the app for reading a file that happened to be empty.
+    if borrowed_data.bytes.is_null() || borrowed_data.length == 0 {
+        return &[];
+    }
     env.mem
         .bytes_at(borrowed_data.bytes.cast(), borrowed_data.length)
 }

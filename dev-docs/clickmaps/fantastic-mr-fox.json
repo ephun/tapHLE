@@ -1,0 +1,32 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.fox.fmf",
+    "display_name": "FantasticFox",
+    "version": "1.0",
+    "sha256": "468d3418013cb17f0eebc00a0e1b3ec1396dd6e0184f9e3a120211a499b9f090"
+  },
+  "recorded": {
+    "date": "2026-08-13",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": { "width": 480, "height": 320, "orientation": "landscape-left" },
+  "milestone": {
+    "rating": 3,
+    "describes": "Level 1 plays: Mr Fox on the branches with hazards and collectibles, and a live HUD showing level, a counting timer and health."
+  },
+  "defaults": { "press_ms": 150, "settle_ms": 8000 },
+  "steps": [
+    { "id": "boot", "action": "wait", "settle_ms": 40000, "expect": "Main menu: the FANTASTIC MR. FOX title over the cast, with PLAY, Instructions and Audio off." },
+    { "id": "play", "from": "main menu", "action": "tap", "at": [240, 245], "expect": "Choose a level: 18 numbered buttons in six named groups." },
+    { "id": "level-01", "from": "level select", "action": "tap", "at": [61, 155], "settle_ms": 10000, "expect": "Level 1 story card -- the farmers have kidnapped Kristofferson -- with a Play button." },
+    { "id": "start-level", "from": "story card", "action": "tap", "at": [240, 285], "settle_ms": 12000, "expect": "Gameplay. Level 1, the timer counting, the health bar full." }
+  ],
+  "notes": [
+    "No launch options. The window is 480x320 and the app renders to it directly.",
+    "A brief white bar flashes after window creation and before the loading screen. It is not part of the loading art and is not a failure; it is recorded in the app note as an open question.",
+    "If the window is horizontal bands of flat colour with no horizontal variation, the presented-texture wrap regression is back -- see ae10f9ab. That is a rendering failure, not a route failure, and no tap will get past it."
+  ]
+}

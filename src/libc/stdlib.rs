@@ -24,6 +24,7 @@ pub struct State {
     rand: u32,
     random: u32,
     arc4random: u32,
+    drand48: u64,
 }
 
 // Sizes of zero are implementation-defined. macOS will happily give you back
@@ -66,6 +67,22 @@ fn realloc(env: &mut Environment, ptr: MutVoidPtr, size: GuestUSize) -> MutVoidP
     env.mem.realloc(ptr, size)
 }
 
+/// `reallocf` is a BSD extension: `realloc`, except that it frees the original
+/// block if the reallocation fails, so the caller cannot leak it by dropping
+/// the old pointer on the error path.
+///
+/// tapHLE's allocator does not report failure — `realloc` either succeeds or
+/// aborts — so the freeing branch is unreachable today. It is written out
+/// anyway rather than aliased straight to `realloc`, because the difference is
+/// the entire reason the function exists.
+fn reallocf(env: &mut Environment, ptr: MutVoidPtr, size: GuestUSize) -> MutVoidPtr {
+    let new_ptr = realloc(env, ptr, size);
+    if new_ptr.is_null() && !ptr.is_null() {
+        free(env, ptr);
+    }
+    new_ptr
+}
+
 fn free(env: &mut Environment, ptr: MutVoidPtr) {
     // We need to catch situations of freeing NSObjects early!
     if env.objc.get_host_object(ptr.cast()).is_some() {
@@ -85,6 +102,48 @@ fn free(env: &mut Environment, ptr: MutVoidPtr) {
         return;
     }
     env.mem.free(ptr);
+}
+
+/// `abort` — the app has decided it cannot continue. Report it as the guest's
+/// decision rather than an emulator failure, so the log does not read as if
+/// tapHLE crashed, then stop: continuing past an abort would run code the app
+/// has already concluded is unsafe to run.
+/// The `drand48` family. These are specified as a 48-bit linear congruential
+/// generator with fixed constants, and the sequence is part of the contract —
+/// code that seeds with a known value expects known numbers back — so this
+/// implements the actual algorithm rather than delegating to `rand`.
+const DRAND48_A: u64 = 0x5DEECE66D;
+const DRAND48_C: u64 = 0xB;
+const DRAND48_MASK: u64 = (1 << 48) - 1;
+
+fn drand48_next(env: &mut Environment) -> u64 {
+    let state = (env.libc_state.stdlib.drand48.wrapping_mul(DRAND48_A)).wrapping_add(DRAND48_C)
+        & DRAND48_MASK;
+    env.libc_state.stdlib.drand48 = state;
+    state
+}
+
+fn srand48(env: &mut Environment, seed: i32) {
+    // The low 16 bits are set to a fixed value by the standard, not to zero.
+    env.libc_state.stdlib.drand48 = (((seed as u32 as u64) << 16) | 0x330E) & DRAND48_MASK;
+}
+
+fn drand48(env: &mut Environment) -> f64 {
+    drand48_next(env) as f64 / (1u64 << 48) as f64
+}
+
+/// The top 31 bits, as a non-negative long.
+fn lrand48(env: &mut Environment) -> i32 {
+    (drand48_next(env) >> 17) as i32
+}
+
+/// The top 32 bits, as a signed long.
+fn mrand48(env: &mut Environment) -> i32 {
+    (drand48_next(env) >> 16) as u32 as i32
+}
+
+fn abort(_env: &mut Environment) {
+    panic!("The app called abort(). This is the app deliberately terminating itself, not a tapHLE failure - the reason is usually logged just above.");
 }
 
 fn atexit(
@@ -483,6 +542,50 @@ fn strtoull(
     }
 }
 
+/// `strtoll` — the 64-bit signed counterpart of [strtol].
+///
+/// Its unsigned twin `strtoull` was already here; this is the half that was
+/// missing, and 197 of the 1192 distinct apps in the import-demand catalogue
+/// import it. Anything parsing an identifier or a timestamp that does not fit
+/// in 32 bits reaches for it.
+///
+/// Saturating on overflow rather than wrapping, which is what the C standard
+/// specifies: the result is clamped to the representable range. `strtoull` here
+/// saturates the same way.
+fn strtoll(env: &mut Environment, str: ConstPtr<u8>, endptr: MutPtr<MutPtr<u8>>, base: i32) -> i64 {
+    // TODO: handle errno properly
+    set_errno(env, 0);
+
+    let parse_res = str_to_int_inner_generic(
+        env,
+        |env, s, idx| Ok(env.mem.read(s + idx)),
+        |_, _, _| (), // could be ignored
+        str.cast_mut(),
+        0, // starting offset
+        base.try_into().unwrap(),
+        u32::MAX, // max_length
+        |s, base| i64::from_str_radix(s, base).unwrap_or(i64::MAX),
+        // The negation is separate because the sign is consumed before the
+        // digits are parsed, so i64::MIN arrives here as the negation of a
+        // value one past i64::MAX and would overflow a plain `-`.
+        |num| num.checked_neg().unwrap_or(i64::MIN),
+    );
+    match parse_res {
+        Ok((res, len)) => {
+            if !endptr.is_null() {
+                env.mem.write(endptr, (str + len).cast_mut());
+            }
+            res
+        }
+        Err(_) => {
+            if !endptr.is_null() {
+                env.mem.write(endptr, str.cast_mut());
+            }
+            0
+        }
+    }
+}
+
 fn strtol(env: &mut Environment, str: ConstPtr<u8>, endptr: MutPtr<MutPtr<u8>>, base: i32) -> i32 {
     // TODO: handle errno properly
     set_errno(env, 0);
@@ -598,7 +701,13 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(calloc(_, _)),
     export_c_func!(valloc(_)),
     export_c_func!(realloc(_, _)),
+    export_c_func!(reallocf(_, _)),
     export_c_func!(free(_)),
+    export_c_func!(abort()),
+    export_c_func!(srand48(_)),
+    export_c_func!(drand48()),
+    export_c_func!(lrand48()),
+    export_c_func!(mrand48()),
     export_c_func!(atexit(_)),
     export_c_func!(atoi(_)),
     export_c_func!(atol(_)),
@@ -622,6 +731,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(strtoul(_, _, _)),
     export_c_func!(wcstoul(_, _, _)),
     export_c_func!(strtoull(_, _, _)),
+    export_c_func!(strtoll(_, _, _)),
     export_c_func!(strtol(_, _, _)),
     export_c_func!(realpath(_, _)),
     export_c_func_aliased!("realpath$DARWIN_EXTSN", realpath(_, _)),

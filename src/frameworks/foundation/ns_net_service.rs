@@ -24,7 +24,10 @@ use crate::objc::{
 };
 use crate::Environment;
 
-/// `NSNetServicesErrorDomain`.
+/// `NSNetServicesErrorDomain`. Named for completeness; the error dictionary
+/// built below carries the code alone, which is what the delegate callbacks
+/// here are observed to read.
+#[allow(dead_code)]
 pub const NSNetServicesErrorDomain: &str = "NSNetServicesErrorDomain";
 /// `NSNetServicesErrorCode` key in the error dictionary.
 const NSNetServicesErrorCode: &str = "NSNetServicesErrorCode";

@@ -17,7 +17,7 @@ use super::audio_file::{
 use super::audio_queue::is_supported_audio_format;
 use super::audio_unit::AudioBufferList;
 use crate::dyld::{export_c_func, FunctionExports};
-use crate::frameworks::carbon_core::{eofErr, OSStatus};
+use crate::frameworks::carbon_core::{eofErr, paramErr, OSStatus};
 use crate::frameworks::core_audio_types::{
     debug_fourcc, fourcc, kAudioFormatLinearPCM, AudioStreamBasicDescription,
 };
@@ -288,6 +288,63 @@ fn ExtAudioFileRead(
     0 // success
 }
 
+/// Move the read cursor to a frame offset.
+///
+/// The offset is in frames of the *client* format — the format the app asked to
+/// be given, not the one on disk — which is the same unit `ExtAudioFileRead`
+/// counts in, so this is the byte cursor that already exists expressed
+/// differently. A file whose client format has not been set yet has no frame
+/// size to convert with, and Apple's implementation refuses that too.
+fn ExtAudioFileSeek(
+    env: &mut Environment,
+    in_ext_audio_file: ExtAudioFileRef,
+    in_frame_offset: i64,
+) -> OSStatus {
+    return_if_null!(in_ext_audio_file);
+
+    let host_object = env
+        .framework_state
+        .audio_toolbox
+        .extended_audio_file
+        .extended_audio_files
+        .get_mut(&in_ext_audio_file)
+        .unwrap();
+
+    let Some(client_data_format) = host_object.client_data_format else {
+        log!(
+            "ExtAudioFileSeek({:?}) before the client data format was set",
+            in_ext_audio_file
+        );
+        return paramErr;
+    };
+
+    // A negative offset has no meaning and would put the cursor behind the
+    // start of the file, where AudioFileReadBytes would read whatever happened
+    // to precede it.
+    let Ok(frame_offset) = u32::try_from(in_frame_offset) else {
+        log!(
+            "ExtAudioFileSeek({:?}, {}) out of range",
+            in_ext_audio_file,
+            in_frame_offset
+        );
+        return paramErr;
+    };
+
+    // Seeking past the end is not an error: the next read simply reports zero
+    // frames, which is how ExtAudioFileRead already handles hitting the end.
+    host_object.current_bytes_read =
+        i64::from(frame_offset) * i64::from(client_data_format.bytes_per_frame);
+
+    log_dbg!(
+        "ExtAudioFileSeek({:?}, {}) => byte {}",
+        in_ext_audio_file,
+        in_frame_offset,
+        host_object.current_bytes_read
+    );
+
+    0 // success
+}
+
 fn ExtAudioFileDispose(env: &mut Environment, in_ext_audio_file: ExtAudioFileRef) -> OSStatus {
     return_if_null!(in_ext_audio_file);
 
@@ -319,5 +376,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(ExtAudioFileGetProperty(_, _, _, _)),
     export_c_func!(ExtAudioFileSetProperty(_, _, _, _)),
     export_c_func!(ExtAudioFileRead(_, _, _)),
+    export_c_func!(ExtAudioFileSeek(_, _)),
     export_c_func!(ExtAudioFileDispose(_)),
 ];

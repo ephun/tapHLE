@@ -23,9 +23,16 @@ use crate::objc::{
 pub type NSNumberFormatterStyle = NSUInteger;
 pub const NSNumberFormatterNoStyle: NSNumberFormatterStyle = 0;
 pub const NSNumberFormatterDecimalStyle: NSNumberFormatterStyle = 1;
+// The rest of the enum. `setNumberStyle:` accepts these and warns that it
+// renders them as plain decimal, so nothing here references them by name; they
+// are written out because a partial enum invites someone to guess the values.
+#[allow(dead_code)]
 pub const NSNumberFormatterCurrencyStyle: NSNumberFormatterStyle = 2;
+#[allow(dead_code)]
 pub const NSNumberFormatterPercentStyle: NSNumberFormatterStyle = 3;
+#[allow(dead_code)]
 pub const NSNumberFormatterScientificStyle: NSNumberFormatterStyle = 4;
+#[allow(dead_code)]
 pub const NSNumberFormatterSpellOutStyle: NSNumberFormatterStyle = 5;
 
 pub type NSNumberFormatterPadPosition = NSUInteger;
@@ -47,6 +54,13 @@ struct NSNumberFormatterHostObject {
     negative_suffix: Option<String>,
     grouping_separator: Option<String>,
     decimal_separator: Option<String>,
+    /// The character standing in for "negative". Reaches the output: it is the
+    /// default negative prefix, used when the app has not set one explicitly.
+    minus_sign: Option<String>,
+    /// Stored and reported back, but it does not reach the output — none of the
+    /// styles modelled here ever shows a plus, so applying it would add a sign
+    /// the app did not ask for.
+    plus_sign: Option<String>,
     /// `NSNumber*` or nil. Applied by -stringFromNumber:, as documented.
     multiplier: id,
     /// ICU pattern strings. Stored and reported back, but not interpreted:
@@ -118,6 +132,8 @@ pub const CLASSES: ClassExports = objc_classes! {
         negative_suffix: None,
         grouping_separator: None,
         decimal_separator: None,
+        minus_sign: None,
+        plus_sign: None,
         multiplier: nil,
         positive_format: None,
         negative_format: None,
@@ -223,6 +239,20 @@ pub const CLASSES: ClassExports = objc_classes! {
     let value = optional_rust_string(env, value);
     env.objc.borrow_mut::<NSNumberFormatterHostObject>(this).negative_suffix = value;
 }
+- (id)minusSign {
+    optional_string(env, this, |h| h.minus_sign.clone())
+}
+- (())setMinusSign:(id)value { // NSString*
+    let value = optional_rust_string(env, value);
+    env.objc.borrow_mut::<NSNumberFormatterHostObject>(this).minus_sign = value;
+}
+- (id)plusSign {
+    optional_string(env, this, |h| h.plus_sign.clone())
+}
+- (())setPlusSign:(id)value { // NSString*
+    let value = optional_rust_string(env, value);
+    env.objc.borrow_mut::<NSNumberFormatterHostObject>(this).plus_sign = value;
+}
 - (id)groupingSeparator {
     optional_string(env, this, |h| h.grouping_separator.clone())
 }
@@ -315,6 +345,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         negative_suffix,
         grouping_separator,
         decimal_separator,
+        minus_sign,
     ) = {
         let host_object = env.objc.borrow::<NSNumberFormatterHostObject>(this);
         (
@@ -327,6 +358,7 @@ pub const CLASSES: ClassExports = objc_classes! {
             host_object.negative_suffix.clone(),
             host_object.grouping_separator.clone(),
             host_object.decimal_separator.clone(),
+            host_object.minus_sign.clone(),
         )
     };
 
@@ -371,7 +403,9 @@ pub const CLASSES: ClassExports = objc_classes! {
     string = if let Some(rest) = string.strip_prefix('-') {
         format!(
             "{}{}{}",
-            negative_prefix.as_deref().unwrap_or("-"),
+            negative_prefix
+                .as_deref()
+                .unwrap_or(minus_sign.as_deref().unwrap_or("-")),
             rest,
             negative_suffix.as_deref().unwrap_or("")
         )

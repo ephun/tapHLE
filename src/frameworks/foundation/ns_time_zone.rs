@@ -90,6 +90,19 @@ pub const CLASSES: ClassExports = objc_classes! {
     0
 }
 
+- (id)description {
+    // Foundation's format, which apps log and occasionally parse. Built from
+    // the accessors so it stays correct as they gain real timezone support.
+    let name: id = msg![env; this name];
+    let name = ns_string::to_rust_string(env, name).to_string();
+    let abbreviation: id = msg![env; this abbreviation];
+    let abbreviation = ns_string::to_rust_string(env, abbreviation).to_string();
+    let offset: NSInteger = msg![env; this secondsFromGMT];
+    let description = format!("{} ({}) offset {}", name, abbreviation, offset);
+    let description = ns_string::from_rust_string(env, description);
+    autorelease(env, description)
+}
+
 // NSCopying implementation
 - (id)copyWithZone:(NSZonePtr)_zone {
     retain(env, this)

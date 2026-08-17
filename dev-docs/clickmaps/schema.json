@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ephun/tapHLE/dev-docs/clickmaps/schema.json",
+  "title": "tapHLE clickmap",
+  "description": "A replayable record of how to drive one app to a rating milestone. Written once by whoever reached the milestone, replayed by everyone after. See protocol.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["clickmap_version", "app", "window", "milestone", "steps"],
+  "properties": {
+    "clickmap_version": {
+      "const": 1,
+      "description": "Format version. Bump only for incompatible changes; a runner that does not recognise the value must refuse to replay rather than guess."
+    },
+    "app": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle_identifier"],
+      "description": "Identity as printed by `tapHLE --info`. Never copied from a filename.",
+      "properties": {
+        "bundle_identifier": { "type": "string" },
+        "display_name": { "type": "string" },
+        "version": {
+          "type": "string",
+          "description": "The version this map was recorded against. A different version is worth TRYING this map on -- that is the point of the format -- but a mismatch must be reported, never hidden."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$",
+          "description": "Of the exact artifact, so a replay can say whether it tested the same bytes."
+        }
+      }
+    },
+    "recorded": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Provenance of the recording. A map that never replayed is a hypothesis.",
+      "properties": {
+        "taphle_version": { "type": "string", "description": "Committed revision it was recorded on. Never a -dirty one." },
+        "date": { "type": "string", "format": "date" },
+        "host": { "type": "string", "description": "Free text, e.g. \"Windows 11, Intel Iris Xe\". Timings are host-dependent." },
+        "by": { "type": "string" }
+      }
+    },
+    "options": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Launch options the map assumes, as they appear in tapHLE_default_options.txt. Empty array means none. If this disagrees with the options file, the options file wins and the replay must report the difference."
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "description": "Client-area size the coordinates below are in. A replay that gets a different size must NOT rescale silently: report and stop.",
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "orientation": { "enum": ["portrait", "portrait-upside-down", "landscape-left", "landscape-right"] }
+      }
+    },
+    "milestone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rating"],
+      "description": "What completing every step demonstrates.",
+      "properties": {
+        "rating": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "2 = reaches a stable screen; 3 = a gameplay loop that starts and persists. An agent may not assert 4 or 5."
+        },
+        "describes": { "type": "string", "description": "One sentence: what a human would see at the end." }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Applied to any step that does not override them.",
+      "properties": {
+        "press_ms": { "type": "integer", "minimum": 1, "default": 120, "description": "Some apps ignore a press shorter than their own polling interval." },
+        "settle_ms": { "type": "integer", "minimum": 0, "default": 1500, "description": "Wait after the action before the next step." }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Traps a replayer needs and cannot infer: input that is invisible on screen, a capture whose axes differ from client coordinates, a screen that animates after a missed tap and so looks like it responded."
+    }
+  },
+  "$defs": {
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "id": { "type": "string", "description": "Stable name, so a report can say which step failed without counting." },
+        "from": { "type": "string", "description": "The screen this step starts on, in the words a human would use." },
+        "action": {
+          "enum": ["wait", "tap", "swipe", "type", "key", "capture"],
+          "description": "tap takes at/press_ms; swipe takes from_xy/to_xy/duration_ms; type takes text; key takes scancode; wait takes only settle_ms; capture takes only expect."
+        },
+        "at": { "$ref": "#/$defs/point", "description": "Client coordinates, origin top-left." },
+        "from_xy": { "$ref": "#/$defs/point" },
+        "to_xy": { "$ref": "#/$defs/point" },
+        "duration_ms": { "type": "integer", "minimum": 1 },
+        "text": { "type": "string" },
+        "scancode": {
+          "type": "integer",
+          "description": "PS/2 set 1 scancode, e.g. 28 for Return. Recorded as a scancode because SDL does not see a virtual-key-only synthetic press."
+        },
+        "press_ms": { "type": "integer", "minimum": 1 },
+        "settle_ms": { "type": "integer", "minimum": 0 },
+        "expect": {
+          "type": "string",
+          "description": "What should be on screen after this step, in plain words. The runner cannot check it; it goes in the report so an agent reading a failed replay knows what it was looking for. THIS is what saves the tokens: an agent screenshots only where a replay says it stopped."
+        },
+        "optional": {
+          "type": "boolean",
+          "default": false,
+          "description": "True for steps that depend on state the app may or may not have -- dismissing a first-run prompt, a rate nag, a tutorial already seen. A replay that finds the screen absent skips the step and says so, rather than failing."
+        },
+        "requires_save_state": {
+          "enum": ["none", "absent", "present"],
+          "default": "none",
+          "description": "absent: only run on a fresh profile. present: only run when a save exists. This is the usual reason a map that worked yesterday diverges today -- see protocol.md."
+        }
+      }
+    },
+    "point": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "integer" },
+      "description": "[x, y] in client coordinates."
+    }
+  }
+}

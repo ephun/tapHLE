@@ -21,7 +21,7 @@ use crate::frameworks::foundation::ns_string::{
 };
 use crate::frameworks::foundation::NSUInteger;
 use crate::mem::{ConstPtr, MutPtr, Ptr};
-use crate::objc::{id, msg, msg_class, release};
+use crate::objc::{id, msg, msg_class, nil, release};
 use crate::Environment;
 use encoding_rs::MACINTOSH;
 
@@ -87,9 +87,14 @@ fn CFURLCreateWithBytes(
     base_url: CFURLRef,
 ) -> CFURLRef {
     assert!(allocator == kCFAllocatorDefault || env.mem.read(allocator).is_system_default()); // unimplemented
-    assert_eq!(encoding, kCFStringEncodingASCII); // TODO
-    assert!(base_url.is_null()); // TODO
+    if !base_url.is_null() {
+        log!("TODO: CFURLCreateWithBytes() with a base URL; ignoring the base");
+    }
 
+    // The encoding is whatever the caller says. It used to be asserted to be
+    // ASCII, which ended any app that built a URL from UTF-8 bytes — the
+    // ordinary choice, and what a URL containing an escape or a non-ASCII
+    // character needs.
     // TODO: interpret percent escape sequences using encoding as well
     let encoding = CFStringConvertEncodingToNSStringEncoding(env, encoding);
     let length: NSUInteger = length.try_into().unwrap();
@@ -103,13 +108,38 @@ fn CFURLCreateWithBytes(
                                              length:length
                                            encoding:encoding];
 
-    assert!(!to_rust_string(env, string).contains("://")); // TODO
-
-    // Assume file URL case here
+    // A URL with a scheme is an absolute URL and has to be parsed as one;
+    // anything else is a file path. Treating everything as a path aborted on
+    // the first `http://` an app built this way.
+    let has_scheme = to_rust_string(env, string).contains("://");
     let url: id = msg_class![env; NSURL alloc];
-    let res = msg![env; url initFileURLWithPath:string];
+    let res = if has_scheme {
+        msg![env; url initWithString:string]
+    } else {
+        msg![env; url initFileURLWithPath:string]
+    };
     release(env, string);
     res
+}
+
+/// The same as [CFURLCreateWithBytes] but resolved against a base URL, and with
+/// a flag saying whether the bytes are already percent-escaped.
+///
+/// With no base URL the two are the same call, and that is the case apps reach
+/// here on: a URL built from bytes that turn out to be absolute already.
+fn CFURLCreateAbsoluteURLWithBytes(
+    env: &mut Environment,
+    allocator: CFAllocatorRef,
+    url_bytes: ConstPtr<u8>,
+    length: CFIndex,
+    encoding: CFStringEncoding,
+    base_url: CFURLRef,
+    _use_compatibility_mode: bool,
+) -> CFURLRef {
+    if !base_url.is_null() {
+        log!("TODO: CFURLCreateAbsoluteURLWithBytes() with a base URL; ignoring the base");
+    }
+    CFURLCreateWithBytes(env, allocator, url_bytes, length, encoding, Ptr::null())
 }
 
 fn CFURLCreateWithFileSystemPath(
@@ -258,6 +288,62 @@ fn CFURLCopyFileSystemPath(
     msg![env; path copy]
 }
 
+/// `CFURLCreateStringByReplacingPercentEscapesUsingEncoding`.
+///
+/// `chars_to_leave_escaped` names characters whose escapes should survive
+/// decoding, which is how a caller decodes a whole URL without destroying the
+/// delimiters inside a component. An empty or null string means decode
+/// everything, and that is what every observed caller passes.
+fn CFURLCreateStringByReplacingPercentEscapesUsingEncoding(
+    env: &mut Environment,
+    allocator: CFAllocatorRef,
+    origin_string: CFStringRef,
+    chars_to_leave_escaped: CFStringRef,
+    encoding: CFStringEncoding,
+) -> CFStringRef {
+    assert!(allocator == kCFAllocatorDefault || env.mem.read(allocator).is_system_default()); // unimplemented
+    if origin_string.is_null() {
+        return Ptr::null();
+    }
+    if !chars_to_leave_escaped.is_null() {
+        let length: NSUInteger = msg![env; chars_to_leave_escaped length];
+        // Honouring this means decoding selectively, which nothing seen needs.
+        // Saying so beats silently decoding the delimiters the caller asked to
+        // keep, which would corrupt the URL it is taking apart.
+        assert!(
+            length == 0,
+            "CFURLCreateStringByReplacingPercentEscapesUsingEncoding() with \
+             characters to leave escaped is not implemented"
+        );
+    }
+    let encoding = CFStringConvertEncodingToNSStringEncoding(env, encoding);
+    let decoded: CFStringRef =
+        msg![env; origin_string stringByReplacingPercentEscapesUsingEncoding:encoding];
+    if decoded == nil {
+        // The CF function returns NULL where the Objective-C one returns nil,
+        // and its callers check.
+        return Ptr::null();
+    }
+    msg![env; decoded copy]
+}
+
+/// `CFURLCreateStringByReplacingPercentEscapes` — the same thing with the
+/// encoding fixed to UTF-8.
+fn CFURLCreateStringByReplacingPercentEscapes(
+    env: &mut Environment,
+    allocator: CFAllocatorRef,
+    origin_string: CFStringRef,
+    chars_to_leave_escaped: CFStringRef,
+) -> CFStringRef {
+    CFURLCreateStringByReplacingPercentEscapesUsingEncoding(
+        env,
+        allocator,
+        origin_string,
+        chars_to_leave_escaped,
+        kCFStringEncodingUTF8,
+    )
+}
+
 fn CFURLCreateCopyAppendingPathComponent(
     env: &mut Environment,
     allocator: CFAllocatorRef,
@@ -305,9 +391,17 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CFURLGetFileSystemRepresentation(_, _, _, _)),
     export_c_func!(CFURLCreateFromFileSystemRepresentation(_, _, _, _)),
     export_c_func!(CFURLCreateWithBytes(_, _, _, _, _)),
+    export_c_func!(CFURLCreateAbsoluteURLWithBytes(_, _, _, _, _, _)),
     export_c_func!(CFURLCreateWithFileSystemPath(_, _, _, _)),
     export_c_func!(CFURLCreateWithString(_, _, _)),
     export_c_func!(CFURLCreateStringByAddingPercentEscapes(_, _, _, _, _)),
+    export_c_func!(CFURLCreateStringByReplacingPercentEscapesUsingEncoding(
+        _,
+        _,
+        _,
+        _
+    )),
+    export_c_func!(CFURLCreateStringByReplacingPercentEscapes(_, _, _)),
     export_c_func!(CFURLCopyPathExtension(_)),
     export_c_func!(CFURLCopyFileSystemPath(_, _)),
     export_c_func!(CFURLCreateCopyAppendingPathComponent(_, _, _, _)),

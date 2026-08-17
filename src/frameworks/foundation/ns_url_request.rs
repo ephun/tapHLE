@@ -8,9 +8,9 @@
 use super::{ns_string, NSTimeInterval, NSUInteger};
 use crate::frameworks::foundation::ns_string::to_rust_string;
 use crate::objc::{
-    autorelease, id, nil, objc_classes, release, ClassExports, HostObject, NSZonePtr,
+    autorelease, id, nil, objc_classes, release, retain, ClassExports, HostObject, NSZonePtr,
 };
-use crate::{msg, msg_class};
+use crate::{msg, msg_class, Environment};
 
 type NSURLRequestCachePolicy = NSUInteger;
 const NSURLRequestUseProtocolCachePolicy: NSURLRequestCachePolicy = 0;
@@ -28,8 +28,69 @@ struct NSURLRequestHostObject {
     // Header fields
     /// `NSDictionary*`
     http_header_fields: id,
+    /// The rest of the request's settings. tapHLE performs no I/O, so none of
+    /// these can be acted on; they are stored because a request is a value an
+    /// app configures and then reads back, and a setter that does not exist
+    /// ends the app while one that quietly forgets makes it misreport itself.
+    http_should_handle_cookies: bool,
+    http_should_use_pipelining: bool,
+    network_service_type: NSUInteger,
+    /// `NSURL*`
+    main_document_url: id,
+    /// `NSInputStream*`
+    http_body_stream: id,
 }
 impl HostObject for NSURLRequestHostObject {}
+
+/// Give `new` the same request `old` describes.
+///
+/// The header dictionary is copied entry by entry rather than shared: it is the
+/// part a caller adjusts after copying, and sharing it is what makes a copy
+/// behave like an alias.
+fn copy_request_fields(env: &mut Environment, old: id, new: id) {
+    let &NSURLRequestHostObject {
+        url,
+        cache_policy,
+        timeout_interval,
+        http_method,
+        http_body,
+        http_header_fields,
+        http_should_handle_cookies,
+        http_should_use_pipelining,
+        network_service_type,
+        main_document_url,
+        http_body_stream,
+    } = env.objc.borrow(old);
+
+    let url_copy: id = msg![env; url copy];
+    let method_copy: id = msg![env; http_method copy];
+    let body_copy: id = msg![env; http_body copy];
+
+    let new_fields = env
+        .objc
+        .borrow::<NSURLRequestHostObject>(new)
+        .http_header_fields;
+    () = msg![env; new_fields addEntriesFromDictionary:http_header_fields];
+
+    let new_obj = env.objc.borrow_mut::<NSURLRequestHostObject>(new);
+    let old_url = std::mem::replace(&mut new_obj.url, url_copy);
+    let old_method = std::mem::replace(&mut new_obj.http_method, method_copy);
+    let old_body = std::mem::replace(&mut new_obj.http_body, body_copy);
+    new_obj.cache_policy = cache_policy;
+    new_obj.timeout_interval = timeout_interval;
+    new_obj.http_should_handle_cookies = http_should_handle_cookies;
+    new_obj.http_should_use_pipelining = http_should_use_pipelining;
+    new_obj.network_service_type = network_service_type;
+    let old_main_document = std::mem::replace(&mut new_obj.main_document_url, main_document_url);
+    let old_body_stream = std::mem::replace(&mut new_obj.http_body_stream, http_body_stream);
+    retain(env, main_document_url);
+    retain(env, http_body_stream);
+    release(env, old_main_document);
+    release(env, old_body_stream);
+    release(env, old_url);
+    release(env, old_method);
+    release(env, old_body);
+}
 
 pub const CLASSES: ClassExports = objc_classes! {
 
@@ -48,6 +109,12 @@ pub const CLASSES: ClassExports = objc_classes! {
         http_method: ns_string::get_static_str(env, "GET"),
         http_body: nil,
         http_header_fields,
+        // NSURLRequest's documented defaults.
+        http_should_handle_cookies: true,
+        http_should_use_pipelining: false,
+        network_service_type: 0, // NSURLNetworkServiceTypeDefault
+        main_document_url: nil,
+        http_body_stream: nil,
     });
     env.objc.alloc_object(this, host_object, &mut env.mem)
 }
@@ -90,18 +157,14 @@ pub const CLASSES: ClassExports = objc_classes! {
         timeout_interval,
     );
 
-    // Preserving old behaviour
-    if !env.options.network_access {
-        log_dbg!(
-            "Network access is disabled, [(NSURLRequest *){:?} initWithURL:{} cachePolicy:{} timeoutInterval:{}] -> nil",
-            this,
-            to_rust_string(env, url_desc),
-            cache_policy,
-            timeout_interval,
-        );
-        release(env, this);
-        return nil;
-    }
+    // A request is a value, not a connection: building one performs no I/O and
+    // succeeds on a device in airplane mode exactly as it does on WiFi. tapHLE
+    // used to return nil here when network access was off, which no real device
+    // ever does, so no app has code for it — they carry the nil forward and
+    // hand it to NSURLConnection, which then cannot report a failure against a
+    // request that does not exist. Offline is modelled where it actually
+    // happens, in NSURLConnection, which fails with
+    // NSURLErrorNotConnectedToInternet.
 
     let url_copy = msg![env; url copy];
     env.objc.borrow_mut::<NSURLRequestHostObject>(this).url = url_copy;
@@ -134,6 +197,40 @@ pub const CLASSES: ClassExports = objc_classes! {
     msg![env; http_header_fields objectForKey:field]
 }
 
+- (bool)HTTPShouldHandleCookies {
+    env.objc.borrow::<NSURLRequestHostObject>(this).http_should_handle_cookies
+}
+- (bool)HTTPShouldUsePipelining {
+    env.objc.borrow::<NSURLRequestHostObject>(this).http_should_use_pipelining
+}
+- (NSUInteger)networkServiceType {
+    env.objc.borrow::<NSURLRequestHostObject>(this).network_service_type
+}
+- (id)mainDocumentURL {
+    env.objc.borrow::<NSURLRequestHostObject>(this).main_document_url
+}
+- (id)HTTPBodyStream {
+    env.objc.borrow::<NSURLRequestHostObject>(this).http_body_stream
+}
+
+// NSCopying and NSMutableCopying.
+//
+// A request is a value: SDKs take one they were handed, copy it, and adjust
+// the copy's headers or method rather than mutating the caller's. Retaining
+// instead of copying would make those adjustments visible through the
+// original, and tapHLE's immutable class shares its host object with the
+// mutable one, so retaining is not safe even for `copy`.
+- (id)copyWithZone:(NSZonePtr)_zone {
+    let new: id = msg_class![env; NSURLRequest alloc];
+    copy_request_fields(env, this, new);
+    new
+}
+- (id)mutableCopyWithZone:(NSZonePtr)_zone {
+    let new: id = msg_class![env; NSMutableURLRequest alloc];
+    copy_request_fields(env, this, new);
+    new
+}
+
 - (())dealloc {
     log_dbg!("[(NSURLRequest*){:?} dealloc]", this);
     let &NSURLRequestHostObject {
@@ -141,12 +238,16 @@ pub const CLASSES: ClassExports = objc_classes! {
         http_method,
         http_body,
         http_header_fields,
+        main_document_url,
+        http_body_stream,
         ..
     } = env.objc.borrow(this);
     release(env, url);
     release(env, http_method);
     release(env, http_body);
     release(env, http_header_fields);
+    release(env, main_document_url);
+    release(env, http_body_stream);
     env.objc.dealloc_object(this, &mut env.mem)
 }
 
@@ -188,6 +289,32 @@ pub const CLASSES: ClassExports = objc_classes! {
     if fields != nil {
         () = msg![env; http_header_fields addEntriesFromDictionary:fields];
     }
+}
+
+- (())setHTTPShouldHandleCookies:(bool)handle {
+    env.objc.borrow_mut::<NSURLRequestHostObject>(this).http_should_handle_cookies = handle;
+}
+
+- (())setHTTPShouldUsePipelining:(bool)pipeline {
+    env.objc.borrow_mut::<NSURLRequestHostObject>(this).http_should_use_pipelining = pipeline;
+}
+
+- (())setNetworkServiceType:(NSUInteger)service_type {
+    env.objc.borrow_mut::<NSURLRequestHostObject>(this).network_service_type = service_type;
+}
+
+- (())setMainDocumentURL:(id)url { // NSURL *
+    let url_copy: id = msg![env; url copy];
+    let host_obj = env.objc.borrow_mut::<NSURLRequestHostObject>(this);
+    let old = std::mem::replace(&mut host_obj.main_document_url, url_copy);
+    release(env, old);
+}
+
+- (())setHTTPBodyStream:(id)stream { // NSInputStream *
+    retain(env, stream);
+    let host_obj = env.objc.borrow_mut::<NSURLRequestHostObject>(this);
+    let old = std::mem::replace(&mut host_obj.http_body_stream, stream);
+    release(env, old);
 }
 
 - (())setURL:(id)url { // NSURL *

@@ -40,6 +40,11 @@ games page is historical and its app-specific site was unavailable. No current
 official purchase or download route was found. This is a bounded availability
 observation, not proof of legal abandonment or universal unavailability.
 
+## Clickmap
+
+`dev-docs/clickmaps/baby-monkey.json` replays launch to a live run. Run it
+with `dev-scripts/clickmap.ps1` before working out a route by hand.
+
 ## Current canonical checkpoint
 
 The release build for commit `ee21050a` was launched in a normal Windows
@@ -438,3 +443,76 @@ then fix bundle-relative resource lookup so `audio/<name>.wav` resolves against
 `<bundle>/bm/` and measure the difference with the OpenAL Soft wave-writer
 capture described in the playbook rather than assuming one. After that, play
 through to a death and a game-over screen to find the next frontier.
+
+## Blank window, and the general presentation defect (2026-08-03)
+
+Baby Monkey renders nothing: the window is a flat slate rectangle from
+launch. The three-star result above is therefore currently invisible to
+anyone who runs the game.
+
+**This is not caused by the 2026-08-03 session's work.** A build of
+`400d2b7d` — trunk as it stood before that session — shows the identical
+blank window with the identical bytes. Whatever broke it landed somewhere in
+the 437 commits between `59d4d97b` (where the menu was last seen) and
+`400d2b7d`, and bisecting that range is the outstanding job.
+
+### The frame is fine; presentation loses it
+
+Capture the guest renderbuffer with `TAPHLE_FRAME_CAPTURE_REQUEST` /
+`TAPHLE_FRAME_CAPTURE_OUTPUT` and screenshot the window at the same moment.
+The renderbuffer holds the complete menu — Play button, monkey, pig, trees,
+mountains, the four bottom-bar buttons — and the window holds none of it.
+
+The drawable is 480x320, already landscape. tapHLE nevertheless applies its
+portrait-to-landscape presentation rotation, which samples an
+already-upright frame through a rotated texture matrix with `CLAMP_TO_EDGE`,
+so the window receives edge-clamped bands rather than the image.
+`--landscape-native` disables that rotation and both the menu and gameplay
+appear. It is now the app's default option.
+
+### Why this is a tapHLE defect, not two app quirks
+
+Cubed Rally Redline needs the same option for the same measured reason. Two
+unrelated games, one Unity and one a custom engine, both render
+landscape-native and both are destroyed by the same rotation. Any other
+landscape game whose drawable is landscape-shaped is affected too.
+
+A general fix is possible: when the app's EAGL drawable is landscape-shaped
+while tapHLE has the device rotated to landscape, the app is drawing
+landscape-native and the presentation rotation must not be applied. A
+correctly-behaving landscape app renders into a 320x480 portrait drawable and
+still needs it, so the drawable's aspect is the discriminator.
+
+**Do not implement that as a presentation-only change.** `transform_input_coords`
+in `src/window.rs` rotates incoming touches by the inverse of the same matrix.
+Changing presentation alone would leave every tap landing in the wrong place.
+The fix has to put the window into the landscape-native regime — the same
+state `--landscape-native` produces — so that presentation, the viewport, and
+input all agree. That is why this session shipped the per-app option instead:
+it is the same end state, reached safely, without changing behaviour for
+every other landscape game on the way.
+
+### Controller mapping
+
+Read off the rendered screen, not guessed:
+
+| Control | Screen target | What it does |
+| --- | --- | --- |
+| A | (43, 274) | monkey button, bottom left — jumps the monkey off the pig |
+| B | (439, 274) | pig button, bottom right |
+| Start | (22, 22) | pause, top left |
+
+Tilt already reaches the game through the analog stick, and the app's
+`Info.plist` requires the `accelerometer` capability. No `--y-tilt-offset` is
+asserted: the game's neutral holding angle is not something a screenshot can
+establish, and picking a number without a human holding a controller would be
+a guess recorded as a default. Establish it with a playtest.
+
+All three targets were exercised with real foreground input. Play at
+(240, 120) starts a run, the monkey button jumps, and Start's target at
+(22, 22) — checked separately on 2026-08-04, since it had been left
+unconfirmed — brings up the Paused overlay with Resume / Main Menu / Replay.
+
+Only the *targets* are confirmed this way; a tap is not a controller. Whether
+the pad's A/B/Start buttons actually reach those coordinates needs a playtest
+with hardware, as does the tilt neutral above.

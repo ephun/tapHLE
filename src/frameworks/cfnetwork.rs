@@ -6,8 +6,8 @@
 //! The CFNetwork framework, specifically its CFHTTPMessage / CFReadStream HTTP
 //! client.
 //!
-//! Early games bundle analytics and reporting SDKs (SPY mouse HD carries EA's
-//! IPSP SDK) that POST telemetry over CFNetwork. tapHLE has no network stack,
+//! Early games bundle analytics and reporting SDKs that POST telemetry over
+//! CFNetwork. tapHLE has no network stack,
 //! so the goal here is not to make the request succeed: it is to let the SDK
 //! *build* a request and *attempt* to send it without crashing, then observe
 //! the attempt fail, exactly as it would on a device with no connectivity, and
@@ -146,14 +146,15 @@ fn CFReadStreamUnscheduleFromRunLoop(
 }
 
 fn CFReadStreamOpen(_env: &mut Environment, _stream: CFReadStreamRef) -> bool {
-    // Report that the stream opened, even though tapHLE has no network stack and
-    // no bytes will ever arrive. Returning true is deliberate: an SDK that opens
-    // an async HTTP stream registers a run-loop client and keeps the stream for
-    // the completion callback (which we simply never deliver, so the request
-    // hangs pending and no telemetry is sent). Returning false instead forces
-    // callers down a synchronous-open-failure path, which in EA's IPSP SDK
-    // double-releases the request URL string and crashes — a latent bug that a
-    // real device rarely triggers because a synchronous open failure is rare.
+    // Report that the stream opened, even though tapHLE has no network stack
+    // and no bytes will ever arrive. Returning true is deliberate: an SDK that
+    // opens an async HTTP stream registers a run-loop client and keeps the
+    // stream for the completion callback (which we simply never deliver, so the
+    // request hangs pending and no telemetry is sent). Returning false instead
+    // forces callers down a synchronous-open-failure path, which in EA's IPSP
+    // SDK double-releases the request URL string and crashes — a latent bug
+    // that a real device rarely triggers because a synchronous open failure is
+    // rare.
     true
 }
 

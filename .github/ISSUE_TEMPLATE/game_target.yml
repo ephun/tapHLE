@@ -58,10 +58,11 @@ body:
     validations:
       required: true
   - type: input
-    id: windows
+    id: host
     attributes:
-      label: Windows, CPU, and GPU
-      placeholder: Windows 11, Ryzen 7 5800X, NVIDIA RTX 3070
+      label: Host environment
+      description: Give Windows/CPU/GPU/driver details, or the iOS device and OS version.
+      placeholder: Windows 11, Ryzen 7 5800X, RTX 3070; or iPhone 16 Pro, iOS 18.6
     validations:
       required: true
   - type: textarea
@@ -72,7 +73,7 @@ body:
   - type: dropdown
     id: evidence
     attributes:
-      label: Can you or your agent test this exact game version on Windows?
+      label: Can you or your agent test this exact game version on the named host?
       options:
         - "Yes"
         - "No"

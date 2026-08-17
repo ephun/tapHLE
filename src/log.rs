@@ -159,7 +159,6 @@ pub fn debug_enabled_for(module: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     /// [debug_enabled_for] reads the environment once, so exercise the
     /// matching rule directly rather than through the cached lookup.

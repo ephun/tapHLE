@@ -5,7 +5,7 @@
  */
 //! `NSAutoreleasePool`.
 
-use crate::objc::{id, msg, objc_classes, release, ClassExports, HostObject, NSZonePtr};
+use crate::objc::{id, msg, nil, objc_classes, release, ClassExports, HostObject, NSZonePtr, ObjC};
 use crate::{Environment, ThreadId};
 use std::num::NonZeroU32;
 
@@ -25,6 +25,38 @@ struct NSAutoreleasePoolHostObject {
     objects: Vec<id>,
 }
 impl HostObject for NSAutoreleasePoolHostObject {}
+
+/// Release one object on behalf of a draining pool, tolerating one that has
+/// already been destroyed.
+///
+/// A dead object in a pool means it was released once too often *somewhere
+/// else*. The pool's pending release is merely what finds the corpse, typically
+/// far from the cause and with nothing useful on the stack, so aborting here
+/// reports the symptom at its least useful moment — and reports it as if the
+/// pool were at fault.
+///
+/// On Apple's runtime the same mistake is often harmless, because the thing
+/// over-released is frequently a constant string or another immortal singleton
+/// whose `release` does nothing. tapHLE has those too
+/// (`_tapHLE_NSString_Static` and friends), so an app that is healthy on device
+/// can die here purely because tapHLE handed it an ordinary object where
+/// Foundation would have handed back an immortal one. Warning and skipping
+/// keeps such an app running and says plainly what happened; the warning is not
+/// suppressed after the first, because the count is itself the useful signal.
+///
+/// This does not paper over a leak: the object is already gone. What is skipped
+/// is a second free of memory the guest may have reused.
+fn release_from_pool(env: &mut Environment, object: id) {
+    if object != nil && ObjC::read_isa(object, &env.mem) == nil {
+        log!(
+            "Warning: autorelease pool holds {:?}, which has already been deallocated. \
+             It was over-released elsewhere; skipping this release.",
+            object
+        );
+        return;
+    }
+    release(env, object);
+}
 
 pub const CLASSES: ClassExports = objc_classes! {
 
@@ -123,7 +155,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         let objects = std::mem::take(&mut host_obj.objects);
         env.objc.dealloc_object(pool, &mut env.mem);
         for object in objects {
-            release(env, object);
+            release_from_pool(env, object);
         }
     }
 }

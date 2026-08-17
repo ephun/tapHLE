@@ -1,0 +1,67 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.chillingo.thejimandfrankmysterieshd",
+    "display_name": "J & F HD",
+    "version": "1.1",
+    "sha256": "52BDD06DA70513B1252DACE4FF4AC0D6528305F91AE659B7534FEB8D09A4F92C"
+  },
+  "recorded": {
+    "taphle_version": "d2121078",
+    "date": "2026-08-13",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": ["--landscape-left"],
+  "window": { "width": 1024, "height": 768, "orientation": "landscape-left" },
+  "milestone": {
+    "rating": 3,
+    "describes": "Chapter one is playable: dialogue advances, the arrow-marked object responds, the quest letter opens, both hidden Eurekas are collected and counted, and the footprints lead to the next room."
+  },
+  "defaults": { "press_ms": 120, "settle_ms": 2500 },
+  "steps": [
+    { "id": "boot", "action": "wait", "settle_ms": 24000, "expect": "The social-SDK sign-up panel over the main menu." },
+    { "id": "decline-sdk", "from": "sign-up panel", "action": "tap", "at": [692, 675], "expect": "Panel gone, menu brightens. The other button opens a sign-in that still dies on a nil string -- do not press it." },
+    { "id": "play", "from": "main menu", "action": "tap", "at": [847, 114], "settle_ms": 3000, "expect": "Profiles on a fresh save; Continue / New Game / Back when a save exists." },
+    { "id": "profile-slot", "from": "profiles", "action": "tap", "at": [202, 199], "requires_save_state": "absent", "expect": "Enter Your Name." },
+    { "id": "name-field", "from": "name entry", "action": "tap", "at": [519, 314], "settle_ms": 1200, "requires_save_state": "absent" },
+    { "id": "name-type", "action": "type", "text": "TAPHLE", "settle_ms": 1500, "requires_save_state": "absent" },
+    { "id": "name-commit", "action": "key", "scancode": 28, "settle_ms": 3000, "requires_save_state": "absent", "expect": "Name accepted. Must be a scancode -- see notes." },
+    { "id": "load", "from": "name entry", "action": "tap", "at": [707, 679], "settle_ms": 3000, "requires_save_state": "absent", "expect": "Back at the menu with the profile selected." },
+    { "id": "start-game", "from": "main menu", "action": "tap", "at": [847, 114], "settle_ms": 3000, "expect": "The introduction cutscene begins." },
+    { "id": "cutscene", "action": "wait", "settle_ms": 195000, "expect": "Cutscene ends on chapter one's title card, then the living room with Jim and Frank in dialogue." },
+    { "id": "dialogue-1", "from": "living room", "action": "tap", "at": [512, 690], "expect": "Next line. Any tap on the speech scroll advances it." },
+    { "id": "dialogue-2", "action": "tap", "at": [512, 690] },
+    { "id": "dialogue-3", "action": "tap", "at": [512, 690] },
+    { "id": "dialogue-4", "action": "tap", "at": [512, 690] },
+    { "id": "dialogue-5", "action": "tap", "at": [512, 690], "expect": "The interaction tutorial card." },
+    { "id": "tutorial-ok", "from": "interaction tutorial", "action": "tap", "at": [779, 518], "settle_ms": 3000, "expect": "Living room, with a red arrow over the scroll on the table." },
+    { "id": "take-scroll", "from": "living room", "action": "tap", "at": [272, 489], "settle_ms": 4000, "expect": "The characters react. This is the first proof that input reaches the game rather than the menus." },
+    { "id": "dialogue-6", "action": "tap", "at": [512, 690] },
+    { "id": "dialogue-7", "action": "tap", "at": [512, 690] },
+    { "id": "dialogue-8", "action": "tap", "at": [512, 690] },
+    { "id": "dialogue-9", "action": "tap", "at": [512, 690] },
+    { "id": "dialogue-10", "action": "tap", "at": [512, 690] },
+    { "id": "dialogue-11", "action": "tap", "at": [512, 690], "expect": "The desk close-up, with the letter glowing." },
+    { "id": "open-letter", "from": "desk", "action": "tap", "at": [782, 419], "settle_ms": 4000, "expect": "The grandfather's letter, upright and readable, with a Skip button." },
+    { "id": "skip-letter", "from": "letter", "action": "tap", "at": [894, 727], "settle_ms": 4000 },
+    { "id": "dialogue-12", "action": "tap", "at": [512, 690], "settle_ms": 2200 },
+    { "id": "dialogue-13", "action": "tap", "at": [512, 690], "settle_ms": 2200 },
+    { "id": "dialogue-14", "action": "tap", "at": [512, 690], "settle_ms": 2200 },
+    { "id": "dialogue-15", "action": "tap", "at": [512, 690], "settle_ms": 2200 },
+    { "id": "dialogue-16", "action": "tap", "at": [512, 690], "settle_ms": 2200, "expect": "The Eureka tutorial card." },
+    { "id": "eureka-tutorial-ok", "from": "Eureka tutorial", "action": "tap", "at": [779, 518], "settle_ms": 3000 },
+    { "id": "movement-tutorial-ok", "from": "movement tutorial", "action": "tap", "at": [779, 518], "settle_ms": 3000, "optional": true, "expect": "Free-roam living room with two Eurekas highlighted." },
+    { "id": "eureka-window", "from": "living room", "action": "tap", "at": [279, 154], "settle_ms": 3000, "expect": "The window-pane Eureka is collected." },
+    { "id": "eureka-picture", "action": "tap", "at": [782, 397], "settle_ms": 3500, "expect": "\"Whoa! Two Eurekas!\" -- the game counting them is the state change that proves the loop." },
+    { "id": "clear-dialogue", "action": "tap", "at": [512, 690], "settle_ms": 2500 },
+    { "id": "boot-icon", "from": "living room", "action": "tap", "at": [955, 709], "settle_ms": 3000, "expect": "Footprints appear near the guitar, showing where the player can walk." },
+    { "id": "walk-next-room", "action": "tap", "at": [960, 399], "settle_ms": 5000, "expect": "The study with a lit fireplace and new dialogue. Scene-to-scene navigation works, so the loop persists." }
+  ],
+  "notes": [
+    "Return must be injected as a raw scancode (keybd_event with KEYEVENTF_SCANCODE, scancode 0x1C). SDL never sees a virtual-key-only synthetic Return, and SendKeys \"{ENTER}\" does not work either: the characters arrive but the key does not.",
+    "Window captures include the border and title bar. Client x = capture x - 8, client y = capture y - 31 on Windows 11 at the default theme. Every coordinate here is already a client coordinate.",
+    "The dialogue steps are deliberately one tap per step rather than a repeat count, so a replay report names the exact line it stopped on.",
+    "With a save present, 'play' lands on Continue / New Game / Back instead of the profile list; Continue at [847, 114] goes straight into the saved scene, and the profile-creation steps are skipped."
+  ]
+}

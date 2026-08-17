@@ -12,8 +12,8 @@
 //!   the platform these may or may not be ordinary files, and must be accessed
 //!   through [ResourceFile].
 //! * Files the user is expected to modify, but not tapHLE: [APPS_DIR],
-//!   [USER_OPTIONS_FILE], [WALLPAPER_FILES]. These are ordinary files and are
-//!   found in [user_data_base_path].
+//!   [USER_OPTIONS_FILE]. These are ordinary files and are found in
+//!   [user_data_base_path].
 //! * Files that tapHLE will create and modify, and the user may modify if
 //!   they want to: [SANDBOX_DIR]. These are ordinary files and are found in
 //!   [user_data_base_path].
@@ -92,19 +92,11 @@ impl std::fmt::Debug for ResourceFile {
 pub const RESOURCES_ARE_EXTERNAL_FILES: bool = cfg!(not(target_os = "android"));
 
 /// Name of the directory where the user can put apps if they want them to
-/// appear in the app picker.
+/// appear in the tapHLE-gui library.
 pub const APPS_DIR: &str = "tapHLE_apps";
 
 /// Name of the file intended for the user's own options.
 pub const USER_OPTIONS_FILE: &str = "tapHLE_options.txt";
-
-/// Names of files the user can put a wallpaper image (for the app picker) in.
-#[allow(unused)]
-pub const WALLPAPER_FILES: &[&str] = &[
-    "tapHLE_wallpaper.png",
-    "tapHLE_wallpaper.jpg",
-    "tapHLE_wallpaper.jpeg",
-];
 
 /// Name of the directory where tapHLE will store sandboxed app data, e.g.
 /// the `Documents` directory.
@@ -182,7 +174,7 @@ pub fn url_for_opening_user_data_dir() -> Result<String, String> {
 /// doesn't exist, and populate it with templates or README files. (On other
 /// platforms these are simply bundled with tapHLE in a ZIP file.)
 pub fn prepopulate_user_data_dir() {
-    if std::env::consts::OS != "android" && std::env::consts::OS != "macos" {
+    if !matches!(std::env::consts::OS, "android" | "macos") {
         return;
     }
     let base_path = user_data_base_path();

@@ -210,9 +210,38 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (bool)renderbufferStorage:(NSUInteger)target
                fromDrawable:(id)drawable { // EAGLDrawable (always CAEAGLayer*)
-    assert!(drawable != nil); // TODO: handle unbinding
-
     assert!(target == gles11::RENDERBUFFER_OES);
+
+    // A nil drawable detaches whatever is currently bound, which is how an app
+    // tears down a rendering surface it intends to replace: Unity unbinds
+    // before recreating its surface, so a game that merely changes resolution
+    // arrives here once per change. Dropping the binding is the whole
+    // observable effect. The renderbuffer's storage is deliberately left alone,
+    // because the caller either allocates over it on the next bind or deletes
+    // the renderbuffer outright, and `presentRenderbuffer:` already treats an
+    // unbound renderbuffer as "nothing to present" rather than an error.
+    if drawable == nil {
+        let window = env.window.as_mut().expect("OpenGL ES is not supported in headless mode");
+        let renderbuffer: GLuint = {
+            let mut gles = super::sync_context(&mut env.framework_state.opengles, &mut env.objc, window, env.current_thread);
+            unsafe {
+                let mut renderbuffer = 0;
+                gles.GetIntegerv(gles11::RENDERBUFFER_BINDING_OES, &mut renderbuffer);
+                renderbuffer as _
+            }
+        };
+        let old_drawable = env
+            .objc
+            .borrow_mut::<EAGLContextHostObject>(this)
+            .renderbuffer_drawable_bindings
+            .borrow_mut()
+            .remove(&renderbuffer);
+        if let Some(old_drawable) = old_drawable {
+            log_dbg!("Unbound drawable {:?} from renderbuffer {:?}", old_drawable, renderbuffer);
+            release(env, old_drawable);
+        }
+        return true;
+    }
 
     let props: id = msg![env; drawable drawableProperties];
 
@@ -579,16 +608,14 @@ unsafe fn present_renderbuffer_es2(
         gles2::TEXTURE_MAG_FILTER,
         gles2::LINEAR as _,
     );
-    gles.TexParameteri(
-        gles2::TEXTURE_2D,
-        gles2::TEXTURE_WRAP_S,
-        gles2::CLAMP_TO_EDGE as _,
-    );
-    gles.TexParameteri(
-        gles2::TEXTURE_2D,
-        gles2::TEXTURE_WRAP_T,
-        gles2::CLAMP_TO_EDGE as _,
-    );
+    // The rotation below is applied to texture coordinates that run 0..1, and
+    // it rotates them about the origin rather than about the middle of the
+    // texture. A quarter turn therefore lands them outside the texture, in
+    // [-1,0] x [0,1], and only wrapping brings them back onto it. Clamping
+    // instead gives every row the same edge texel: the frame comes out as
+    // horizontal bands of flat colour with the vertical gradient intact.
+    gles.TexParameteri(gles2::TEXTURE_2D, gles2::TEXTURE_WRAP_S, gles2::REPEAT as _);
+    gles.TexParameteri(gles2::TEXTURE_2D, gles2::TEXTURE_WRAP_T, gles2::REPEAT as _);
 
     gles.BindFramebuffer(gles2::FRAMEBUFFER, 0);
     gles.DeleteFramebuffers(1, &src_fb);
@@ -651,6 +678,21 @@ unsafe fn present_renderbuffer_es2(
         (verts.as_ptr() as *const u8).add(8) as *const _,
     );
     gles.DrawArrays(gles2::TRIANGLES, 0, 6);
+
+    // Flush **here**, while the default framebuffer is still bound, and not
+    // after the state restore below.
+    //
+    // The restore rebinds whatever framebuffer the app was rendering into, and
+    // the window swap happens after that. Without this flush the frame just
+    // drawn never reaches the screen: the app's own rendering appears in its
+    // renderbuffer, the copy and the draw both report success and read back the
+    // right pixels, and the window stays black — which is a hard failure to
+    // attribute, because every check along the way passes.
+    //
+    // A `Finish()` placed after the restore does *not* fix it, so this is about
+    // the order of the flush against the binding rather than about waiting for
+    // the GPU.
+    gles.Flush();
 
     // Optional: virtual cursor.
     if let Some((cx, cy, pressed)) = virtual_cursor_visible_at {
@@ -769,11 +811,8 @@ unsafe fn ensure_present_program(gles: &mut dyn GLES) -> PresentProgram {
         let mut buf = [0u8; 1024];
         let mut len: GLsizei = 0;
         gles.GetShaderInfoLog(vs, 1024, &mut len, buf.as_mut_ptr() as *mut _);
-        let s = std::str::from_utf8(std::slice::from_raw_parts(
-            buf.as_ptr() as *const u8,
-            len as _,
-        ))
-        .unwrap_or("?");
+        let s =
+            std::str::from_utf8(std::slice::from_raw_parts(buf.as_ptr(), len as _)).unwrap_or("?");
         panic!("present_es2 vertex shader compile failed: {s}");
     }
 
@@ -787,11 +826,8 @@ unsafe fn ensure_present_program(gles: &mut dyn GLES) -> PresentProgram {
         let mut buf = [0u8; 1024];
         let mut len: GLsizei = 0;
         gles.GetShaderInfoLog(fs, 1024, &mut len, buf.as_mut_ptr() as *mut _);
-        let s = std::str::from_utf8(std::slice::from_raw_parts(
-            buf.as_ptr() as *const u8,
-            len as _,
-        ))
-        .unwrap_or("?");
+        let s =
+            std::str::from_utf8(std::slice::from_raw_parts(buf.as_ptr(), len as _)).unwrap_or("?");
         panic!("present_es2 fragment shader compile failed: {s}");
     }
 
@@ -800,26 +836,23 @@ unsafe fn ensure_present_program(gles: &mut dyn GLES) -> PresentProgram {
     gles.AttachShader(prog, fs);
     // Bind to high attribute slots so we never collide with the app's
     // attribute layout (which typically starts at 0).
-    gles.BindAttribLocation(prog, 6, b"aPos\0".as_ptr() as *const _);
-    gles.BindAttribLocation(prog, 7, b"aUV\0".as_ptr() as *const _);
+    gles.BindAttribLocation(prog, 6, c"aPos".as_ptr());
+    gles.BindAttribLocation(prog, 7, c"aUV".as_ptr());
     gles.LinkProgram(prog);
     gles.GetProgramiv(prog, gles2::LINK_STATUS, &mut ok);
     if ok == 0 {
         let mut buf = [0u8; 1024];
         let mut len: GLsizei = 0;
         gles.GetProgramInfoLog(prog, 1024, &mut len, buf.as_mut_ptr() as *mut _);
-        let s = std::str::from_utf8(std::slice::from_raw_parts(
-            buf.as_ptr() as *const u8,
-            len as _,
-        ))
-        .unwrap_or("?");
+        let s =
+            std::str::from_utf8(std::slice::from_raw_parts(buf.as_ptr(), len as _)).unwrap_or("?");
         panic!("present_es2 program link failed: {s}");
     }
 
-    let a_pos = gles.GetAttribLocation(prog, b"aPos\0".as_ptr() as *const _);
-    let a_uv = gles.GetAttribLocation(prog, b"aUV\0".as_ptr() as *const _);
-    let u_tex = gles.GetUniformLocation(prog, b"uTex\0".as_ptr() as *const _);
-    let u_tex_mat = gles.GetUniformLocation(prog, b"uTexMat\0".as_ptr() as *const _);
+    let a_pos = gles.GetAttribLocation(prog, c"aPos".as_ptr());
+    let a_uv = gles.GetAttribLocation(prog, c"aUV".as_ptr());
+    let u_tex = gles.GetUniformLocation(prog, c"uTex".as_ptr());
+    let u_tex_mat = gles.GetUniformLocation(prog, c"uTexMat".as_ptr());
 
     let result = PresentProgram {
         program: prog,
@@ -1025,6 +1058,21 @@ unsafe fn present_renderbuffer(env: &mut Environment) {
         gles11::TEXTURE_2D,
         gles11::TEXTURE_MIN_FILTER,
         gles11::LINEAR as _,
+    );
+    // Wrapping, not clamping: [crate::gles::present::present_frame] rotates
+    // texture coordinates that run 0..1 about the origin, so a quarter turn
+    // puts them outside the texture and only wrapping brings them back. Clamp
+    // here and every row samples one edge texel, which presents the frame as
+    // horizontal bands of flat colour.
+    gles.TexParameteri(
+        gles11::TEXTURE_2D,
+        gles11::TEXTURE_WRAP_S,
+        gles11::REPEAT as _,
+    );
+    gles.TexParameteri(
+        gles11::TEXTURE_2D,
+        gles11::TEXTURE_WRAP_T,
+        gles11::REPEAT as _,
     );
 
     // Clean up the framebuffer object since we no longer need it.

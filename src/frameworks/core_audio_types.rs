@@ -170,6 +170,11 @@ pub struct AudioTimeStamp {
 }
 unsafe impl SafeRead for AudioTimeStamp {}
 
+/// `AudioTimeStampFlags`. Each bit says that the correspondingly named field of
+/// an [AudioTimeStamp] holds a real value; a consumer that ignores these will
+/// happily read a zero as a timestamp.
+pub const kAudioTimeStampSampleTimeValid: u32 = 1 << 0;
+
 /// Usually a FourCC.
 pub type AudioFormatID = u32;
 pub const kAudioFormatLinearPCM: AudioFormatID = fourcc(b"lpcm");

@@ -5,11 +5,11 @@
  */
 //! Time things including `CFAbsoluteTime`.
 
-use crate::dyld::{export_c_func, FunctionExports};
+use crate::dyld::{export_c_func, ConstantExports, FunctionExports, HostConstant};
 use crate::frameworks::core_foundation::CFTypeRef;
 use crate::frameworks::foundation::NSTimeInterval;
 use crate::libc::time::{time_t, timestamp_to_calendar_date};
-use crate::mem::SafeRead;
+use crate::mem::{ConstVoidPtr, SafeRead};
 use crate::objc::nil;
 use crate::{impl_GuestRet_for_large_struct, Environment};
 use std::ops::Add;
@@ -17,6 +17,25 @@ use std::time::{Duration, SystemTime};
 
 /// Seconds between Unix and Apple's epochs
 pub const SECS_FROM_UNIX_TO_APPLE_EPOCHS: u64 = 978_307_200;
+
+/// `kCFAbsoluteTimeIntervalSince1970`, the same number as a `CFTimeInterval`.
+///
+/// This is a **non-lazy symbol**, not a function: the guest reads the `double`
+/// straight out of `__DATA,__nl_symbol_ptr`. An unbound slot there is a null
+/// pointer, and the guest dereferences it without checking, so a missing
+/// constant of this kind shows up as an opaque guest `MemoryError` a long way
+/// from anything named. Apps die on exactly this, in the standard
+/// `CFAbsoluteTimeGetCurrent() + kCFAbsoluteTimeIntervalSince1970` conversion
+/// to a Unix timestamp.
+fn kCFAbsoluteTimeIntervalSince1970(env: &mut Environment) -> ConstVoidPtr {
+    let value: CFTimeInterval = SECS_FROM_UNIX_TO_APPLE_EPOCHS as CFTimeInterval;
+    env.mem.alloc_and_write(value).cast().cast_const()
+}
+
+pub const CONSTANTS: ConstantExports = &[(
+    "_kCFAbsoluteTimeIntervalSince1970",
+    HostConstant::Custom(kCFAbsoluteTimeIntervalSince1970),
+)];
 
 /// The absolute reference date is 1 Jan 2001 00:00:00 GMT
 pub fn apple_epoch() -> SystemTime {

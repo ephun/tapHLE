@@ -110,30 +110,40 @@ struct ArrayStateBackup {
     buffer_binding: GLuint,
 }
 
-/// List of arrays shared by OpenGL ES 1.1 and OpenGL 2.1.
+/// Report a GL enum tapHLE does not model, once per function and value.
 ///
-/// Report a client-state array tapHLE does not model, once per distinct enum.
+/// `noun` names what the value was being used as, for instance `"a capability"`
+/// or `"a client array"`, so the message reads as a sentence.
 ///
 /// A per-frame call site would otherwise flood the log, but the enum itself is
 /// exactly what a future implementer needs, so it must not be swallowed either.
-/// The likeliest candidate is `GL_POINT_SIZE_ARRAY_OES` (0x8B9C), used by
-/// point-sprite particle systems.
-fn warn_unknown_client_array(function: &str, array: GLenum) {
+/// Among client arrays the likeliest candidate is `GL_POINT_SIZE_ARRAY_OES`
+/// (0x8B9C), used by point-sprite particle systems.
+///
+/// Every caller passes the value through to desktop GL afterwards. A name
+/// tapHLE does not model is one desktop GL does not model either, so it records
+/// GL_INVALID_ENUM and does nothing, which is what OpenGL ES 1.1 specifies and
+/// what the guest's own `glGetError` should therefore see. Aborting instead
+/// turned a guest's own recoverable mistake into an emulator crash.
+fn warn_unhandled_enum(function: &'static str, noun: &str, value: GLenum) {
     use std::collections::HashSet;
     use std::sync::{Mutex, OnceLock};
-    static SEEN: OnceLock<Mutex<HashSet<GLenum>>> = OnceLock::new();
+    static SEEN: OnceLock<Mutex<HashSet<(&'static str, GLenum)>>> = OnceLock::new();
     let seen = SEEN.get_or_init(|| Mutex::new(HashSet::new()));
-    if seen.lock().unwrap().insert(array) {
+    if seen.lock().unwrap().insert((function, value)) {
         log!(
-            "Warning: {}({:#x}) names a client array tapHLE does not model. \
+            "Warning: {}({:#x}) names {} tapHLE does not model. \
              Letting it through so the guest sees GL_INVALID_ENUM. \
-             [reported once per array]",
+             [reported once per value]",
             function,
-            array
+            value,
+            noun
         );
     }
 }
 
+/// List of arrays shared by OpenGL ES 1.1 and OpenGL 2.1.
+///
 /// TODO: GL_POINT_SIZE_ARRAY_OES?
 pub const ARRAYS: &[ArrayInfo] = &[
     ArrayInfo {
@@ -317,6 +327,10 @@ const GET_PARAMS: ParamTable = ParamTable(&[
     // OES_framebuffer_object -> EXT_framebuffer_object
     (gl21::FRAMEBUFFER_BINDING_EXT, ParamType::Int, 1),
     (gl21::RENDERBUFFER_BINDING_EXT, ParamType::Int, 1),
+    // OES_framebuffer_object -> EXT_framebuffer_object. Unity queries this
+    // before allocating render textures; leaving it unset makes its later
+    // framebuffer-size decisions depend on stale guest memory.
+    (0x84e8, ParamType::Int, 1), // MAX_RENDERBUFFER_SIZE[_OES/_EXT]
     // EXT_texture_lod_bias
     (gl21::MAX_TEXTURE_LOD_BIAS_EXT, ParamType::Float, 1),
     // OES_matrix_palette -> ARB_matrix_palette
@@ -722,18 +736,16 @@ impl GLES for GLES1OnGL2<'_> {
             || cap == gl21::TEXTURE
         {
             log_dbg!("Tolerating glEnable({:#x})", cap);
-        } else {
-            assert!(
-                CAPABILITIES.contains(&cap),
-                "Unexpected capability for glEnable({cap:#x})"
-            );
+        } else if !CAPABILITIES.contains(&cap) {
+            warn_unhandled_enum("glEnable", "a capability", cap);
         }
         gl21::Enable(cap);
     }
     unsafe fn IsEnabled(&mut self, cap: GLenum) -> GLboolean {
-        assert!(
-            CAPABILITIES.contains(&cap) || ARRAYS.iter().any(|&ArrayInfo { name, .. }| name == cap)
-        );
+        if !CAPABILITIES.contains(&cap) && !ARRAYS.iter().any(|&ArrayInfo { name, .. }| name == cap)
+        {
+            warn_unhandled_enum("glIsEnabled", "a capability", cap);
+        }
         gl21::IsEnabled(cap)
     }
     unsafe fn Disable(&mut self, cap: GLenum) {
@@ -746,7 +758,7 @@ impl GLES for GLES1OnGL2<'_> {
         } else if GET_PARAMS.contains(cap) || UNSUPPORTED_GET_PARAMS.contains(cap) {
             log_dbg!("Tolerating glDisable({:#x}) of parameter", cap);
         } else {
-            panic!("Unexpected glDisable({cap:#x})");
+            warn_unhandled_enum("glDisable", "a capability", cap);
         }
         gl21::Disable(cap);
     }
@@ -765,7 +777,7 @@ impl GLES for GLES1OnGL2<'_> {
                 array
             );
         } else if !ARRAYS.iter().any(|&ArrayInfo { name, .. }| name == array) {
-            warn_unknown_client_array("glEnableClientState", array);
+            warn_unhandled_enum("glEnableClientState", "a client array", array);
         }
         // Pass it through either way. An array tapHLE does not model is one
         // desktop GL does not model either, so it records GL_INVALID_ENUM and
@@ -786,12 +798,18 @@ impl GLES for GLES1OnGL2<'_> {
                 array
             );
         } else if !ARRAYS.iter().any(|&ArrayInfo { name, .. }| name == array) {
-            warn_unknown_client_array("glDisableClientState", array);
+            warn_unhandled_enum("glDisableClientState", "a client array", array);
         }
         // See the note in EnableClientState.
         gl21::DisableClientState(array);
     }
     unsafe fn GetBooleanv(&mut self, pname: GLenum, params: *mut GLboolean) {
+        if !GET_PARAMS.contains(pname) {
+            // GL_INVALID_ENUM: leave the caller's buffer untouched, which is
+            // what a renderer probing for an optional capability expects.
+            log!("Warning: glGetBooleanv() for unknown parameter {pname:#x}, leaving the result unset");
+            return;
+        }
         let (type_, count) = GET_PARAMS.get_type_info(pname);
         match type_ {
             ParamType::Boolean => {
@@ -814,6 +832,14 @@ impl GLES for GLES1OnGL2<'_> {
     }
     // TODO: GetFixedv
     unsafe fn GetFloatv(&mut self, pname: GLenum, params: *mut GLfloat) {
+        if !GET_PARAMS.contains(pname) {
+            // GL_INVALID_ENUM: leave the caller's buffer untouched, which is
+            // what a renderer probing for an optional capability expects.
+            log!(
+                "Warning: glGetFloatv() for unknown parameter {pname:#x}, leaving the result unset"
+            );
+            return;
+        }
         let (type_, _count) = GET_PARAMS.get_type_info(pname);
         match type_ {
             ParamType::Float | ParamType::FloatSpecial => {
@@ -823,11 +849,35 @@ impl GLES for GLES1OnGL2<'_> {
         }
     }
     unsafe fn GetIntegerv(&mut self, pname: GLenum, params: *mut GLint) {
-        let (type_, _count) = GET_PARAMS.get_type_info(pname);
-        // TODO: type conversion
-        let allowed_float = type_ == ParamType::Float && pname == gl21::POINT_SIZE_MAX;
-        assert!(type_ == ParamType::Int || allowed_float);
-        gl21::GetIntegerv(pname, params);
+        if !GET_PARAMS.contains(pname) {
+            // GL_INVALID_ENUM: leave the caller's buffer untouched, which is
+            // what a renderer probing for an optional capability expects.
+            log!("Warning: glGetIntegerv() for unknown parameter {pname:#x}, leaving the result unset");
+            return;
+        }
+        let (type_, count) = GET_PARAMS.get_type_info(pname);
+        match type_ {
+            ParamType::Int | ParamType::Boolean => gl21::GetIntegerv(pname, params),
+            // glGetIntegerv is defined for every parameter regardless of its
+            // natural type, converting as it goes; only the spelling of the
+            // answer changes. Refusing the float-valued ones made an ordinary
+            // capability query fatal, which stopped nine apps in a survey of
+            // 1501 — and asking for, say, the line-width range as integers is
+            // exactly what a renderer does while working out what it may draw.
+            ParamType::Float | ParamType::FloatSpecial => {
+                let mut floats = [0.0f32; 16];
+                let count = (count as usize).min(floats.len());
+                gl21::GetFloatv(pname, floats.as_mut_ptr());
+                for (i, float) in floats.iter().enumerate().take(count) {
+                    // The specification rounds a float parameter to the nearest
+                    // integer rather than truncating it.
+                    *params.add(i) = float.round() as GLint;
+                }
+            }
+            ParamType::_NonExhaustive => {
+                unreachable!("ParamType::_NonExhaustive is not a real parameter type")
+            }
+        }
     }
     unsafe fn GetTexEnviv(&mut self, target: GLenum, pname: GLenum, params: *mut GLint) {
         let (type_, _count) = TEX_ENV_PARAMS.get_type_info(pname);
@@ -851,21 +901,24 @@ impl GLES for GLES1OnGL2<'_> {
         gl21::GetPointerv(pname, params as *mut _ as *const _);
     }
     unsafe fn Hint(&mut self, target: GLenum, mode: GLenum) {
-        assert!([
+        if ![
             gl21::FOG_HINT,
             gl21::GENERATE_MIPMAP_HINT,
             gl21::LINE_SMOOTH_HINT,
             gl21::PERSPECTIVE_CORRECTION_HINT,
-            gl21::POINT_SMOOTH_HINT
+            gl21::POINT_SMOOTH_HINT,
         ]
-        .contains(&target));
+        .contains(&target)
+        {
+            warn_unhandled_enum("glHint", "a hint target", target);
+        }
         if mode == 0x0 {
             log_dbg!("Tolerating glHint({:#x}, {:#x})", target, mode);
-        } else {
-            assert!(
-                [gl21::FASTEST, gl21::NICEST, gl21::DONT_CARE].contains(&mode),
-                "Unexpected mode in glHint({target:#x}, {mode:#x})"
-            );
+        } else if ![gl21::FASTEST, gl21::NICEST, gl21::DONT_CARE].contains(&mode) {
+            // Observed: glHint(GL_FOG_HINT, GL_NEAREST), a texture filter
+            // passed where a quality hint belongs. The guest is simply
+            // wrong, and being wrong about a hint is not fatal on a device.
+            warn_unhandled_enum("glHint", "a hint mode", mode);
         }
         gl21::Hint(target, mode);
     }
@@ -1584,6 +1637,20 @@ impl GLES for GLES1OnGL2<'_> {
             param,
         )
     }
+    unsafe fn GetTexParameteriv(&mut self, target: GLenum, pname: GLenum, params: *mut GLint) {
+        // TEXTURE_CROP_RECT_OES is the one GLES1 texture parameter desktop GL
+        // has no equivalent for; it is silently dropped on the way in by
+        // TexParameteriv below, so there is nothing stored to report back.
+        // Reading it would return whatever GL leaves in the buffer, so it is
+        // answered with zeroes instead of a lie shaped like a rectangle.
+        if pname == gles11::TEXTURE_CROP_RECT_OES {
+            for i in 0..4 {
+                *params.add(i) = 0;
+            }
+            return;
+        }
+        gl21::GetTexParameteriv(target, pname, params);
+    }
     unsafe fn TexParameteriv(&mut self, target: GLenum, pname: GLenum, params: *const GLint) {
         assert!(target == gl21::TEXTURE_2D);
         TEX_PARAMS.assert_known_param(pname);
@@ -2208,5 +2275,12 @@ mod tests {
         assert!(CLIENT_STATE_BUFFER_TARGETS.contains(&gl21::ARRAY_BUFFER));
         assert!(CLIENT_STATE_BUFFER_TARGETS.contains(&gl21::ELEMENT_ARRAY_BUFFER));
         assert!(!CLIENT_STATE_BUFFER_TARGETS.contains(&gl21::VERTEX_ARRAY));
+    }
+
+    #[test]
+    fn framebuffer_extension_reports_its_renderbuffer_limit() {
+        let (type_, count) = GET_PARAMS.get_type_info(0x84e8);
+        assert!(matches!(type_, ParamType::Int));
+        assert_eq!(count, 1);
     }
 }

@@ -700,6 +700,35 @@ fn __sprintf_chk(
     sprintf(env, dest, format, args)
 }
 
+/// The fortified `snprintf`, which the compiler emits in place of the plain one
+/// when it can see the destination's size.
+///
+/// `slen` is what the compiler worked out that size to be, and a real
+/// implementation aborts when the formatted result would exceed it. `snprintf`
+/// already truncates at `maxlen`, so the bound the caller actually asked for is
+/// enforced; this adds the compiler's cross-check as a warning rather than an
+/// abort, because a false positive here would kill an app that is not doing
+/// anything wrong.
+fn __snprintf_chk(
+    env: &mut Environment,
+    dest: MutPtr<u8>,
+    maxlen: GuestUSize,
+    _flags: i32,
+    slen: GuestUSize,
+    format: ConstPtr<u8>,
+    args: DotDotDot,
+) -> i32 {
+    if slen < maxlen {
+        log!(
+            "Warning: __snprintf_chk() called with a {} byte buffer but a limit              of {}; the object size wins, as it would on a real device",
+            slen,
+            maxlen
+        );
+    }
+    // TODO: respect flags level
+    snprintf(env, dest, maxlen.min(slen), format, args)
+}
+
 fn sprintf(env: &mut Environment, dest: MutPtr<u8>, format: ConstPtr<u8>, args: DotDotDot) -> i32 {
     // TODO: handle errno properly
     set_errno(env, 0);
@@ -859,6 +888,9 @@ where
     let mut format_char_idx = 0;
 
     let mut matched_args = 0;
+    // Whether scanning stopped because the input ran out, as opposed to input
+    // that was there but did not match. The two have different return values.
+    let mut input_ended = false;
 
     'outer: loop {
         let c = env.mem.read(format + format_char_idx);
@@ -868,14 +900,24 @@ where
             break;
         }
         if c != b'%' {
-            let mut cc: u8 = getc_fn(env, subject, src_char_idx).unwrap().into(); // TODO: EOF
+            // A format that asks for more literal text than the input has is an
+            // ordinary way for a scan to end, not a malformed call.
+            let Ok(first) = getc_fn(env, subject, src_char_idx) else {
+                input_ended = true;
+                break 'outer;
+            };
+            let mut cc: u8 = first.into();
             if isspace(env, format + format_char_idx - 1) {
                 // "any single whitespace character in the format string
                 // consumes all available consecutive whitespace characters
                 // from the input"
                 while isspace_inner(cc) {
                     src_char_idx += 1;
-                    cc = getc_fn(env, subject, src_char_idx).unwrap().into(); // TODO: EOF
+                    let Ok(next) = getc_fn(env, subject, src_char_idx) else {
+                        input_ended = true;
+                        break 'outer;
+                    };
+                    cc = next.into();
                 }
                 // backtrack one
                 ungetc_fn(env, subject, cc);
@@ -930,6 +972,7 @@ where
             // skip whitespaces
             let x = getc_fn(env, subject, src_char_idx);
             if x.is_err() {
+                input_ended = true;
                 break 'outer;
             }
             let mut cc: u8 = x.unwrap().into();
@@ -937,6 +980,7 @@ where
                 src_char_idx += 1;
                 let x = getc_fn(env, subject, src_char_idx);
                 if x.is_err() {
+                    input_ended = true;
                     break 'outer;
                 }
                 cc = x.unwrap().into();
@@ -1115,7 +1159,13 @@ where
                 let mut matched = false;
                 // Consume `src` while chars are in the set
                 // (or not in the set if inverted)
-                let mut cc = getc_fn(env, subject, src_char_idx).unwrap().into(); // TODO: EOF
+                // Nothing to read at all: the conversion fails and the
+                // scan ends here, leaving this specifier unmatched.
+                let Ok(first) = getc_fn(env, subject, src_char_idx) else {
+                    input_ended = true;
+                    break 'outer;
+                };
+                let mut cc: u8 = first.into();
                 src_char_idx += 1;
                 let mut match_count = 0;
                 while set.contains(&cc) ^ inverted && cc != b'\0' {
@@ -1126,7 +1176,12 @@ where
                     if max_width > 0 && match_count == max_width {
                         break;
                     }
-                    cc = getc_fn(env, subject, src_char_idx).unwrap().into(); // TODO: EOF
+                    // Input ending part way through still leaves a match:
+                    // what was read is the result, with nothing to push back.
+                    let Ok(next) = getc_fn(env, subject, src_char_idx) else {
+                        break;
+                    };
+                    cc = next.into();
                     src_char_idx += 1;
                 }
                 if !(set.contains(&cc) ^ inverted && cc != b'\0') {
@@ -1181,7 +1236,14 @@ where
         matched_args += 1;
     }
 
-    matched_args
+    // C reports EOF, not zero, when the input ran out before the first
+    // conversion succeeded. An app looping until EOF depends on the difference,
+    // and would otherwise never stop.
+    if input_ended && matched_args == 0 {
+        EOF
+    } else {
+        matched_args
+    }
 }
 
 fn sscanf(env: &mut Environment, src: ConstPtr<u8>, format: ConstPtr<u8>, args: DotDotDot) -> i32 {
@@ -1345,6 +1407,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(vsnprintf(_, _, _, _)),
     export_c_func!(vsprintf(_, _, _)),
     export_c_func!(__sprintf_chk(_, _, _, _, _)),
+    export_c_func!(__snprintf_chk(_, _, _, _, _, _)),
     export_c_func!(sprintf(_, _, _)),
     export_c_func!(swprintf(_, _, _, _)),
     export_c_func!(vswprintf(_, _, _, _)),

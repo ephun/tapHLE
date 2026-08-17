@@ -5,9 +5,11 @@
  */
 //! `NSFileManager` etc.
 
-use super::{ns_array, ns_string, NSUInteger};
+use super::{ns_array, ns_string, NSInteger, NSUInteger};
 use crate::dyld::{export_c_func, ConstantExports, FunctionExports, HostConstant};
-use crate::frameworks::foundation::ns_error::{NSCocoaErrorDomain, NSFileReadNoSuchFileError};
+use crate::frameworks::foundation::ns_error::{
+    NSCocoaErrorDomain, NSFileReadNoSuchFileError, NSFileWriteUnknownError,
+};
 use crate::frameworks::foundation::ns_string::get_static_str;
 use crate::fs::{FsError, GuestPath, GuestPathBuf};
 use crate::mem::{ConstPtr, MutPtr, Ptr};
@@ -21,6 +23,7 @@ const NSApplicationDirectory: NSSearchPathDirectory = 1;
 const NSLibraryDirectory: NSSearchPathDirectory = 5;
 const NSDocumentDirectory: NSSearchPathDirectory = 9;
 const NSCachesDirectory: NSSearchPathDirectory = 13;
+const NSApplicationSupportDirectory: NSSearchPathDirectory = 14;
 
 type NSSearchPathDomainMask = NSUInteger;
 const NSUserDomainMask: NSSearchPathDomainMask = 1;
@@ -108,6 +111,13 @@ fn NSSearchPathForDirectoriesInDomains(
         NSDocumentDirectory => env.fs.home_directory().join("Documents"),
         NSLibraryDirectory => env.fs.home_directory().join("Library"),
         NSCachesDirectory => env.fs.home_directory().join("Library/Caches"),
+        // Under Library, like the rest of an app's private storage. The
+        // directory is not created here; NSSearchPathForDirectoriesInDomains
+        // reports the path whether or not it exists, and every caller either
+        // creates it or writes through NSFileManager, which does.
+        NSApplicationSupportDirectory => {
+            env.fs.home_directory().join("Library/Application Support")
+        }
         _ => todo!("NSSearchPathDirectory {}", directory),
     };
     let dir = ns_string::from_rust_string(env, String::from(dir));
@@ -144,6 +154,22 @@ struct NSDirectoryEnumeratorHostObject {
     iterator: std::vec::IntoIter<GuestPathBuf>,
 }
 impl HostObject for NSDirectoryEnumeratorHostObject {}
+
+/// Fill in an `NSError**` out-parameter, if the caller supplied one.
+///
+/// Always the Cocoa domain: every caller here is a filesystem operation, and
+/// tapHLE's guest filesystem does not surface an errno that would justify
+/// anything finer.
+pub(super) fn write_error(env: &mut Environment, out_error: MutPtr<id>, code: NSInteger) {
+    if out_error.is_null() {
+        return;
+    }
+    let domain = get_static_str(env, NSCocoaErrorDomain);
+    let error: id = msg_class![env; NSError alloc];
+    let error: id = msg![env; error initWithDomain:domain code:code userInfo:nil];
+    let error = autorelease(env, error);
+    env.mem.write(out_error, error);
+}
 
 pub const CLASSES: ClassExports = objc_classes! {
 
@@ -195,7 +221,13 @@ pub const CLASSES: ClassExports = objc_classes! {
         // TODO: mutualize with fileExistsAtPath:
         let path = ns_string::to_rust_string(env, path); // TODO: avoid copy
         let guest_path = GuestPath::new(&path);
-        (env.fs.exists(guest_path), !env.fs.is_file(guest_path))
+        // Ask whether it *is* a directory, not whether it fails to be a file.
+        // `!is_file` is true for a path that does not exist at all, so a first
+        // launch was told every missing folder was already a directory. An app
+        // that trusts the out-parameter — checking it and skipping the creation
+        // of what it believes is already there — then never creates its save
+        // folder, and fails much later with a nonexistent parent directory.
+        (env.fs.exists(guest_path), env.fs.is_dir(guest_path))
     };
 
     if !is_dir.is_null() {
@@ -253,9 +285,12 @@ pub const CLASSES: ClassExports = objc_classes! {
     match env.fs.rename(GuestPath::new(&path), GuestPath::new(&toPath)) {
         Ok(()) => true,
         Err(_) => {
-            if !error.is_null() {
-               todo!(); // TODO: create an NSError if requested
-            }
+            // `rename` does not say why it failed, and a move can fail because
+            // the source is absent or because the destination could not be
+            // written. Reporting the write code is the honest choice: it is the
+            // operation the caller asked for, and claiming "no such file" about
+            // a path that may well exist would be worse than being vague.
+            write_error(env, error, NSFileWriteUnknownError);
             false
         }
     }
@@ -293,12 +328,15 @@ pub const CLASSES: ClassExports = objc_classes! {
             true
         }
         Err(err) => {
-            assert!(error.is_null()); // TODO
             log!(
                 "Warning: createDirectoryAtPath {} failed with {:?}, returning false",
                 path_str,
                 err,
             );
+            // An app that passes an NSError** expects to be told why, and
+            // asserting that it did not is a crash on the ordinary path where a
+            // game creates a save folder and checks the result.
+            write_error(env, error, NSFileWriteUnknownError);
             false
         }
     }
@@ -337,8 +375,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (id)contentsOfDirectoryAtPath:(id)path /* NSString* */
                           error:(MutPtr<id>)error { // NSError**
     let contents: id = msg![env; this directoryContentsAtPath:path];
-    if contents == nil && !error.is_null() {
-        todo!(); // TODO: create an NSError if requested
+    if contents == nil {
+        // Listing a directory that is not there yet is ordinary, not
+        // exceptional: an app checking for its own save folder before creating
+        // it does exactly this on first launch, and gets nil plus an error
+        // describing what was missing.
+        write_error(env, error, NSFileReadNoSuchFileError);
     }
     contents
 }
@@ -401,12 +443,16 @@ pub const CLASSES: ClassExports = objc_classes! {
     let data = match env.fs.read(GuestPath::new(src.as_ref())) {
         Ok(d) => d,
         Err(_) => {
-            assert!(error.is_null()); // TODO
+            // The failure is reported through the out-parameter rather than
+            // asserted away. An app that passes an NSError** is asking to be
+            // told what went wrong, and a copy that fails is ordinary — the
+            // source may simply not be there yet.
+            write_error(env, error, NSFileReadNoSuchFileError);
             return false;
         }
     };
     if env.fs.write(GuestPath::new(dst.as_ref()), &data).is_err() {
-        assert!(error.is_null()); // TODO
+        write_error(env, error, NSFileWriteUnknownError);
         return false;
     }
     true
@@ -422,7 +468,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (id)fileAttributesAtPath:(id)path // NSString *
               traverseLink:(bool)traverse {
     // TODO: other attributes
-    log_once!("Warning: NSFileManager fileAttributesAtPath:traverseLink: returns only NSFileType, NSFileModificationDate and NSFileSize attributes!");
+    log_once!("Warning: NSFileManager fileAttributesAtPath:traverseLink: returns only type, modification date, size, owner, group and permissions!");
 
     let path = ns_string::to_rust_string(env, path); // TODO: avoid copy
     // TODO: traverse link
@@ -455,6 +501,21 @@ pub const CLASSES: ClassExports = objc_classes! {
     true
 }
 
+// tapHLE's guest filesystem has no symbolic links, so no path is one. Apple
+// answers a path that is not a symlink with nil and an error, which is the
+// same answer, and callers already handle it — they ask precisely because a
+// path may not be a link.
+- (id)destinationOfSymbolicLinkAtPath:(id)path // NSString *
+                                error:(MutPtr<id>)error { // NSError **
+    log_dbg!(
+        "[(NSFileManager *){:?} destinationOfSymbolicLinkAtPath:{:?}] => nil (no symbolic links here)",
+        this,
+        path
+    );
+    write_error(env, error, NSFileReadNoSuchFileError);
+    nil
+}
+
 - (id)attributesOfItemAtPath:(id)path // NSString *
                        error:(MutPtr<id>)error { // NSError **
     // A caller asking for an error is normal; there is no error detail worth
@@ -465,7 +526,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
 
     // TODO: other attributes
-    log_once!("Warning: NSFileManager attributesOfItemAtPath:error: returns only NSFileType, NSFileModificationDate and NSFileSize attributes!");
+    log_once!("Warning: NSFileManager attributesOfItemAtPath:error: returns only type, modification date, size, owner, group and permissions!");
 
     let path = ns_string::to_rust_string(env, path); // TODO: avoid copy
     // TODO: traverse link
@@ -480,7 +541,10 @@ pub const CLASSES: ClassExports = objc_classes! {
     // TODO: other attributes
     log_once!("Warning: NSFileManager attributesOfFileSystemForPath:error: returns only filesystem size attributes!");
 
-    assert!(error.is_null()); // TODO
+    // Nothing below can fail, and a method that succeeds leaves the caller's
+    // NSError* untouched. Asserting that no error was requested crashed apps
+    // that simply passed one and would never have read it.
+    let _ = error;
 
     let dict = msg_class![env; NSMutableDictionary new];
 
@@ -543,6 +607,30 @@ fn file_attributes_common(env: &mut Environment, guest_path: &GuestPath) -> id {
 
     let size_key = get_static_str(env, NSFileSize);
     () = msg![env; dict setObject:size_num forKey:size_key];
+
+    // Ownership and permissions. tapHLE's guest filesystem does not model
+    // either, but every file an app can see on iPhone OS belongs to the same
+    // account it runs as, so answering with that account is accurate rather
+    // than invented — and it is what the app would have read on a device.
+    //
+    // Leaving them out is not neutral: an app that asks for an attribute and
+    // gets nil back commonly stores or dereferences the answer without
+    // checking, and a null write is a much harder failure to trace than a
+    // wrong-looking string would have been.
+    let owner: id = get_static_str(env, "mobile");
+    let owner_key = get_static_str(env, NSFileOwnerAccountName);
+    () = msg![env; dict setObject:owner forKey:owner_key];
+    let group_key = get_static_str(env, NSFileGroupOwnerAccountName);
+    () = msg![env; dict setObject:owner forKey:group_key];
+
+    let permissions: NSUInteger = if env.fs.is_dir(guest_path) {
+        0o755
+    } else {
+        0o644
+    };
+    let permissions: id = msg_class![env; NSNumber numberWithUnsignedInt:permissions];
+    let permissions_key = get_static_str(env, NSFilePosixPermissions);
+    () = msg![env; dict setObject:permissions forKey:permissions_key];
 
     let file_type_key = get_static_str(env, NSFileType);
     // TODO: other types

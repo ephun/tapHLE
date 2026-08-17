@@ -1,0 +1,31 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.firemint.flightcontrolipad",
+    "display_name": "FlightCtrl HD",
+    "version": "1.07",
+    "sha256": "eb3387b86eddcf078d3d1c382172565750c14ff08a7c00599976b0e3c52fa1ed"
+  },
+  "recorded": {
+    "date": "2026-08-15",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": { "width": 768, "height": 1024, "orientation": "portrait" },
+  "milestone": {
+    "rating": 3,
+    "describes": "PLAY! enters a live round: the island map with its runways and helipads, the AIRCRAFT LANDED and HI SCORE readouts, an aircraft in flight, and the pause and fast-forward controls."
+  },
+  "defaults": { "press_ms": 150, "settle_ms": 6000 },
+  "steps": [
+    { "id": "boot", "action": "wait", "settle_ms": 25000, "expect": "The main menu: High Score, the stats tabs, map select, PLAY! and Multiplayer." },
+    { "id": "play", "action": "tap", "at": [185, 830], "settle_ms": 12000, "expect": "A live round. The map draws with runways and helipads and at least one aircraft is in the air." },
+    { "id": "watch", "action": "wait", "settle_ms": 12000, "expect": "Still playing, and the aircraft have moved — two captures this far apart must differ." }
+  ],
+  "notes": [
+    "Portrait and native: no launch options, and the window is the iPad's 768x1024 the right way up.",
+    "PLAY! is at the bottom of the menu. A tap at the middle of the screen hits nothing, which reads exactly like broken input — that false alarm is recorded in the app note.",
+    "This route did not run at all between the initial-reachability work and 2026-08-15: the app died about five seconds into startup. If a replay stops at 'boot' again, check whether a callback is being handed a pointer into a caller's stack frame before looking at the app."
+  ]
+}

@@ -54,6 +54,12 @@ controls and a complete level have not been validated yet.
   repeated fallback warnings seen in the earlier short gameplay run. The
   database report remains tied to the earlier exact clean gameplay commit.
 
+## Clickmap
+
+`dev-docs/clickmaps/fantastic-mr-fox.json` replays launch to Level 1
+gameplay. Run it with `dev-scripts/clickmap.ps1` before working out a route
+by hand. The prose route below is the same thing with the reasoning attached.
+
 ## Reproduction route
 
 Use the exact hash-verified IPA and a release build. The emulator client is

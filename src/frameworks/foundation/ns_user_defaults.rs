@@ -9,6 +9,7 @@
 //! - Apple's [Preferences and Settings Programming Guide](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/UserDefaults/AboutPreferenceDomains/AboutPreferenceDomains.html).
 
 use super::{ns_string, NSInteger};
+use crate::dyld::{ConstantExports, HostConstant};
 use crate::frameworks::foundation::ns_string::to_rust_string;
 use crate::objc::{
     autorelease, id, msg, msg_class, nil, objc_classes, release, Class, ClassExports, HostObject,
@@ -20,6 +21,8 @@ use crate::Environment;
 pub struct State {
     /// `NSUserDefaults*`
     standard_defaults: Option<id>,
+    /// `NSUbiquitousKeyValueStore*`
+    ubiquitous_store: Option<id>,
 }
 impl State {
     fn get(env: &mut Environment) -> &mut State {
@@ -301,4 +304,73 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 @end
 
+// iCloud's key-value store. There is no iCloud here and never will be, so this
+// is a store that is permanently empty and never syncs — which is exactly what
+// an app sees on a device with iCloud switched off, a state every app using it
+// must already handle.
+//
+// It is a real class rather than nothing because seven apps in a 1501-app
+// survey asked for +defaultStore during startup and died on its absence, long
+// before any of them would have cared what was in it.
+@implementation NSUbiquitousKeyValueStore: NSObject
+
++ (id)defaultStore {
+    if let Some(existing) = State::get(env).ubiquitous_store {
+        return existing;
+    }
+    let store: id = msg![env; this new];
+    State::get(env).ubiquitous_store = Some(store);
+    store
+}
+
+- (id)objectForKey:(id)_key { nil }
+- (id)stringForKey:(id)_key { nil }
+- (id)arrayForKey:(id)_key { nil }
+- (id)dictionaryForKey:(id)_key { nil }
+- (id)dataForKey:(id)_key { nil }
+- (i64)longLongForKey:(id)_key { 0 }
+- (f64)doubleForKey:(id)_key { 0.0 }
+- (bool)boolForKey:(id)_key { false }
+
+- (())setObject:(id)_value forKey:(id)_key {}
+- (())setString:(id)_value forKey:(id)_key {}
+- (())setArray:(id)_value forKey:(id)_key {}
+- (())setDictionary:(id)_value forKey:(id)_key {}
+- (())setData:(id)_value forKey:(id)_key {}
+- (())setLongLong:(i64)_value forKey:(id)_key {}
+- (())setDouble:(f64)_value forKey:(id)_key {}
+- (())setBool:(bool)_value forKey:(id)_key {}
+- (())removeObjectForKey:(id)_key {}
+
+- (id)dictionaryRepresentation {
+    msg_class![env; NSDictionary dictionary]
+}
+
+// Nothing was stored, so there is nothing to push; reporting success is
+// truthful and is what the caller does nothing with anyway.
+- (bool)synchronize { true }
+
+@end
+
 };
+
+/// Posted when the defaults change. tapHLE does not post it — nothing here
+/// tracks which keys changed — but apps observe it, and observing means
+/// dereferencing the name, so leaving it unbound is a null read.
+const NSUserDefaultsDidChangeNotification: &str = "NSUserDefaultsDidChangeNotification";
+
+/// Never posted: the store is permanently empty, so nothing ever changes
+/// externally. Apps observe it, and observing dereferences the name.
+const NSUbiquitousKeyValueStoreDidChangeExternallyNotification: &str =
+    "NSUbiquitousKeyValueStoreDidChangeExternallyNotification";
+
+pub const CONSTANTS: ConstantExports = &[
+    (
+        "_NSUbiquitousKeyValueStoreDidChangeExternallyNotification",
+        HostConstant::NSString(NSUbiquitousKeyValueStoreDidChangeExternallyNotification),
+    ),
+    (
+        "_NSUserDefaultsDidChangeNotification",
+        HostConstant::NSString(NSUserDefaultsDidChangeNotification),
+    ),
+];

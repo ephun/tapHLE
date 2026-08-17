@@ -10,7 +10,7 @@ use super::NSTimeInterval;
 use super::{ns_run_loop, ns_string};
 use crate::objc::{
     autorelease, id, msg, msg_class, msg_send, nil, objc_classes, release, retain, ClassExports,
-    HostObject, SEL,
+    HostObject, NSZonePtr, SEL,
 };
 use crate::Environment;
 use std::time::{Duration, Instant};
@@ -41,6 +41,23 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 // NSTimer doesn't seem to be an abstract class?
 @implementation NSTimer: NSObject
+
++ (id)allocWithZone:(NSZonePtr)_zone {
+    // Only needed for the alloc/init route below; the convenience constructors
+    // build their host object directly.
+    let host_object = Box::new(NSTimerHostObject {
+        ns_interval: 0.0,
+        rust_interval: Duration::ZERO,
+        target: nil,
+        selector: env.objc.lookup_selector("fire").unwrap(),
+        user_info: nil,
+        repeats: false,
+        due_by: None,
+        run_loop: nil,
+        is_running_callback: false,
+    });
+    env.objc.alloc_object(this, host_object, &mut env.mem)
+}
 
 + (id)timerWithTimeInterval:(NSTimeInterval)ns_interval
                      target:(id)target
@@ -95,6 +112,60 @@ pub const CLASSES: ClassExports = objc_classes! {
     let _: () = msg![env; run_loop addTimer:timer forMode:mode];
 
     timer
+}
+
+// The designated initializer, and the only route that lets a caller say *when*
+// the timer first fires rather than "one interval from now".
+//
+// A timer made this way is not scheduled; the caller adds it to a run loop.
+// That is the whole reason to use this instead of the convenience constructors,
+// and it is why the fire date matters: the delay until the first fire is
+// measured from now, so a date already in the past makes the timer due
+// immediately, as it does on Apple's.
+- (id)initWithFireDate:(id)fire_date // NSDate*
+              interval:(NSTimeInterval)ns_interval
+                target:(id)target
+              selector:(SEL)selector
+              userInfo:(id)user_info
+               repeats:(bool)repeats {
+    let seconds_from_now: NSTimeInterval = if fire_date == nil {
+        0.0
+    } else {
+        msg![env; fire_date timeIntervalSinceNow]
+    };
+
+    // The repeat interval is a separate thing from the first fire, and is only
+    // meaningful for a repeating timer. Clamping matches the convenience
+    // constructors: a zero or negative interval would otherwise fire in a tight
+    // loop.
+    let ns_interval = ns_interval.max(0.0001);
+    let rust_interval = Duration::from_secs_f64(ns_interval);
+
+    retain(env, target);
+    retain(env, user_info);
+
+    let due_by = Instant::now().checked_add(Duration::from_secs_f64(seconds_from_now.max(0.0)));
+
+    let host_object = env.objc.borrow_mut::<NSTimerHostObject>(this);
+    host_object.ns_interval = ns_interval;
+    host_object.rust_interval = rust_interval;
+    host_object.target = target;
+    host_object.selector = selector;
+    host_object.user_info = user_info;
+    host_object.repeats = repeats;
+    host_object.due_by = due_by;
+
+    log_dbg!(
+        "New unscheduled {} timer {:?}, first fire in {}s, interval {}s, target [{:?} {}]",
+        if repeats { "repeating" } else { "single-use" },
+        this,
+        seconds_from_now,
+        ns_interval,
+        target,
+        selector.as_str(&env.mem),
+    );
+
+    this
 }
 
 - (())dealloc {
@@ -166,11 +237,20 @@ pub fn set_time_interval(env: &mut Environment, timer: id, interval: NSTimeInter
     host_object.rust_interval = Duration::from_secs_f64(interval);
 }
 
-/// For use by `NSRunLoop`
-pub(super) fn set_run_loop(env: &mut Environment, timer: id, run_loop: id) {
+/// For use by `NSRunLoop`. Returns whether this run loop now owns the timer;
+/// `false` means another one already does.
+///
+/// A timer may be scheduled on more than one run loop and fires on each, but
+/// only one is modelled here. The first registration is the one that stands:
+/// the timer is already firing, which is what the app asked for, and taking it
+/// over would move it to a loop that may be run less often or not at all.
+pub(super) fn set_run_loop(env: &mut Environment, timer: id, run_loop: id) -> bool {
     let host_object = env.objc.borrow_mut::<NSTimerHostObject>(timer);
-    assert!(host_object.run_loop == nil); // TODO: what do we do here?
+    if host_object.run_loop != nil && host_object.run_loop != run_loop {
+        return false;
+    }
     host_object.run_loop = run_loop;
+    true
 }
 
 /// For use by `NSRunLoop`: check if a timer is due to fire and fire it if

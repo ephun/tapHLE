@@ -8,6 +8,10 @@
 use super::ui_graphics::UIGraphicsGetCurrentContext;
 use crate::font::{Font, TextAlignment, WrapMode};
 use crate::frameworks::core_graphics::cg_bitmap_context::CGBitmapContextDrawer;
+use crate::frameworks::core_graphics::cg_context::{
+    CGContextGetCTM, CGContextRef, CGContextRestoreGState, CGContextSaveGState, CGContextScaleCTM,
+    CGContextTranslateCTM,
+};
 use crate::frameworks::core_graphics::{CGFloat, CGPoint, CGRect, CGSize};
 use crate::frameworks::foundation::ns_string::{from_rust_string, get_static_str, to_rust_string};
 use crate::frameworks::foundation::NSInteger;
@@ -241,10 +245,26 @@ fn convert_line_break_mode(ui_mode: UILineBreakMode) -> WrapMode {
     match ui_mode {
         UILineBreakModeWordWrap => WrapMode::Word,
         UILineBreakModeCharacterWrap => WrapMode::Char,
-        // TODO: support this properly; fake support is so that UILabel works,
-        // which has this as its default line break mode
-        UILineBreakModeTailTruncation => WrapMode::Word,
-        _ => unimplemented!("TODO: line break mode {}", ui_mode),
+        // Clipping and the three truncation modes all mean "do not wrap": the
+        // text stays on one line and the part that does not fit is cut or
+        // replaced with an ellipsis. tapHLE draws neither, and it has only the
+        // two wrapping modes to choose between, so they are approximated by
+        // word wrapping — the text that would have been cut appears on a
+        // following line instead of vanishing. That is wrong, but it is wrong
+        // in a way that shows the app's text; refusing the mode ended the app,
+        // which is worse, and one of these was already faked for exactly that
+        // reason because it is UILabel's default.
+        UILineBreakModeClip
+        | UILineBreakModeHeadTruncation
+        | UILineBreakModeTailTruncation
+        | UILineBreakModeMiddleTruncation => WrapMode::Word,
+        _ => {
+            log!(
+                "Warning: unknown line break mode {}, wrapping on words",
+                ui_mode
+            );
+            WrapMode::Word
+        }
     }
 }
 
@@ -379,6 +399,55 @@ pub fn draw_font_glyph(
     }
 }
 
+/// Flip the context about the horizontal band the text is about to occupy,
+/// when that is what makes the text land upright. Returns whether anything was
+/// changed, so the caller knows whether to restore.
+///
+/// Text layout here runs y-downward: lines are placed one below the next and a
+/// glyph's bitmap rows run top to bottom. Two separate things can turn that
+/// over on its way to the screen, and whether the text ends up upright depends
+/// on **both**:
+///
+/// - **The transform.** UIKit lays out downward and Core Graphics upward, so
+///   `UIView` installs a y-axis flip around every `-drawRect:` call.
+/// - **The destination.** The compositor draws a layer's backing bitmap with
+///   its vertical texture coordinate inverted, so everything in it is turned
+///   over once more on its way to a texture. A bitmap an app made for itself
+///   is not touched.
+///
+/// Two flips cancel. So the text needs flipping back exactly when those two
+/// **agree** — both on, or both off — and must be left alone when they differ.
+///
+/// Deciding this from the transform alone is what produced the two remaining
+/// faults. An app that draws a string into its own bitmap with no flip in
+/// force got no correction and came out mirrored; an app that flips its own
+/// bitmap context first — the correct way to draw UIKit text into one — got a
+/// correction it did not need. Both are the same mistake: the transform is
+/// only half of the question.
+///
+/// Doing it about the band, rather than per glyph, is what keeps line order
+/// right: mirroring each glyph on its own fixes the letters and leaves the
+/// lines of a paragraph stacked upwards.
+fn counter_flip_for_text(
+    env: &mut Environment,
+    context: CGContextRef,
+    band_origin_y: CGFloat,
+    band_height: CGFloat,
+) -> bool {
+    let transform_flipped = CGContextGetCTM(env, context).d < 0.0;
+    let destination_flipped = {
+        let drawer = CGBitmapContextDrawer::new(&env.objc, &mut env.mem, context);
+        drawer.flipped_on_presentation()
+    };
+    if transform_flipped != destination_flipped {
+        return false;
+    }
+    CGContextSaveGState(env, context);
+    CGContextTranslateCTM(env, context, 0.0, band_origin_y * 2.0 + band_height);
+    CGContextScaleCTM(env, context, 1.0, -1.0);
+    true
+}
+
 /// Called by the `drawAtPoint:` method family on `NSString`.
 pub fn draw_at_point(
     env: &mut Environment,
@@ -389,25 +458,31 @@ pub fn draw_at_point(
 ) -> CGSize {
     let context = UIGraphicsGetCurrentContext(env);
 
-    let host_object = env.objc.borrow::<UIFontHostObject>(font);
-
-    let font = get_font(
-        &mut env.framework_state.uikit.ui_font,
-        host_object.kind,
-        text,
-    );
+    let font_id = font;
+    let &UIFontHostObject {
+        size: font_size,
+        kind,
+        ..
+    } = env.objc.borrow::<UIFontHostObject>(font_id);
 
     let width_and_line_break_mode =
         width_and_line_break_mode.map(|(width, ui_mode)| (width, convert_line_break_mode(ui_mode)));
     let clip_x = width_and_line_break_mode.map(|(width, _)| point.x..(point.x + width));
-    let (width, height) =
-        font.calculate_text_size(host_object.size, text, width_and_line_break_mode);
+    let (width, height) = {
+        let font = get_font(&mut env.framework_state.uikit.ui_font, kind, text);
+        font.calculate_text_size(font_size, text, width_and_line_break_mode)
+    };
 
+    // The context is flipped back for the duration of the drawing; see
+    // [counter_flip_for_text].
+    let flipped = counter_flip_for_text(env, context, point.y, height);
+
+    let font = get_font(&mut env.framework_state.uikit.ui_font, kind, text);
     let mut drawer = CGBitmapContextDrawer::new(&env.objc, &mut env.mem, context);
     let fill_color = drawer.rgb_fill_color();
 
     font.draw(
-        host_object.size,
+        font_size,
         text,
         (point.x, point.y),
         width_and_line_break_mode,
@@ -422,6 +497,10 @@ pub fn draw_at_point(
             )
         },
     );
+
+    if flipped {
+        CGContextRestoreGState(env, context);
+    }
 
     CGSize { width, height }
 }
@@ -439,13 +518,18 @@ pub fn draw_in_rect(
 
     let text_size = size_with_font(env, font, text, Some((rect.size, line_break_mode)));
 
-    let host_object = env.objc.borrow::<UIFontHostObject>(font);
+    let &UIFontHostObject {
+        size: font_size,
+        kind,
+        ..
+    } = env.objc.borrow::<UIFontHostObject>(font);
 
-    let font = get_font(
-        &mut env.framework_state.uikit.ui_font,
-        host_object.kind,
-        text,
-    );
+    // The context is flipped back for the duration of the drawing; see
+    // [counter_flip_for_text]. The band is the rect the caller asked for, so
+    // clipping below still refers to the same place.
+    let flipped = counter_flip_for_text(env, context, rect.origin.y, rect.size.height);
+
+    let font = get_font(&mut env.framework_state.uikit.ui_font, kind, text);
 
     let mut drawer = CGBitmapContextDrawer::new(&env.objc, &mut env.mem, context);
     let fill_color = drawer.rgb_fill_color();
@@ -458,7 +542,7 @@ pub fn draw_in_rect(
     };
 
     font.draw(
-        host_object.size,
+        font_size,
         text,
         (rect.origin.x + origin_x_offset, rect.origin.y),
         Some((rect.size.width, convert_line_break_mode(line_break_mode))),
@@ -473,6 +557,10 @@ pub fn draw_in_rect(
             )
         },
     );
+
+    if flipped {
+        CGContextRestoreGState(env, context);
+    }
 
     text_size
 }

@@ -6722,6 +6722,92 @@ int test_NSObject_dictionaryWithValuesForKeys() {
   return result;
 }
 
+// Two ivars and no accessors at all, so every read and write below goes
+// through KVC's instance-variable fallback. That keeps the test about the key
+// path rather than about which accessor name was found.
+@interface KVCKeyPathNode : NSObject {
+@public
+  id child;
+  id label;
+}
+@end
+
+@implementation KVCKeyPathNode
+@end
+
+// A key path is resolved one component at a time through valueForKey:, so the
+// object reached mid-path answers for the remainder. A nil part-way along ends
+// the walk instead of looking the rest up on nothing, and
+// setValue:forKeyPath: writes through the same route: the prefix locates the
+// object, the last component is an ordinary setValue:forKey: on it.
+int test_NSObject_valueForKeyPath() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  KVCKeyPathNode *root = [KVCKeyPathNode new];
+  KVCKeyPathNode *middle = [KVCKeyPathNode new];
+  KVCKeyPathNode *leaf = [KVCKeyPathNode new];
+  root->child = middle;
+  middle->child = leaf;
+  leaf->label = @"leaf";
+
+  int result = 0;
+  if (![[root valueForKeyPath:@"child.child.label"] isEqual:@"leaf"]) {
+    result = -1;
+  } else if ([root valueForKeyPath:@"child"] != middle) {
+    // A single component is exactly valueForKey:.
+    result = -2;
+  } else if ([root valueForKeyPath:@"child.child.child"] != nil) {
+    result = -3;
+  } else if ([root valueForKeyPath:@"child.child.child.label"] != nil) {
+    result = -4;
+  } else {
+    [root setValue:@"written" forKeyPath:@"child.child.label"];
+    if (![leaf->label isEqual:@"written"]) {
+      result = -5;
+    } else {
+      [root setValue:@"single" forKeyPath:@"label"];
+      if (![root->label isEqual:@"single"]) {
+        result = -6;
+      }
+    }
+  }
+
+  [root release];
+  [middle release];
+  [leaf release];
+  [pool drain];
+  return result;
+}
+
+// A dictionary looks a key up under KVC by checking for the '@' prefix and
+// then falling through to objectForKey:. There is no text in a nil key and
+// nothing to find under it, so the lookup answers nil instead of ending the
+// emulator on the way to reading one.
+int test_NSDictionary_valueForKey_nil() {
+  NSMutableDictionary *dictionary = [NSMutableDictionary dictionaryWithCapacity:1];
+  [dictionary setObject:@"value" forKey:@"key"];
+
+  if ([dictionary valueForKey:nil] != nil)
+    return -1;
+  // The ordinary lookup still works either side of it.
+  if (![[dictionary valueForKey:@"key"] isEqual:@"value"])
+    return -2;
+  return 0;
+}
+
+// A class object is a singleton, so copying one answers the class itself.
+// Foundation declares this on the class side for that reason; the instance
+// side is deliberately absent, because NSObject does not adopt NSCopying.
+int test_NSObject_class_copy() {
+  Class cls = [NSString class];
+
+  if ([cls copyWithZone:NULL] != (id)cls)
+    return -1;
+  if ([cls mutableCopyWithZone:NULL] != (id)cls)
+    return -2;
+  return 0;
+}
+
 // NSMutableDictionary inherits NSObject's allocation path, so its capacity
 // factory must still produce mutable dictionary storage.
 int test_NSMutableDictionary_dictionaryWithCapacity() {
@@ -6796,6 +6882,28 @@ int test_NSString_percentEscapes() {
   NSString *escaped = [@"a [b]\303\251"
       stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
   return [escaped isEqual:@"a%20%5Bb%5D%C3%A9"] ? 0 : -1;
+}
+
+// The localized comparisons are their unlocalized counterparts until tapHLE
+// has locale-aware collation. What is asserted here is the case folding and
+// the ordering of plain ASCII, plus the thing that used to be fatal: text
+// outside ASCII must not end the app. Its *order* is deliberately not
+// asserted, because without collation it is comparison by code unit, which is
+// not the order a device would give.
+int test_NSString_localizedCaseInsensitiveCompare() {
+  if ([@"apple" localizedCaseInsensitiveCompare:@"APPLE"] != 0)
+    return -1;
+  if ([@"apple" localizedCaseInsensitiveCompare:@"banana"] >= 0)
+    return -2;
+  if ([@"banana" localizedCaseInsensitiveCompare:@"APPLE"] <= 0)
+    return -3;
+  if ([@"apple" localizedCompare:@"apple"] != 0)
+    return -4;
+
+  // "café" and "CAFE", as UTF-8 octal escapes to match the file's convention.
+  [@"caf\303\251" localizedCompare:@"cafe"];
+  [@"caf\303\251" localizedCaseInsensitiveCompare:@"CAFE"];
+  return 0;
 }
 
 // A concrete NSDictionary subclass only needs to supply the primitive
@@ -7004,9 +7112,41 @@ int test_NSMutableSet_setAlgebra() {
   return result;
 }
 
+// member: answers with the set's own object rather than with the one it was
+// asked about, which is the whole reason it exists next to containsObject: —
+// a caller uses the returned instance in place of its own equal copy. An
+// object the set does not hold gives nil.
+int test_NSSet_member() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  // A separately built string, equal to the stored one but not the same
+  // object, so "returns the stored instance" is distinguishable from
+  // "returns its argument".
+  NSString *stored = [NSString stringWithUTF8String:"a"];
+  NSSet *set = [NSSet setWithObjects:stored, @"b", nil];
+  NSString *equalCopy = [NSString stringWithUTF8String:"a"];
+
+  int result = 0;
+  if (equalCopy == stored) {
+    // Not a failure of member:, but the test below would prove nothing.
+    result = -1;
+  } else if ([set member:equalCopy] != stored) {
+    result = -2;
+  } else if ([set member:@"c"] != nil) {
+    result = -3;
+  } else if (![set containsObject:equalCopy]) {
+    result = -4;
+  } else if ([set containsObject:@"c"]) {
+    result = -5;
+  }
+
+  [pool drain];
+  return result;
+}
+
 // A nil counterpart in the co-ordinate conversion methods means the window's
-// space, but it must not require the receiver to actually be in a window: a view
-// built from a nib converts before it is ever mounted. With no window, the
+// space, but it must not require the receiver to actually be in a window: a
+// view built from a nib converts before it is ever mounted. With no window, the
 // conversion resolves against the top of the view's own hierarchy.
 int test_UIView_convert_nilView_withoutWindow() {
   NSAutoreleasePool *pool = [NSAutoreleasePool new];
@@ -7343,7 +7483,10 @@ struct {
     FUNC_DEF(test_NSNotificationCenter_addObserver_nilName_removeObserver),
     FUNC_DEF(test_NSNotificationCenter_removeObserver_duringPost),
     FUNC_DEF(test_NSObject_valueForKey),
+    FUNC_DEF(test_NSObject_valueForKeyPath),
     FUNC_DEF(test_NSObject_dictionaryWithValuesForKeys),
+    FUNC_DEF(test_NSDictionary_valueForKey_nil),
+    FUNC_DEF(test_NSObject_class_copy),
     FUNC_DEF(test_NSMutableDictionary_dictionaryWithCapacity),
     FUNC_DEF(test_NSAssertionHandler_currentHandler),
     FUNC_DEF(test_NSException_accessors_and_raise),
@@ -7353,11 +7496,13 @@ struct {
     FUNC_DEF(test_CTTelephonyNetworkInfo_noCellularProvider),
     FUNC_DEF(test_NSData_description),
     FUNC_DEF(test_NSString_percentEscapes),
+    FUNC_DEF(test_NSString_localizedCaseInsensitiveCompare),
     FUNC_DEF(test_NSDictionary_allKeys_forSubclass),
     FUNC_DEF(test_NSObject_setValue_nil),
     FUNC_DEF(test_NSObject_self),
     FUNC_DEF(test_NSObject_superclass),
     FUNC_DEF(test_NSMutableSet_setAlgebra),
+    FUNC_DEF(test_NSSet_member),
     FUNC_DEF(test_UIView_convert_nilView_withoutWindow),
     FUNC_DEF(test_malloc_zone_basic),
     FUNC_DEF(test_malloc_zone_struct_dispatch),

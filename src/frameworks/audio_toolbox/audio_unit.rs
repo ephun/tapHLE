@@ -12,7 +12,7 @@ use std::time::Instant;
 use crate::audio::openal::al_types::{ALuint, ALvoid};
 use crate::audio::openal::{AL_BUFFERS_PROCESSED, AL_PLAYING, AL_SOURCE_STATE};
 
-use crate::abi::CallFromHost;
+use crate::abi::{CallFromHost, GuestFunction};
 use crate::dyld::FunctionExports;
 use crate::environment::Environment;
 use crate::export_c_func;
@@ -63,6 +63,11 @@ const kAudioUnitProperty_StreamFormat: AudioUnitPropertyID = 8;
 
 const kAudioOutputUnitProperty_EnableIO: AudioUnitPropertyID = 2003;
 
+/// The unit does not have the property that was asked for. This is the answer
+/// Core Audio gives for a property an implementation does not carry, and every
+/// caller has to handle it because it is how optional features are detected.
+const kAudioUnitErr_InvalidProperty: OSStatus = -10879;
+
 fn AudioUnitInitialize(env: &mut Environment, in_unit: AudioUnit) -> OSStatus {
     let run_loop = CFRunLoopGetMain(env);
     ns_run_loop::add_audio_unit(env, run_loop, in_unit);
@@ -86,17 +91,42 @@ fn AudioUnitSetProperty(
     in_data: ConstVoidPtr,
     in_data_size: u32,
 ) -> OSStatus {
-    assert!(in_element == 0);
+    // Element 0 is a remote I/O unit's output bus and element 1 its input bus.
+    // tapHLE plays audio and does not capture it, so only the output bus is
+    // modelled; a property set on another bus is accepted and dropped, which
+    // leaves an app that wanted to record reading silence rather than stopped.
+    if in_element != 0 {
+        log!(
+            "TODO: AudioUnitSetProperty({:?}, property {}, element {}), ignoring",
+            in_unit,
+            in_id,
+            in_element
+        );
+        return 0;
+    }
 
-    let host_object = audio_components::State::get(&mut env.framework_state)
+    // An app that asked for a unit tapHLE does not provide got NULL from
+    // AudioComponentFindNext and commonly carries on configuring it without
+    // checking, so a property set can arrive for a unit that was never created.
+    // That is the app's mistake, but aborting makes it tapHLE's: answer the way
+    // Core Audio does for a bad instance and let the app continue.
+    let Some(host_object) = audio_components::State::get(&mut env.framework_state)
         .audio_component_instances
         .get_mut(&in_unit)
-        .unwrap();
+    else {
+        log_once!(
+            "AudioUnitSetProperty() for a unit tapHLE never created; reporting it as unsupported"
+        );
+        return kAudioUnitErr_InvalidProperty;
+    };
 
     let result;
     match in_id {
         kAudioUnitProperty_SetRenderCallback => {
-            assert_eq!(in_scope, kAudioUnitScope_Global);
+            // Apple's own sample code sets this on the input scope, which is
+            // where the output bus pulls its data from; the global scope names
+            // the same callback for the single-bus unit modelled here. Both
+            // spellings are ordinary and mean one thing to tapHLE.
             assert_eq!(in_data_size, guest_size_of::<AURenderCallbackStruct>());
             let render_callback = env.mem.read(in_data.cast::<AURenderCallbackStruct>());
             host_object.render_callback = Some(render_callback);
@@ -117,15 +147,33 @@ fn AudioUnitSetProperty(
             log_dbg!("AudioUnitSetProperty({:?}, kAudioUnitProperty_StreamFormat, {:?}, {:?}, {:?}, {:?}) -> {:?}", in_unit, in_scope, in_element, stream_format, in_data_size, result);
         }
         kAudioOutputUnitProperty_EnableIO => {
-            assert_eq!(in_scope, kAudioUnitScope_Output);
             assert_eq!(in_data_size, guest_size_of::<u32>());
             let enabled = env.mem.read(in_data.cast::<u32>());
-            // Output is enabled by default.
-            assert_eq!(enabled, 1);
+            // Output is enabled already, so a request to enable it is granted
+            // by doing nothing. A request about the input scope is granted the
+            // same way: tapHLE has no capture path, and an app that goes on to
+            // read silence has at least started.
+            if in_scope != kAudioUnitScope_Output || enabled != 1 {
+                log!(
+                    "TODO: AudioUnitSetProperty(kAudioOutputUnitProperty_EnableIO) \
+                     scope {} set to {}, ignoring",
+                    in_scope,
+                    enabled
+                );
+            }
             result = 0;
             log_dbg!("AudioUnitSetProperty({:?}, kAudioOutputUnitProperty_EnableIO, {:?}, {:?}, {:?}, {:?}) -> {:?}", in_unit, in_scope, in_element, enabled, in_data_size, result);
         }
-        _ => unimplemented!(),
+        _ => {
+            log!(
+                "TODO: AudioUnitSetProperty({:?}, property {}, scope {}), \
+                 reporting it as unsupported",
+                in_unit,
+                in_id,
+                in_scope
+            );
+            result = kAudioUnitErr_InvalidProperty;
+        }
     };
 
     result
@@ -140,12 +188,30 @@ fn AudioUnitGetProperty(
     out_data: MutVoidPtr,
     io_data_size: MutPtr<u32>,
 ) -> OSStatus {
-    assert!(in_element == 0);
+    // Element 0 is the output bus, the only one tapHLE models — the same
+    // limitation AudioUnitSetProperty states above. A read of another bus is
+    // answered as an unsupported property rather than aborting: that is what an
+    // app asking about a bus a unit does not have already has to handle, and it
+    // leaves its own buffer untouched instead of filling it with a guess.
+    if in_element != 0 {
+        log!(
+            "TODO: AudioUnitGetProperty({:?}, property {}, element {}), reporting it as unsupported",
+            in_unit,
+            in_id,
+            in_element
+        );
+        return kAudioUnitErr_InvalidProperty;
+    }
 
-    let host_object = audio_components::State::get(&mut env.framework_state)
+    let Some(host_object) = audio_components::State::get(&mut env.framework_state)
         .audio_component_instances
         .get_mut(&in_unit)
-        .unwrap();
+    else {
+        log_once!(
+            "AudioUnitGetProperty() for a unit tapHLE never created; reporting it as unsupported"
+        );
+        return kAudioUnitErr_InvalidProperty;
+    };
 
     match in_id {
         kAudioUnitProperty_MaximumFramesPerSlice => {
@@ -211,10 +277,15 @@ fn AudioOutputUnitStart(env: &mut Environment, ci: AudioUnit) -> OSStatus {
     }
 
     let audio_components_state = audio_components::State::get(&mut env.framework_state);
-    let audio_unit_state = audio_components_state
+    let Some(audio_unit_state) = audio_components_state
         .audio_component_instances
         .get_mut(&ci)
-        .unwrap();
+    else {
+        log_once!(
+            "AudioOutputUnitStart() for a unit tapHLE never created; reporting it as unsupported"
+        );
+        return kAudioUnitErr_InvalidProperty;
+    };
     audio_unit_state.al_source = Some(source);
     audio_unit_state.last_render_time = Some(Instant::now());
     audio_unit_state.started = true;
@@ -272,10 +343,15 @@ pub fn render_audio_unit(env: &mut Environment, audio_unit: AudioUnit) {
     } = at_state.audio_session;
 
     let audio_components_state = &mut at_state.audio_components;
-    let audio_unit_host_object = audio_components_state
+    // The run loop can still hold a unit that was never created, or was
+    // created and then released; neither is a reason to stop the app.
+    let Some(audio_unit_host_object) = audio_components_state
         .audio_component_instances
         .get_mut(&audio_unit)
-        .unwrap();
+    else {
+        log_once!("The run loop holds an audio unit tapHLE never created; skipping its rendering");
+        return;
+    };
 
     if !audio_unit_host_object.started {
         return;
@@ -305,15 +381,33 @@ pub fn render_audio_unit(env: &mut Environment, audio_unit: AudioUnit) {
     let sample_rate = if let Some(input_stream_format) = input_stream_format {
         input_stream_format.sample_rate
     } else {
-        assert!(output_stream_format.is_some());
+        // With neither an input nor an output format set, the unit is running
+        // on whatever the hardware is doing, which is what this branch already
+        // assumed for the output-only case. An app that never set a format on
+        // this unit — because it set it on another unit in a graph tapHLE does
+        // not model — used to abort here instead.
+        if output_stream_format.is_none() {
+            log_once!("An audio unit is rendering with no stream format set; using the hardware sample rate instead");
+        }
         // TODO: confirm that this is the general behaviour
         // (and not only RE4 thing)
         current_hardware_sample_rate
     };
 
-    assert!(is_supported_audio_format(&stream_format));
+    // A format tapHLE cannot play means silence from this unit, not the end of
+    // the app. An app whose audio graph tapHLE does not model reaches here with
+    // whatever default its unit was left holding, and that is not a reason to
+    // stop the game.
+    if !is_supported_audio_format(&stream_format) {
+        log_once!("An audio unit is rendering in a format tapHLE cannot play; it will be silent");
+        log_if_broken_audio_format(&stream_format);
+        return;
+    }
 
-    let al_source = audio_unit_host_object.al_source.unwrap();
+    let Some(al_source) = audio_unit_host_object.al_source else {
+        log_once!("An audio unit is rendering with no source; it will be silent");
+        return;
+    };
     let mut al_buffers = Vec::new();
     unsafe {
         let mut buffers_processed = 0;
@@ -471,7 +565,48 @@ pub fn render_audio_unit(env: &mut Environment, audio_unit: AudioUnit) {
     audio_unit_host_object.is_running_handler = false;
 }
 
+/// A render notification is called around each render cycle, before and after
+/// the unit produces its audio. Apps use them to meter, to visualise, and to
+/// tap the output; none of that is the audio itself, which the render callback
+/// tapHLE does implement produces.
+///
+/// The registration is accepted and recorded rather than honoured. The callback
+/// is never called, so an app that draws a level meter from one will see
+/// silence — but refusing the call ends the app outright, which loses the audio
+/// as well as the meter.
+fn AudioUnitAddRenderNotify(
+    _env: &mut Environment,
+    in_unit: AudioUnit,
+    in_proc: GuestFunction,
+    in_proc_user_data: MutVoidPtr,
+) -> OSStatus {
+    log!(
+        "TODO: AudioUnitAddRenderNotify({:?}, {:?}, {:?}); the notification will never be called",
+        in_unit,
+        in_proc,
+        in_proc_user_data
+    );
+    0 // success
+}
+
+fn AudioUnitRemoveRenderNotify(
+    _env: &mut Environment,
+    in_unit: AudioUnit,
+    in_proc: GuestFunction,
+    in_proc_user_data: MutVoidPtr,
+) -> OSStatus {
+    log!(
+        "TODO: AudioUnitRemoveRenderNotify({:?}, {:?}, {:?})",
+        in_unit,
+        in_proc,
+        in_proc_user_data
+    );
+    0 // success
+}
+
 pub const FUNCTIONS: FunctionExports = &[
+    export_c_func!(AudioUnitAddRenderNotify(_, _, _)),
+    export_c_func!(AudioUnitRemoveRenderNotify(_, _, _)),
     export_c_func!(AudioUnitInitialize(_)),
     export_c_func!(AudioUnitUninitialize(_)),
     export_c_func!(AudioUnitSetProperty(_, _, _, _, _, _)),

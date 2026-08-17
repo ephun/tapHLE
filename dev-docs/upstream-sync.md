@@ -27,7 +27,8 @@ name the expected public source repository before continuing.
 
 ## Preferred workflow
 
-Favor a vetted cherry-pick of a fix that helps a target Windows game:
+Favor a vetted cherry-pick of a fix that helps a target game on a supported
+host:
 
 ```sh
 git fetch upstream
@@ -121,13 +122,14 @@ It is not currently a safe drop-in downstream base:
 - its project metadata and internal crate names still primarily say touchHLE;
   and
 - its trunk includes many unrelated dependencies and product changes that do
-  not match tapHLE's narrow Windows-first policy.
+  not match tapHLE's supported-host policy.
 
 The working decision is to retain tapHLE's base and use HyperHLE as a source
 for a dedicated, reviewed ES 2.0 port. Begin from the two commits above, trace
 all required parents and later corrective commits, preserve original authorship
 and license notices, exclude unrelated surfaces, translate active branding,
-and validate on Windows. Reconsider the base only on a dedicated migration
+and validate on each affected product host. Reconsider the base only on a
+dedicated migration
 branch after the full diff and regression surface are small enough to audit.
 
 The first bounded port validates that approach. tapHLE commit `fd543d42`

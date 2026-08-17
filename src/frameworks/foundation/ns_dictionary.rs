@@ -318,7 +318,7 @@ pub fn init_with_objects_and_keys(
 /// Helper function to share `initWithDictionary:` implementations
 fn init_with_dictionary_common(env: &mut Environment, this: id, other_dict: id) -> id {
     // Foundation tolerates a nil source dictionary, producing an empty
-    // dictionary instead of raising. Baby Monkey's Cocos2D command dispatch
+    // dictionary instead of raising. A Cocos2D command dispatch
     // (`onCommandDispatch:` for kCCInitializeUserModelNotification) relies on
     // `[[NSMutableDictionary alloc] initWithDictionary:nil]` returning an empty
     // dictionary; sending count/getObjects to a nil dictionary on-device yields
@@ -502,6 +502,13 @@ pub const CLASSES: ClassExports = objc_classes! {
 // These probably comes from some category related to plists.
 - (id)initWithContentsOfFile:(id)path { // NSString*
     release(env, this);
+    // A nil path has nothing to read, so the documented nil return is the
+    // answer. Without this the path went straight into to_rust_string(), which
+    // borrows the object table and aborted the emulator on a nil object.
+    if path == nil {
+        log!("Warning: -[NSDictionary initWithContentsOfFile:nil], returning nil");
+        return nil;
+    }
     let path = ns_string::to_rust_string(env, path);
     deserialize_plist_from_file(
         env,
@@ -536,6 +543,16 @@ pub const CLASSES: ClassExports = objc_classes! {
 // TODO
 
 - (id)valueForKey:(id)key { // NSString*
+    // The key is only turned into text to look for the '@' prefix, and a nil
+    // one has no text — it went straight into to_rust_string(), which borrows
+    // the object table and aborted the emulator. Nothing can be looked up
+    // under no key, so nil is the answer, and saying so keeps the nil visible:
+    // it came from somewhere, and that somewhere is usually the real gap.
+    // This is the same mistake -initWithContentsOfFile: made above.
+    if key == nil {
+        log!("Warning: -[NSDictionary valueForKey:nil], returning nil");
+        return nil;
+    }
     let key_str = to_rust_string(env, key);
     // TODO: strip '@' and call super
     assert!(!key_str.starts_with('@'));
@@ -680,6 +697,13 @@ pub const CLASSES: ClassExports = objc_classes! {
 // These probably comes from some category related to plists.
 - (id)initWithContentsOfFile:(id)path { // NSString*
     release(env, this);
+    // A nil path has nothing to read, so the documented nil return is the
+    // answer. Without this the path went straight into to_rust_string(), which
+    // borrows the object table and aborted the emulator on a nil object.
+    if path == nil {
+        log!("Warning: -[NSDictionary initWithContentsOfFile:nil], returning nil");
+        return nil;
+    }
     let path = ns_string::to_rust_string(env, path);
     let tmp = deserialize_plist_from_file(
         env,
@@ -731,7 +755,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (id)init {
-    *env.objc.borrow_mut(this) = <DictionaryHostObject as Default>::default();
+    // A guest subclass may have allocated this instance itself rather than
+    // through +alloc, in which case it has no host storage yet.
+    if !env.objc.ensure_host_object::<DictionaryHostObject>(this) {
+        *env.objc.borrow_mut(this) = <DictionaryHostObject as Default>::default();
+    }
     this
 }
 
@@ -852,7 +880,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (id)init {
-    *env.objc.borrow_mut(this) = <DictionaryHostObject as Default>::default();
+    // See the note on the immutable class's init: a guest subclass such as
+    // JSONKit's JKDictionary allocates its own instances.
+    if !env.objc.ensure_host_object::<DictionaryHostObject>(this) {
+        *env.objc.borrow_mut(this) = <DictionaryHostObject as Default>::default();
+    }
     this
 }
 
@@ -944,10 +976,18 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())setObject:(id)object
          forKey:(id)key {
-    // TODO: raise NSInvalidArgumentException
-    assert_ne!(object, nil);
-    // TODO: raise NSInvalidArgumentException
-    assert_ne!(key, nil);
+    // Foundation raises NSInvalidArgumentException for a nil object or key.
+    // tapHLE cannot raise, and aborting is a strictly worse answer than the
+    // exception would have been: an app with a @try around this survives on
+    // device, and one without it fails at a place it chose. Log and ignore the
+    // call, which leaves the dictionary in the state the exception would have.
+    if object == nil || key == nil {
+        log!(
+            "Warning: [(NSMutableDictionary *){:?} setObject:{:?} forKey:{:?}] with a nil argument, which Foundation would reject; ignoring it",
+            this, object, key
+        );
+        return;
+    }
     let mut host_obj: DictionaryHostObject = std::mem::take(env.objc.borrow_mut(this));
     host_obj.insert(env, key, object, /* copy_key: */ true);
     *env.objc.borrow_mut(this) = host_obj;

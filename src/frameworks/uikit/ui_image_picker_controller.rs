@@ -5,10 +5,49 @@
  */
 //! `UIImagePickerController`
 
+use crate::dyld::{ConstantExports, HostConstant};
 use crate::frameworks::foundation::NSInteger;
 use crate::objc::{id, objc_classes, ClassExports};
 
 type UIImagePickerControllerSourceType = NSInteger;
+
+/// Keys of the info dictionary a picker hands its delegate. No source is
+/// available here, so no such dictionary is ever built — but apps reference
+/// these keys while merely *setting up* a picker, and an unbound key is a null
+/// pointer they dereference before ever presenting anything.
+const UIImagePickerControllerMediaType: &str = "UIImagePickerControllerMediaType";
+const UIImagePickerControllerOriginalImage: &str = "UIImagePickerControllerOriginalImage";
+const UIImagePickerControllerEditedImage: &str = "UIImagePickerControllerEditedImage";
+const UIImagePickerControllerCropRect: &str = "UIImagePickerControllerCropRect";
+const UIImagePickerControllerMediaURL: &str = "UIImagePickerControllerMediaURL";
+const UIImagePickerControllerReferenceURL: &str = "UIImagePickerControllerReferenceURL";
+
+pub const CONSTANTS: ConstantExports = &[
+    (
+        "_UIImagePickerControllerMediaType",
+        HostConstant::NSString(UIImagePickerControllerMediaType),
+    ),
+    (
+        "_UIImagePickerControllerOriginalImage",
+        HostConstant::NSString(UIImagePickerControllerOriginalImage),
+    ),
+    (
+        "_UIImagePickerControllerEditedImage",
+        HostConstant::NSString(UIImagePickerControllerEditedImage),
+    ),
+    (
+        "_UIImagePickerControllerCropRect",
+        HostConstant::NSString(UIImagePickerControllerCropRect),
+    ),
+    (
+        "_UIImagePickerControllerMediaURL",
+        HostConstant::NSString(UIImagePickerControllerMediaURL),
+    ),
+    (
+        "_UIImagePickerControllerReferenceURL",
+        HostConstant::NSString(UIImagePickerControllerReferenceURL),
+    ),
+];
 
 pub const CLASSES: ClassExports = objc_classes! {
 

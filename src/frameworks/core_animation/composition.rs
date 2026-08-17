@@ -359,7 +359,7 @@ pub fn recomposite_if_necessary(env: &mut Environment, force: bool) -> Option<In
     }
 
     // Present our rendered frame (bound to TEXTURE_2D). This copies it to the
-    // default framebuffer (0) so we need to unbind our internal framebuffer.
+    // host window framebuffer, so we need to unbind our internal framebuffer.
     let rearm_capture_request = unsafe {
         gles.BindTexture(gles11::TEXTURE_2D, texture);
         gles.BindFramebufferOES(gles11::FRAMEBUFFER_OES, 0);
@@ -495,6 +495,38 @@ unsafe fn composite_layer_recursive(
     // This is both acting as the presentationLayer and the private render layer
     // It might need to be reworked in the future into a guest presentationLayer
     let host_obj = animation_state.create_presentation_layer(env, layer);
+
+    // What each layer contributes. A blank screen and a correct one are
+    // otherwise indistinguishable from the outside, and this is what showed
+    // that an apparently blank screen was compositing only a white window and
+    // two fade overlays — white x (1 - 0.4) = the exact grey seen on screen.
+    if crate::log::debug_enabled_for(module_path!()) {
+        let class_name = {
+            let class = crate::objc::ObjC::read_isa(layer, &env.mem);
+            env.objc.get_class_name(class).to_string()
+        };
+        let bg = host_obj
+            .background_color
+            .map(|c| format!("rgba({},{},{},{})", c.r, c.g, c.b, c.a));
+        // Copied out first: `bounds` lives in a packed struct, and the
+        // formatting macros take a reference to each argument, which is not
+        // allowed to be unaligned. Copying the scalars is what makes them
+        // ordinary aligned locals.
+        let bounds_w = host_obj.bounds.size.width;
+        let bounds_h = host_obj.bounds.size.height;
+        log_dbg!(
+            "composite {:?} {} opacity={} bg={:?} contents={} eagl_pixels={} bounds={}x{} sublayers={}",
+            layer,
+            class_name,
+            host_obj.opacity,
+            bg,
+            host_obj.contents != crate::objc::nil,
+            host_obj.presented_pixels.is_some(),
+            bounds_w,
+            bounds_h,
+            host_obj.sublayers.len(),
+        );
+    }
 
     if host_obj.hidden {
         return;
@@ -688,14 +720,25 @@ unsafe fn composite_layer_recursive(
         gles.VertexPointer(2, gles11::FLOAT, 0, 0 as *const GLvoid);
 
         gles.EnableClientState(gles11::TEXTURE_COORD_ARRAY);
-        // Normal images will have top-to-bottom row order, but OpenGL ES
-        // expects bottom-to-top, so flip the UVs in that case.
+        // Which way up the texture's rows are depends on who produced them. A
+        // `CGImage` assigned to `contents` arrives top-to-bottom and is used as
+        // it is; everything else here — the bitmap `-drawRect:` drew into, and
+        // pixels read back out of a renderbuffer — is bottom-to-top and needs
+        // its UVs flipped.
+        //
+        // Do not "correct" this to also exclude `cg_context`. The drawing that
+        // fills that bitmap is written for the flip: `CGContextDrawImage`
+        // inverts the vertical texture coordinate and glyph drawing does not,
+        // and both come out right only when the result is flipped once here.
+        // Dropping the flip mirrors every string an app draws, and every image
+        // it composes into a context, which is most of a hand-drawn interface.
+        let rows_are_top_to_bottom = host_obj.contents == nil;
         gles.BindBuffer(
             gles11::ARRAY_BUFFER,
-            if host_obj.contents != nil {
-                misc.basic_square_buffer
-            } else {
+            if rows_are_top_to_bottom {
                 misc.flipped_square_buffer
+            } else {
+                misc.basic_square_buffer
             },
         );
         gles.TexCoordPointer(2, gles11::FLOAT, 0, 0 as *const GLvoid);
@@ -802,5 +845,15 @@ unsafe fn upload_rgba8_pixels(gles: &mut dyn GLES, pixels: &[u8], dimensions: (u
         gles11::TEXTURE_2D,
         gles11::TEXTURE_MAG_FILTER,
         gles11::LINEAR as _,
+    );
+    gles.TexParameteri(
+        gles11::TEXTURE_2D,
+        gles11::TEXTURE_WRAP_S,
+        gles11::CLAMP_TO_EDGE as _,
+    );
+    gles.TexParameteri(
+        gles11::TEXTURE_2D,
+        gles11::TEXTURE_WRAP_T,
+        gles11::CLAMP_TO_EDGE as _,
     );
 }

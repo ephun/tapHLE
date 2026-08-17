@@ -53,12 +53,27 @@ pub enum ParamType {
 pub struct ParamTable(pub &'static [(GLenum, ParamType, u8)]);
 
 impl ParamTable {
-    /// Look up the component type and count for a parameter. Panics if the name
-    /// is not recognized.
+    /// Look up the component type and count for a parameter.
+    ///
+    /// An unrecognised name is reported as a single integer rather than being
+    /// fatal. OpenGL defines this case: querying a name the implementation does
+    /// not know raises GL_INVALID_ENUM and leaves the caller's buffer alone,
+    /// which is something a renderer probing for optional capabilities is
+    /// written to handle. Aborting instead ended fourteen apps in a survey of
+    /// 1501, several of them at start-up while working out what they could
+    /// draw.
+    ///
+    /// The caller writes nothing for an unknown name, so the single-integer
+    /// shape is only about not over-reading tapHLE's own tables.
     pub fn get_type_info(&self, pname: GLenum) -> (ParamType, u8) {
         match self.0.iter().find(|&&(pname2, _, _)| pname == pname2) {
             Some(&(_, type_, count)) => (type_, count),
-            None => panic!("Unhandled parameter name: {pname:#x}"),
+            None => {
+                log!(
+                    "Warning: unhandled GL parameter name {pname:#x}, reporting it as unsupported"
+                );
+                (ParamType::Int, 0)
+            }
         }
     }
 

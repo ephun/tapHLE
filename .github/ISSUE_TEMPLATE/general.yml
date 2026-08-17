@@ -20,7 +20,7 @@ body:
     attributes:
       label: Scope check
       options:
-        - label: This request concerns Windows game emulation or development needed to support it.
+        - label: This request concerns game emulation on a supported host or development needed to support it.
           required: true
         - label: I have not attached proprietary game material or unauthorized links.
           required: true

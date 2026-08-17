@@ -76,6 +76,11 @@ pub trait GLESContext {
 #[allow(clippy::upper_case_acronyms)]
 #[allow(clippy::too_many_arguments)] // not our fault :(
 #[allow(unused_variables)]
+// This is a binding surface, not application code: it names every entry point
+// a backend may implement, and which of them a guest happens to call is the
+// app's business. A method nothing calls yet is the normal state here, so
+// dead-code analysis has nothing useful to say about this trait.
+#[allow(dead_code)]
 pub trait GLES {
     /// Get some string describing the underlying driver. For OpenGL this is
     /// `GL_VENDOR`, `GL_RENDERER` and `GL_VERSION`.
@@ -469,6 +474,9 @@ pub trait GLES {
     unsafe fn TexParameteriv(&mut self, target: GLenum, pname: GLenum, params: *const GLint) {
         unimplemented!("TexParameteriv not implemented by this backend")
     }
+    unsafe fn GetTexParameteriv(&mut self, target: GLenum, pname: GLenum, params: *mut GLint) {
+        unimplemented!("GetTexParameteriv not implemented by this backend")
+    }
     unsafe fn TexParameterfv(&mut self, target: GLenum, pname: GLenum, params: *const GLfloat) {
         unimplemented!("TexParameterfv not implemented by this backend")
     }
@@ -747,10 +755,17 @@ pub trait GLES {
         unimplemented!("GenerateMipmapOES not implemented by this backend")
     }
 
-    // OES_vertex_array_object. Backends without native VAO support may safely
-    // use these compatibility defaults: the guest still receives non-zero
-    // names, while binding and deletion leave the legacy attribute state in
-    // place.
+    // OES_vertex_array_object.
+    //
+    // These defaults keep a guest that calls them alive, and nothing more.
+    // Binding does not switch attribute state and generating hands out the
+    // same names every call, so an app that stores its arrays in a vertex
+    // array object and later binds it gets whatever the previous draw left
+    // behind. That is invisible at the call site and shows up as another
+    // object's geometry, so a backend that inherits these must not let
+    // `GL_OES_vertex_array_object` be advertised — see `EXTENSIONS` in
+    // `crate::frameworks::opengles::gles_guest`, which is where the extension
+    // string is decided and where the measured case is written up.
     unsafe fn GenVertexArraysOES(&mut self, n: GLsizei, arrays: *mut GLuint) {
         for i in 0..n {
             arrays.add(i as usize).write((i + 1) as GLuint);

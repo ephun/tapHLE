@@ -11,17 +11,20 @@
 
 use super::UIViewHostObject;
 use crate::dyld::{ConstantExports, HostConstant};
+use crate::environment::Environment;
 use crate::frameworks::core_graphics::cg_affine_transform::CGAffineTransform;
-use crate::frameworks::core_graphics::{CGPoint, CGRect};
+use crate::frameworks::core_graphics::{CGFloat, CGPoint, CGRect};
 use crate::frameworks::foundation::ns_string;
 use crate::frameworks::uikit::ui_application::{
-    UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight,
+    UIInterfaceOrientation, UIInterfaceOrientationLandscapeLeft,
+    UIInterfaceOrientationLandscapeRight, UIInterfaceOrientationPortrait,
     UIInterfaceOrientationPortraitUpsideDown,
 };
 use crate::frameworks::uikit::ui_device::{
     UIDeviceOrientationLandscapeLeft, UIDeviceOrientationLandscapeRight,
     UIDeviceOrientationPortraitUpsideDown,
 };
+use crate::mem::ConstVoidPtr;
 use crate::objc::{
     id, msg, msg_class, msg_super, nil, objc_classes, release, retain, ClassExports,
 };
@@ -38,6 +41,83 @@ pub struct State {
     /// Root view controller owned by each window. The controller references
     /// are retained; window keys are non-retaining and removed on dealloc.
     root_view_controllers: Vec<(id, id)>,
+}
+
+/// Which interface orientation this window should present its root controller
+/// in, rotating the device to reach it if necessary.
+///
+/// If something has already chosen a non-portrait orientation — a
+/// `--landscape-*` option, `UIInterfaceOrientation` in `Info.plist`, or an
+/// earlier `setStatusBarOrientation:` — that choice stands and the controller
+/// is only asked to confirm it, which is what this code has always done.
+///
+/// The new part is the portrait case. Portrait is where an app that said
+/// nothing ends up, so it cannot be read as a decision, and the controller has
+/// to be asked. One that accepts portrait is left alone. One that refuses it is
+/// asked about the others in turn and the device is rotated to the first it
+/// accepts, which is how iOS gets a landscape-only app onto a landscape screen.
+///
+/// Returns `None` when the presentation should stay portrait, either because
+/// the controller is happy there or because it refused everything and there is
+/// nothing sensible left to do.
+fn orientation_to_present_in(env: &mut Environment, vc: id) -> Option<UIInterfaceOrientation> {
+    use crate::window::DeviceOrientation;
+
+    // Headless runs have no window to read or rotate.
+    let current = env.window.as_ref()?.current_rotation();
+
+    if current != DeviceOrientation::Portrait {
+        return Some(match current {
+            DeviceOrientation::PortraitUpsideDown => UIDeviceOrientationPortraitUpsideDown,
+            DeviceOrientation::LandscapeLeft => UIDeviceOrientationLandscapeLeft,
+            DeviceOrientation::LandscapeRight => UIDeviceOrientationLandscapeRight,
+            DeviceOrientation::Portrait => unreachable!(),
+        });
+    }
+
+    let accepts_portrait: bool =
+        msg![env; vc shouldAutorotateToInterfaceOrientation:UIInterfaceOrientationPortrait];
+    if accepts_portrait {
+        return None;
+    }
+
+    // Landscape first, and left before right, because a landscape-only app that
+    // accepts both is overwhelmingly designed for the home button on the right,
+    // which is this device orientation.
+    for &(device, interface) in &[
+        (
+            DeviceOrientation::LandscapeLeft,
+            UIInterfaceOrientationLandscapeRight,
+        ),
+        (
+            DeviceOrientation::LandscapeRight,
+            UIInterfaceOrientationLandscapeLeft,
+        ),
+        (
+            DeviceOrientation::PortraitUpsideDown,
+            UIInterfaceOrientationPortraitUpsideDown,
+        ),
+    ] {
+        let accepted: bool = msg![env; vc shouldAutorotateToInterfaceOrientation:interface];
+        if !accepted {
+            continue;
+        }
+        log_dbg!(
+            "Controller {:?} refuses portrait and accepts {:?}; rotating the device to match.",
+            vc,
+            interface
+        );
+        env.on_parent_stack_in_coroutine(|window, _| window.rotate_device(device));
+        return Some(interface);
+    }
+
+    // Refused everything, including portrait. iOS would keep it where it is
+    // rather than invent an orientation, and so does this.
+    log!(
+        "Warning: controller {:?} accepts no interface orientation; presenting portrait anyway.",
+        vc
+    );
+    None
 }
 
 pub const CLASSES: ClassExports = objc_classes! {
@@ -220,9 +300,27 @@ pub const CLASSES: ClassExports = objc_classes! {
     () = msg_super![env; this addSubview:view];
     () = msg![env; vc viewDidAppear:false];
 
-    // Support auto-rotation. This is currently only for apps that request a
-    // non-portrait interface orientation via Info.plist, as we do not yet
-    // support changes of orientation caused by device rotation (TODO).
+    // Support auto-rotation.
+    //
+    // An app can say which way up it goes in two places, and until now tapHLE
+    // honoured only the first: `UIInterfaceOrientation` in `Info.plist` (or a
+    // `--landscape-*` option), which sets the window's orientation before the
+    // app runs. The second is `shouldAutorotateToInterfaceOrientation:`, and on
+    // iOS that is the one that *causes* the rotation — an app launches portrait
+    // and the controller's answer turns it. The check below used to read the
+    // window's current rotation and return `None` for portrait, so a controller
+    // was only ever asked once something else had already rotated the window,
+    // and an app that declares landscape in code alone never got it: it drew a
+    // 480-wide layout into a 320-wide screen, clipped.
+    //
+    // This is not a rare shape. In one collection of 1501 apps, 1167 declare no
+    // `UIInterfaceOrientation` at all.
+    //
+    // Asking is safe for apps that do not care, because the inherited
+    // `shouldAutorotateToInterfaceOrientation:` accepts portrait and nothing
+    // else — the same default as iOS — so only an app that overrides it and
+    // actively refuses portrait can change anything here.
+    // TODO: rotation caused by the device being turned while running.
     // FIXME: It's unclear when and where this auto-rotation is supposed to
     //        happen. It must have something to do with mounting the view
     //        controller to a window, so we do it here. QA1688 (see top of file)
@@ -236,13 +334,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     //        three places (user/default options, setStatusBarOrientation: etc,
     //        Info.plist UIInterfaceOrientation etc). It's not clear if these
     //        are really equivalent and should all trigger autorotation.
-    if let Some(orientation) = match env.window.as_ref().unwrap().current_rotation() {
-        crate::window::DeviceOrientation::PortraitUpsideDown => Some(UIDeviceOrientationPortraitUpsideDown),
-        crate::window::DeviceOrientation::LandscapeLeft => Some(UIDeviceOrientationLandscapeLeft),
-        crate::window::DeviceOrientation::LandscapeRight => Some(UIDeviceOrientationLandscapeRight),
-        // Portrait is the default so we don't do anything here.
-        crate::window::DeviceOrientation::Portrait => None,
-    } {
+    if let Some(orientation) = orientation_to_present_in(env, vc) {
         // (UIInterfaceOrientation and UIDeviceOrientation are compatible enums,
         //  here we use whichever is clearer contextually.)
         let should = msg![env; vc shouldAutorotateToInterfaceOrientation:orientation];
@@ -307,6 +399,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 /// Window life-cycle notifications
 /// TODO: more notifications
 const UIWindowDidBecomeKeyNotification: &str = "UIWindowDidBecomeKeyNotification";
+// The rest of the family. `makeKeyWindow` posts only the DidBecomeKey one; the
+// others are declared so apps that observe them do not dereference a null name.
+const UIWindowDidResignKeyNotification: &str = "UIWindowDidResignKeyNotification";
+const UIWindowDidBecomeVisibleNotification: &str = "UIWindowDidBecomeVisibleNotification";
+const UIWindowDidBecomeHiddenNotification: &str = "UIWindowDidBecomeHiddenNotification";
 /// Keyboard notifications
 /// TODO: more keyboard notifications
 pub const UIKeyboardWillShowNotification: &str = "UIKeyboardWillShowNotification";
@@ -314,8 +411,58 @@ pub const UIKeyboardDidShowNotification: &str = "UIKeyboardDidShowNotification";
 pub const UIKeyboardWillHideNotification: &str = "UIKeyboardWillHideNotification";
 pub const UIKeyboardDidHideNotification: &str = "UIKeyboardDidHideNotification";
 pub const UIKeyboardBoundsUserInfoKey: &str = "UIKeyboardBoundsUserInfoKey";
+// The iOS 3.2+ replacements for the deprecated Bounds key. tapHLE posts the old
+// one; these are declared because apps read whichever they were built against,
+// and an unbound key is a null dereference rather than a missing dictionary
+// entry.
+pub const UIKeyboardFrameBeginUserInfoKey: &str = "UIKeyboardFrameBeginUserInfoKey";
+pub const UIKeyboardFrameEndUserInfoKey: &str = "UIKeyboardFrameEndUserInfoKey";
+pub const UIKeyboardAnimationDurationUserInfoKey: &str = "UIKeyboardAnimationDurationUserInfoKey";
+pub const UIKeyboardAnimationCurveUserInfoKey: &str = "UIKeyboardAnimationCurveUserInfoKey";
+
+/// `UIWindowLevel` values. These are `CGFloat`s rather than strings, so unlike
+/// the notification names they have to be materialised into guest memory.
+/// tapHLE does not order windows by level, but an app that sets `windowLevel`
+/// reads the constant to do it, and an unbound one is a null pointer it will
+/// dereference.
+fn window_level(env: &mut Environment, value: CGFloat) -> ConstVoidPtr {
+    env.mem.alloc_and_write(value).cast().cast_const()
+}
+fn UIWindowLevelNormal(env: &mut Environment) -> ConstVoidPtr {
+    window_level(env, 0.0)
+}
+fn UIWindowLevelStatusBar(env: &mut Environment) -> ConstVoidPtr {
+    window_level(env, 1000.0)
+}
+fn UIWindowLevelAlert(env: &mut Environment) -> ConstVoidPtr {
+    window_level(env, 2000.0)
+}
 
 pub const CONSTANTS: ConstantExports = &[
+    (
+        "_UIWindowDidResignKeyNotification",
+        HostConstant::NSString(UIWindowDidResignKeyNotification),
+    ),
+    (
+        "_UIWindowDidBecomeVisibleNotification",
+        HostConstant::NSString(UIWindowDidBecomeVisibleNotification),
+    ),
+    (
+        "_UIWindowDidBecomeHiddenNotification",
+        HostConstant::NSString(UIWindowDidBecomeHiddenNotification),
+    ),
+    (
+        "_UIWindowLevelNormal",
+        HostConstant::Custom(UIWindowLevelNormal),
+    ),
+    (
+        "_UIWindowLevelStatusBar",
+        HostConstant::Custom(UIWindowLevelStatusBar),
+    ),
+    (
+        "_UIWindowLevelAlert",
+        HostConstant::Custom(UIWindowLevelAlert),
+    ),
     (
         "_UIWindowDidBecomeKeyNotification",
         HostConstant::NSString(UIWindowDidBecomeKeyNotification),
@@ -339,5 +486,21 @@ pub const CONSTANTS: ConstantExports = &[
     (
         "_UIKeyboardBoundsUserInfoKey",
         HostConstant::NSString(UIKeyboardBoundsUserInfoKey),
+    ),
+    (
+        "_UIKeyboardFrameBeginUserInfoKey",
+        HostConstant::NSString(UIKeyboardFrameBeginUserInfoKey),
+    ),
+    (
+        "_UIKeyboardFrameEndUserInfoKey",
+        HostConstant::NSString(UIKeyboardFrameEndUserInfoKey),
+    ),
+    (
+        "_UIKeyboardAnimationDurationUserInfoKey",
+        HostConstant::NSString(UIKeyboardAnimationDurationUserInfoKey),
+    ),
+    (
+        "_UIKeyboardAnimationCurveUserInfoKey",
+        HostConstant::NSString(UIKeyboardAnimationCurveUserInfoKey),
     ),
 ];

@@ -55,6 +55,10 @@ pub struct MachO {
     /// This is used by get_end() to return the first address after the last
     /// segment in the executable.
     pub last_segment_end: u32,
+    /// Address the `__TEXT` segment was loaded at, which is where the image's
+    /// `mach_header` sits — the segment begins with the header and its load
+    /// commands. `_dyld_get_image_header` hands this to the guest.
+    pub text_segment_base: u32,
 }
 
 #[derive(Debug)]
@@ -688,6 +692,9 @@ impl MachO {
             external_relocations,
             entry_point_pc,
             last_segment_end,
+            // Every Mach-O tapHLE loads has a __TEXT segment; the parse above
+            // relies on that already when it resolves the entry point.
+            text_segment_base: text_segment_base.unwrap(),
         })
     }
 

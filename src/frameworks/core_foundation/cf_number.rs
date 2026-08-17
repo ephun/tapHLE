@@ -12,7 +12,7 @@ use super::cf_allocator::{kCFAllocatorDefault, CFAllocatorRef};
 use super::{CFComparisonResult, CFIndex, CFTypeRef};
 use crate::dyld::{export_c_func, ConstantExports, FunctionExports, HostConstant};
 use crate::frameworks::foundation::ns_value::is_conversion_lossless;
-use crate::mem::{ConstVoidPtr, MutVoidPtr};
+use crate::mem::{ConstPtr, ConstVoidPtr, MutVoidPtr};
 use crate::objc::{id, msg, msg_class};
 use crate::Environment;
 
@@ -114,6 +114,33 @@ fn CFNumberGetValue(
     }
 }
 
+/// Which of the CF types a number holds. Apple documents the answer as the
+/// type the number was created with, "or the smallest type that can hold it"
+/// — so the honest source here is what the number is actually storing, which
+/// its Objective-C type encoding already reports.
+fn CFNumberGetType(env: &mut Environment, num: CFNumberRef) -> CFNumberType {
+    let encoding: ConstPtr<u8> = msg![env; num objCType];
+    let encoding = env.mem.cstr_at_utf8(encoding).unwrap();
+    match encoding {
+        // A CFBoolean is not a CFNumber on Apple's side, but tapHLE stores both
+        // in NSNumber, and an app asking a boolean for its type is asking about
+        // storage. Char is the type Apple reports for it.
+        "c" | "B" => kCFNumberCharType,
+        "s" | "S" => kCFNumberShortType,
+        "i" | "I" | "l" | "L" => kCFNumberIntType,
+        "q" | "Q" => kCFNumberLongLongType,
+        "f" => kCFNumberFloatType,
+        "d" => kCFNumberDoubleType,
+        other => {
+            log!(
+                "Warning: CFNumberGetType() for unexpected encoding {:?}, reporting int",
+                other
+            );
+            kCFNumberIntType
+        }
+    }
+}
+
 fn CFNumberCompare(
     env: &mut Environment,
     num1: CFNumberRef,
@@ -152,6 +179,7 @@ pub const CONSTANTS: ConstantExports = &[
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CFNumberCreate(_, _, _)),
     export_c_func!(CFNumberGetValue(_, _, _)),
+    export_c_func!(CFNumberGetType(_)),
     export_c_func!(CFNumberCompare(_, _, _)),
     export_c_func!(CFBooleanGetValue(_)),
 ];

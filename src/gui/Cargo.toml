@@ -1,0 +1,44 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+[package]
+name = "tapHLE_gui"
+description = "Desktop frontend for the tapHLE emulator"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+
+[[bin]]
+name = "tapHLE-gui"
+path = "src/main.rs"
+
+[dependencies]
+# The frontend links the emulator library so that app bundles, launch options
+# and tapHLE's file locations have exactly one implementation. The reasoning is
+# in dev-docs/gui-architecture.md.
+tapHLE = { path = "../.." }
+tapHLE_version = { path = "../version" }
+# eframe brings the window, the event loop and the OpenGL painter; egui draws
+# the interface. Default features are kept so the winit/glutin stack is
+# configured the way upstream tests it, including AccessKit for screen readers.
+eframe = "0.33"
+egui = "0.33"
+# Native file pickers and message boxes. This is the one place where a system
+# control is unambiguously better than a drawn one.
+rfd = "0.15"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# Both are already in the emulator's dependency tree. flate2 compresses the
+# cached icon bitmaps, which avoids adding a PNG encoder; plist reads the
+# App Store metadata that sits beside an IPA's bundle.
+flate2 = "1.0"
+plist = "1.8.0"
+
+[target.'cfg(windows)'.build-dependencies]
+# Attaches the icon and the version properties Explorer and the Start menu
+# show. Windows-only, and a build dependency, so it is not in the shipped
+# binary's licence list.
+winresource = "0.1"

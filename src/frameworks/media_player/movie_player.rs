@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 #[derive(Default)]
 pub struct State {
     active_player: Option<id>,
-    /// Various apps (e.g. Crash Bandicoot Nitro Kart 3D and Spore Origins)
+    /// Various apps
     /// create or start a player and await some kind of notification, but can't
     /// handle it if that notification happens immediately. This queue lets us
     /// delay such notifications until the app next returns to the run loop,
@@ -42,12 +42,26 @@ const MPMoviePlaybackStateStopped: MPMoviePlaybackState = 0;
 // shouldn't matter.
 pub const MPMoviePlayerPlaybackDidFinishNotification: &str =
     "MPMoviePlayerPlaybackDidFinishNotification";
-/// Apparently an undocumented, private API. Spore Origins uses it.
+/// Apparently an undocumented, private API. Apps use it.
 pub const MPMoviePlayerContentPreloadDidFinishNotification: &str =
     "MPMoviePlayerContentPreloadDidFinishNotification";
 pub const MPMoviePlayerScalingModeDidChangeNotification: &str =
     "MPMoviePlayerScalingModeDidChangeNotification";
 // TODO: More notifications?
+/// The iOS 3.2+ notifications. tapHLE's player does not model load state or
+/// expose a separate playback state, so these are not posted; apps register for
+/// them during setup, and registering dereferences the name.
+pub const MPMoviePlayerLoadStateDidChangeNotification: &str =
+    "MPMoviePlayerLoadStateDidChangeNotification";
+pub const MPMoviePlayerPlaybackStateDidChangeNotification: &str =
+    "MPMoviePlayerPlaybackStateDidChangeNotification";
+pub const MPMoviePlayerNowPlayingMovieDidChangeNotification: &str =
+    "MPMoviePlayerNowPlayingMovieDidChangeNotification";
+pub const MPMoviePlayerWillEnterFullscreenNotification: &str =
+    "MPMoviePlayerWillEnterFullscreenNotification";
+pub const MPMoviePlayerDidExitFullscreenNotification: &str =
+    "MPMoviePlayerDidExitFullscreenNotification";
+
 const MPMoviePlayerPlaybackDidFinishReasonUserInfoKey: &str =
     "MPMoviePlayerPlaybackDidFinishReasonUserInfoKey";
 
@@ -68,6 +82,26 @@ pub const CONSTANTS: ConstantExports = &[
     (
         "_MPMoviePlayerPlaybackDidFinishReasonUserInfoKey",
         HostConstant::NSString(MPMoviePlayerPlaybackDidFinishReasonUserInfoKey),
+    ),
+    (
+        "_MPMoviePlayerLoadStateDidChangeNotification",
+        HostConstant::NSString(MPMoviePlayerLoadStateDidChangeNotification),
+    ),
+    (
+        "_MPMoviePlayerPlaybackStateDidChangeNotification",
+        HostConstant::NSString(MPMoviePlayerPlaybackStateDidChangeNotification),
+    ),
+    (
+        "_MPMoviePlayerNowPlayingMovieDidChangeNotification",
+        HostConstant::NSString(MPMoviePlayerNowPlayingMovieDidChangeNotification),
+    ),
+    (
+        "_MPMoviePlayerWillEnterFullscreenNotification",
+        HostConstant::NSString(MPMoviePlayerWillEnterFullscreenNotification),
+    ),
+    (
+        "_MPMoviePlayerDidExitFullscreenNotification",
+        HostConstant::NSString(MPMoviePlayerDidExitFullscreenNotification),
     ),
 ];
 
@@ -103,7 +137,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     retain(env, url);
     env.objc.borrow_mut::<MPMoviePlayerControllerHostObject>(this).content_url = url;
 
-    // Act as if loading immediately completed (Spore Origins waits for this).
+    // Act as if loading immediately completed (apps wait for this).
     State::get(env).pending_notifications.push_back(
         (MPMoviePlayerContentPreloadDidFinishNotification, this, Instant::now())
     );
@@ -150,7 +184,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     MPMoviePlaybackStateStopped // TODO
 }
 
-// Apparently an undocumented, private API, but Spore Origins uses it.
+// Apparently an undocumented, private API, but apps use it.
 - (())setMovieControlMode:(NSInteger)_mode {
     // As this is undocumented and we don't have real video playback yet, let's
     // ignore it.

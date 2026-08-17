@@ -24,6 +24,38 @@ pub struct State {
     standard_colors: HashMap<SEL, id>,
 }
 
+/// Convert HSB (as UIKit and nib archives use it, all components 0…1) to RGB.
+///
+/// This is the standard conversion: hue selects a face of the colour hex,
+/// saturation mixes towards white and brightness scales the result.
+fn hsb_to_rgb(
+    hue: CGFloat,
+    saturation: CGFloat,
+    brightness: CGFloat,
+) -> (CGFloat, CGFloat, CGFloat) {
+    let saturation = saturation.clamp(0.0, 1.0);
+    let brightness = brightness.clamp(0.0, 1.0);
+    if saturation == 0.0 {
+        return (brightness, brightness, brightness);
+    }
+    // A hue of exactly 1.0 is the same colour as 0.0, and must not select a
+    // sixth sector that does not exist.
+    let hue = hue.rem_euclid(1.0) * 6.0;
+    let sector = hue.floor();
+    let offset = hue - sector;
+    let p = brightness * (1.0 - saturation);
+    let q = brightness * (1.0 - saturation * offset);
+    let t = brightness * (1.0 - saturation * (1.0 - offset));
+    match sector as i32 {
+        0 => (brightness, t, p),
+        1 => (q, brightness, p),
+        2 => (p, brightness, t),
+        3 => (p, q, brightness),
+        4 => (t, p, brightness),
+        _ => (brightness, p, q),
+    }
+}
+
 fn get_standard_color(
     env: &mut Environment,
     sel: SEL,
@@ -85,6 +117,17 @@ pub const CLASSES: ClassExports = objc_classes! {
     autorelease(env, new)
 }
 
+// A colour that tiles an image. tapHLE's colours are a single RGBA quadruple,
+// with no pattern to carry, so this returns a clear colour rather than a wrong
+// solid one: the pattern simply does not draw, leaving whatever is behind it
+// visible. Substituting an opaque colour would cover content the app expected
+// to see through the texture, which is a worse and much harder to diagnose
+// result than a missing background.
++ (id)colorWithPatternImage:(id)image { // UIImage*
+    log!("TODO: [UIColor colorWithPatternImage:{:?}] - pattern colours are not supported; returning a clear colour", image);
+    msg![env; this clearColor]
+}
+
 + (id)clearColor    { get_standard_color(env, _cmd, 0.0, 0.0, 0.0, 0.0) }
 + (id)blackColor    { get_standard_color(env, _cmd, 0.0, 0.0, 0.0, 1.0) }
 + (id)whiteColor    { get_standard_color(env, _cmd, 1.0, 1.0, 1.0, 1.0) }
@@ -140,42 +183,54 @@ pub const CLASSES: ClassExports = objc_classes! {
     let key_ns_string = get_static_str(env, "UIColorComponentCount");
     let count: NSInteger = msg![env; coder decodeIntegerForKey:key_ns_string];
 
-    match count {
-        4 => {
-            let key_ns_string = get_static_str(env, "UIRed");
+    // Dispatch on which components are actually present rather than on the
+    // count. The count does not identify the colour space — RGBA and HSBA both
+    // have four — and archives in the wild carry counts this once rejected
+    // outright, which aborted the app over a colour.
+    let red_key = get_static_str(env, "UIRed");
+    let white_key = get_static_str(env, "UIWhite");
+    let hue_key = get_static_str(env, "UIHue");
 
-            // Both RGBA and HSBA colors have 4 components.
-            // We assume presence of the red component as the indication of RGBA
-            // TODO: support HSBA decoding too
-            assert!(msg![env; coder containsValueForKey:key_ns_string]);
-
-            let r: CGFloat = msg![env; coder decodeFloatForKey:key_ns_string];
-
-            let key_ns_string = get_static_str(env, "UIGreen");
-            let g: CGFloat = msg![env; coder decodeFloatForKey:key_ns_string];
-
-            let key_ns_string = get_static_str(env, "UIBlue");
-            let b: CGFloat = msg![env; coder decodeFloatForKey:key_ns_string];
-
-            log_dbg!(
-                "[(UIColor*){:?} initWithCoder:{:?}] => count {}, r {}, g {}, b {}, a {}",
-                this, coder, count, r, g, b, a
-            );
-
-            msg![env; this initWithRed:r green:g blue:b alpha:a]
-        }
-        2 => {
-            let key_ns_string = get_static_str(env, "UIWhite");
-            let w: CGFloat = msg![env; coder decodeFloatForKey:key_ns_string];
-
-            log_dbg!(
-                "[(UIColor*){:?} initWithCoder:{:?}] => count {}, w {}, a {}",
-                this, coder, count, w, a
-            );
-
-            msg![env; this initWithWhite:w alpha:a]
-        }
-        _ => unimplemented!()
+    if msg![env; coder containsValueForKey:red_key] {
+        let r: CGFloat = msg![env; coder decodeFloatForKey:red_key];
+        let key_ns_string = get_static_str(env, "UIGreen");
+        let g: CGFloat = msg![env; coder decodeFloatForKey:key_ns_string];
+        let key_ns_string = get_static_str(env, "UIBlue");
+        let b: CGFloat = msg![env; coder decodeFloatForKey:key_ns_string];
+        log_dbg!(
+            "[(UIColor*){:?} initWithCoder:{:?}] => count {}, r {}, g {}, b {}, a {}",
+            this, coder, count, r, g, b, a
+        );
+        msg![env; this initWithRed:r green:g blue:b alpha:a]
+    } else if msg![env; coder containsValueForKey:white_key] {
+        let w: CGFloat = msg![env; coder decodeFloatForKey:white_key];
+        log_dbg!(
+            "[(UIColor*){:?} initWithCoder:{:?}] => count {}, w {}, a {}",
+            this, coder, count, w, a
+        );
+        msg![env; this initWithWhite:w alpha:a]
+    } else if msg![env; coder containsValueForKey:hue_key] {
+        let h: CGFloat = msg![env; coder decodeFloatForKey:hue_key];
+        let key_ns_string = get_static_str(env, "UISaturation");
+        let s: CGFloat = msg![env; coder decodeFloatForKey:key_ns_string];
+        let key_ns_string = get_static_str(env, "UIBrightness");
+        let v: CGFloat = msg![env; coder decodeFloatForKey:key_ns_string];
+        let (r, g, b) = hsb_to_rgb(h, s, v);
+        log_dbg!(
+            "[(UIColor*){:?} initWithCoder:{:?}] => count {}, h {}, s {}, b {}, a {}",
+            this, coder, count, h, s, v, a
+        );
+        msg![env; this initWithRed:r green:g blue:b alpha:a]
+    } else {
+        // Pattern colours and any encoding not handled above land here. Opaque
+        // black is wrong, but it is a colour: the archive this came from is a
+        // whole view hierarchy, and refusing to decode one fill would throw the
+        // rest of it away too.
+        log!(
+            "TODO: [(UIColor*){:?} initWithCoder:{:?}] has {} components in no recognised colour space; using black",
+            this, coder, count
+        );
+        msg![env; this initWithRed:0.0 green:0.0 blue:0.0 alpha:a]
     }
 }
 

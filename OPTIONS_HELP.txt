@@ -1,6 +1,13 @@
+Every option that switches something on has a matching option that switches it
+off again, listed alongside it below. Options are read in layers — first
+tapHLE_default_options.txt, then tapHLE_options.txt, then the command line —
+and a later layer wins, so the off spelling is how you countermand a setting
+that an earlier layer turned on.
+
 View options:
     --fullscreen
-        Display the app in full screen. The default is to display it in a
+    --windowed
+        Display the app in full screen, or in a window. The default is a
         window.
 
         The app's output will be scaled to fit your screen. This is independent
@@ -8,6 +15,7 @@ View options:
         in use, the result may be a bit blurry. An internal resolution larger
         than your screen's is possible, in which case the output is downscaled.
 
+    --portrait
     --upside-down
     --landscape-left
     --landscape-right
@@ -23,6 +31,7 @@ View options:
         do this. These options may be useful in that case.
 
     --landscape-native
+    --no-landscape-native
         Treat the device's natural orientation as landscape. The emulated
         screen is landscape-shaped and no presentation rotation is applied.
 
@@ -66,8 +75,9 @@ Game controller options:
         This is a floating-point (decimal) number between 0 and 1.
 
     --disable-analog-stick-tilt-controls
-        Disables mapping of analog stick input to simulated rotation of the
-        device.
+    --enable-analog-stick-tilt-controls
+        Disables or enables mapping of analog stick input to simulated
+        rotation of the device.
 
         By default, if tapHLE detects a game controller, its analog sticks
         will be used for simulated accelerometer tilt controls. Set this option
@@ -208,8 +218,10 @@ Graphics driver options:
 
 Debugging options:
     --disable-direct-memory-access
+    --enable-direct-memory-access
         Force dynarmic to always access guest memory via the memory access
-        callbacks, rather than using the fast direct access path (page tables).
+        callbacks, rather than using the fast direct access path (page tables),
+        or restore the fast path. The fast path is the default.
 
     --gdb=...
         Starts tapHLE in debugging mode, listening for GDB remote serial
@@ -224,8 +236,10 @@ Debugging options:
         brackets, e.g. --gdb=[::1]:9001 for IPv6 loopback device port 9001.
 
     --no-error-popup
-        Disables the graphical error message box (outputs to terminal/log file
-        only).
+    --error-popup
+        Disables or enables the graphical error message box. With it disabled,
+        errors go to the terminal and log file only. It is enabled by default,
+        except when --headless is used.
 
     --dump=...
         Dumps some information about app/emulator to dump file. Check
@@ -262,7 +276,9 @@ Other options:
         via tapHLE_options.txt or tapHLE_default_options.txt.
 
     --print-fps
-        Logs the current framerate (FPS) to the console once per second.
+    --no-print-fps
+        Logs the current framerate (FPS) to the console once per second, or
+        stops doing so.
 
     --fps-limit=...
         Modify or disable the framerate (FPS) limit.
@@ -279,6 +295,7 @@ Other options:
         framerate, but may make it less consistent.
 
     --force-composition
+    --no-force-composition
         Forces presentation of renderbuffer as if no fullscreen EAGL layer is
         present, i.e. renderbuffer will go through the compositor.
 
@@ -286,9 +303,12 @@ Other options:
         a performance hit which is undesirable in most of the cases.
 
     --allow-network-access
-        Allow apps running in tapHLE to access the Internet and the local network.
+    --deny-network-access
+        Allow or forbid apps running in tapHLE accessing the Internet and the
+        local network. Access is forbidden by default.
 
     --ignore-gl-errors
+    --report-gl-errors
         Ignore host OpenGL errors as queried by glGetError function.
         This only affects return value of glGetError as seen by the guest
         and nothing else. Should be enabled only for apps which really

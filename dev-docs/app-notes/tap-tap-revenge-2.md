@@ -11,54 +11,136 @@
   `com.tapulous.taptaprevengeII`, version `2.6.4`, minimum OS `2.0`, iPhone.
   The Archive filename carries no version; `--info` is the only source for it.
 - Options: none. Window is 320x480 portrait.
-- tapHLEdb: App 13, version 13, report 21 (2026-07-26, tapHLE `102300c2`,
-  ★★☆☆☆).
+- tapHLEdb: App 13, version 13. Report 21 (2026-07-26, tapHLE `102300c2`,
+  ★★☆☆☆); report 43 (2026-07-27, tapHLE `b1de9e9e`, ★★★☆☆) supersedes it.
 
-## Highest milestone: 2-star (Starts / Menu), tapHLE `102300c2`
+## Highest milestone: 3-star (In game), tapHLE `b1de9e9e`
 
 Reproduced from a clean committed release build (window title
-`Tap Tap (tapHLE 102300c2)`, no `-dirty`) against the hash-verified bytes.
+`Tap Tap (tapHLE b1de9e9e)`, no `-dirty`) against the hash-verified bytes.
 
-Every menu works and is navigable: the animated title screen with Play / Free
-Tracks / Options, the Play menu (One Player, Two Player, Career, Play Online),
-difficulty select (Kids/Easy/Medium/Hard/Extreme), and the track list, which
-renders album art, song titles, artists and durations for the two bundled
-tracks. The welcome alert's text appears in the log.
+Selecting a track loads the theme, parses the note chart and starts the audio
+queue, and **the gameplay screen renders and plays**: notes fall down all three
+lanes, the multiplier, streak and score readouts update, and the beat clock
+drives the chart. Taps register — clicking a lane lights and enlarges its
+target ring and changes the score. Eight captures taken four seconds apart
+during play were eight distinct images.
 
-**It is not in game.** Selecting a track fails, so no note chart is ever played.
+Rated three, not more, because of the hang below. Three is
+"Some gameplay works, but major problems remain", which is exactly this.
+
+### Known limitation: it hangs after a minute or two of play
+
+Play stops. The frame stops changing — five captures taken over ~50 s were
+byte-identical, checked by SHA-256, not by eye — and touches stop registering,
+while the process stays alive and the run loop keeps turning (the log continues
+to grow). It is reproducible: it happened on both runs, at different scores
+(-1,230 and -4,470) and with notes still mid-fall, so it is **not** the
+song-failed transition, which was the first guess.
+
+Nothing is logged at the moment it happens. That is the next thing to attack.
 
 ### Click map
 
-No launch options; window 320x480 portrait; wait ~28 s for the title screen
-(this app does a lot of network and database setup first).
+No launch options; window 320x480 portrait. Startup got slower once views
+started receiving a real layout pass, so allow **40 s** for the title screen.
 
-1. Title -> `(160, 313)` Play -> Play menu.
-2. Play menu -> `(82, 200)` One Player -> difficulty select.
-3. Difficulty -> `(238, 190)` Easy -> track list. **This is the frontier.**
-4. Track list -> `(160, 120)` first track -> fails, see below.
+1. Title -> `(160, 313)` Play -> Play menu. Allow 10 s.
+2. Play menu -> `(82, 200)` One Player -> difficulty select. Allow 10 s.
+3. Difficulty -> `(238, 190)` Easy -> track list. Allow 16 s.
+4. Track list -> `(170, 128)` first track -> gameplay, after ~30 s of loading.
 
-## Frontier: unpacking the beat map
+Every one of these taps is timing-sensitive, and a tap that lands early is
+silently ignored — indistinguishable from a tap that missed. Capture between
+steps rather than trusting the sequence.
 
-Tapping a track gets as far as creating a fresh GLES context for the gameplay
-screen, then panics:
+Lane targets for tapping during play are at `y = 430`, `x = 55 / 160 / 265`.
+
+## What it took: the layout pass
+
+The last blocker was the interesting one, and it was general.
+
+The game view is a standard `EAGLView`: `+[TTRGameView layerClass]` returns
+`CAEAGLLayer`, and `-[TTRRenderer initWithContext:drawable:]` runs. But
+`-[EAGLContext renderbufferStorage:fromDrawable:]` was **never called** — zero
+hits when tracing that selector across a whole session — while
+`presentRenderbuffer:` was called 887 times, each logging "renderbuffer 0 not
+bound to a drawable". The renderer was initialised, believed it had a surface,
+and presented every frame into nothing.
+
+The cause is that the standard EAGLView creates its renderbuffer in
+`-layoutSubviews`, and tapHLE only sent `layoutSubviews` at launch and for a
+window's root view. A view added to a window hierarchy *later* never received
+one. UIKit lays out every view in a window on the next turn of the run loop, so
+that was simply missing; it is fixed on `trunk`, and the pass is deliberately
+skipped for a view not yet in a window, because laying out before the view has
+its final size would create the renderbuffer at the wrong size and nothing
+would re-create it.
+
+Worth noting how misleading the symptom was: an app that runs, loads its data,
+plays audio and draws a blank screen looks like a rendering bug in the
+emulator's compositor. The 887 harmless-looking log lines were the whole
+answer.
+
+### Twelve general gaps cleared to get here
+
+All on `trunk`; none is specific to this game. In the order they were hit:
+
+1. `-[NSDictionary initWithContentsOfFile:]` passed a nil path straight to
+   `to_rust_string()`. Both concrete dictionary classes had the gap.
+2. `UIGraphicsBeginImageContext` and friends — assembled from the existing
+   `CGBitmapContext` and the UIGraphics context stack, not new drawing code.
+3. `-[CALayer renderInContext:]`, deliberately partial: background colour and
+   `contents` only, no transforms or masking, and it says so.
+4. `-[NSMutableString initWithContentsOfFile:]` — the sibling-class trap again.
+5. `CC_MD5_Init`/`_Update`/`_Final`.
+6. `object_getInstanceVariable` and its setter.
+7. Declared-property metadata: `class_getProperty` was a stub returning null.
+8. Return values for `NSInvocation` — `-invoke` asserted the return type was
+   void.
+9. `AudioQueueGetCurrentTime`, `AudioQueueEnqueueBufferWithParameters`'s
+   `outActualStartTime`, and `kAudioFilePropertyPacketToFrame`.
+10. `CFRunLoopTimerCreate` asserted `order == 0`; `MPVolumeSettingsAlert*`;
+    `-[NSCalendar components:fromDate:toDate:options:]`.
+11. `viewDidLoad` was being sent too widely — see below.
+12. The layout pass above.
+
+### The Lua bridge
+
+The app's theme is Lua, and it failed with
 
 ```text
-src\objc\objects.rs:288:77: called `Option::unwrap()` on a `None` value
+[string "theme.cfg"]:1044: attempt to compare function with number
+Error setting up taps: no columns
 ```
 
-That is an object-table lookup for an object that is not there, reached while
-decoding the track. The step before it was the keyed unarchiver returning the
-track's payload, which is a raw `Data` leaf (the bytes begin `M`... consistent
-with an embedded MIDI-like beat map). Handling that leaf is now implemented; the
-failure is one step further on.
+Line 1044 of the app's own `game_defaults.cfg` (loaded under the chunk name
+`theme.cfg`) reads `game.gameController.currentFrameRate < 16`. The bridge
+resolves a property with `class_getProperty`, which tapHLE stubbed out to
+return null, so it fell through to handing Lua a *bound method* instead of the
+value — hence comparing a function with a number. With property metadata parsed
+from the binary the chain `currentFrameRate` -> `gameView` -> `view` ->
+`framesPerSecond` resolves and the theme loads clean.
 
-Next discriminator: run with `TAPHLE_TRACE_SELECTORS` on the track-loading
-selectors to find which object is being messaged when the table lookup fails,
-then decide whether this is an over-release (an object freed while the archive
-still names it) or an object the unarchiver never created. `objects.rs:288` is
-the place to instrument.
+The binary's imports named the mechanism before any tracing did:
+`class_getProperty`, `property_getAttributes` and `object_getInstanceVariable`
+together are a scripting bridge, and all three were missing or stubbed.
 
-## Nine general gaps cleared to get here
+### A regression this session introduced, and the rule behind it
+
+`-[UIViewController view]` was sending `viewDidLoad` whenever the view was
+non-nil. That is wrong, and this app is what proved it: `TTRGameController`
+builds its OpenGL view by hand and calls `-setView:`, and its `viewDidLoad` is
+a **teardown** — it sent `unloadResources`, `removeFromSuperview` and
+`setView:nil`, destroying the game view microseconds after it was created.
+
+The rule is that `viewDidLoad` reports *loading*, so it belongs on exactly two
+paths: after `-loadView` runs, and after a nib supplies the view. A controller
+whose view the app assigned itself never loaded one and must not be told it
+did. Glass Tower HD, which is what motivated sending `viewDidLoad` in the first
+place, still reaches gameplay after the narrowing — verified, not assumed.
+
+## Earlier gaps, cleared before the twelve above
 
 All on `trunk`; none is specific to this game. In the order they were hit:
 

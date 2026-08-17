@@ -696,15 +696,6 @@ impl Fs {
         (fs, bundle_guest_path)
     }
 
-    /// Create a fake filesystem (see [crate::Environment::new_without_app]).
-    pub fn new_fake_fs() -> Fs {
-        Fs {
-            root: FsNode::dir(),
-            working_directory: GuestPathBuf::from(String::new()),
-            home_directory: GuestPathBuf::from(String::new()),
-        }
-    }
-
     /// Get the absolute path of the guest app's (sandboxed) home directory.
     pub fn home_directory(&self) -> &GuestPath {
         &self.home_directory
@@ -848,7 +839,25 @@ impl Fs {
                 }
                 _ => unimplemented!(),
             },
-            _ => unimplemented!(),
+            // Directories have modification times too, and apps ask for them:
+            // a game listing its save folder sorts the worlds by when they were
+            // last played, which is the directory's date, not any one file's.
+            FsNode::Directory { writeable, .. } => match writeable {
+                Some(host_path) => fs::metadata(host_path)
+                    .and_then(|m| m.modified())
+                    .map(|t| {
+                        t.duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs()
+                            .try_into()
+                            .unwrap()
+                    })
+                    .map_err(|_| ()),
+                // A directory tapHLE synthesised — inside an app bundle, say —
+                // has no host counterpart to ask, and inventing a timestamp
+                // would be worse than reporting that there isn't one.
+                None => Err(()),
+            },
         }
     }
 

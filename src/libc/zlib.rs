@@ -29,13 +29,18 @@ use std::io::{Read, Write};
 
 /// `gzFile`. Opaque to the guest; tapHLE hands out a small unique guest
 /// allocation and keeps the real state host-side.
+#[allow(non_camel_case_types)]
 type gzFile = MutVoidPtr;
 
 enum GzStream {
     Reading {
-        /// The whole decompressed file.
+        /// The whole decompressed file, or the file verbatim when it was not
+        /// in gzip format.
         data: Vec<u8>,
         position: usize,
+        /// True when the bytes are being copied through rather than
+        /// decompressed. This is what `gzdirect` reports.
+        direct: bool,
     },
     Writing {
         /// Plaintext accumulated so far, compressed at close.
@@ -82,17 +87,31 @@ fn gzopen(env: &mut Environment, path: ConstPtr<u8>, mode: ConstPtr<u8>) -> gzFi
             log_dbg!("gzopen({:?}) for reading: no such file", path_str);
             return Ptr::null();
         };
+        // zlib reads a file that is *not* in gzip format by copying its bytes
+        // through unchanged — that transparency is documented behaviour of
+        // gzread, not a quirk, and apps rely on it to open a file without
+        // caring whether it was compressed. Failing the open here instead
+        // handed an app a null gzFile for a plain XML level file.
         let mut decoder = flate2::read::MultiGzDecoder::new(&compressed[..]);
         let mut data = Vec::new();
-        if let Err(e) = decoder.read_to_end(&mut data) {
-            log!(
-                "gzopen({:?}): not valid gzip data ({}), failing",
-                path_str,
-                e
-            );
-            return Ptr::null();
+        let mut direct = false;
+        let data = match decoder.read_to_end(&mut data) {
+            Ok(_) => data,
+            Err(e) => {
+                direct = true;
+                log_dbg!(
+                    "gzopen({:?}): not gzip data ({}), reading it as plain bytes",
+                    path_str,
+                    e
+                );
+                compressed
+            }
+        };
+        GzStream::Reading {
+            data,
+            position: 0,
+            direct,
         }
-        GzStream::Reading { data, position: 0 }
     };
 
     // A unique, non-null token the guest can compare and pass back. The
@@ -103,7 +122,8 @@ fn gzopen(env: &mut Environment, path: ConstPtr<u8>, mode: ConstPtr<u8>) -> gzFi
 }
 
 fn gzread(env: &mut Environment, file: gzFile, buf: MutVoidPtr, len: GuestUSize) -> i32 {
-    let Some(GzStream::Reading { data, position }) = State::get(env).streams.get_mut(&file) else {
+    let Some(GzStream::Reading { data, position, .. }) = State::get(env).streams.get_mut(&file)
+    else {
         return -1;
     };
     let available = data.len().saturating_sub(*position);
@@ -153,9 +173,24 @@ fn gzclose(env: &mut Environment, file: gzFile) -> i32 {
     result
 }
 
+/// Whether the stream is being read straight through rather than decompressed.
+///
+/// zlib opens a file that is not in gzip format and copies its bytes through
+/// unchanged; `gzdirect` is how a caller asks which of the two happened. An app
+/// that checks it is usually deciding whether to trust a compressed-size figure
+/// or to take a faster path, so answering wrongly is worse than not answering.
+fn gzdirect(env: &mut Environment, file: gzFile) -> i32 {
+    match State::get(env).streams.get(&file) {
+        Some(GzStream::Reading { direct, .. }) => (*direct).into(),
+        // A write stream is never direct: everything written is compressed.
+        Some(GzStream::Writing { .. }) => 0,
+        None => 0,
+    }
+}
+
 fn gzeof(env: &mut Environment, file: gzFile) -> i32 {
     match State::get(env).streams.get(&file) {
-        Some(GzStream::Reading { data, position }) => (*position >= data.len()).into(),
+        Some(GzStream::Reading { data, position, .. }) => (*position >= data.len()).into(),
         // A write stream is never at end-of-file.
         Some(GzStream::Writing { .. }) => 0,
         None => 1,
@@ -185,7 +220,8 @@ fn gzrewind(env: &mut Environment, file: gzFile) -> i32 {
 fn gzseek(env: &mut Environment, file: gzFile, offset: i32, whence: i32) -> i32 {
     const SEEK_SET: i32 = 0;
     const SEEK_CUR: i32 = 1;
-    let Some(GzStream::Reading { data, position }) = State::get(env).streams.get_mut(&file) else {
+    let Some(GzStream::Reading { data, position, .. }) = State::get(env).streams.get_mut(&file)
+    else {
         return -1;
     };
     let target = match whence {
@@ -201,7 +237,8 @@ fn gzseek(env: &mut Environment, file: gzFile, offset: i32, whence: i32) -> i32 
 }
 
 fn gzgetc(env: &mut Environment, file: gzFile) -> i32 {
-    let Some(GzStream::Reading { data, position }) = State::get(env).streams.get_mut(&file) else {
+    let Some(GzStream::Reading { data, position, .. }) = State::get(env).streams.get_mut(&file)
+    else {
         return -1;
     };
     if *position >= data.len() {
@@ -229,6 +266,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(gzwrite(_, _, _)),
     export_c_func!(gzclose(_)),
     export_c_func!(gzeof(_)),
+    export_c_func!(gzdirect(_)),
     export_c_func!(gztell(_)),
     export_c_func!(gzrewind(_)),
     export_c_func!(gzseek(_, _, _)),

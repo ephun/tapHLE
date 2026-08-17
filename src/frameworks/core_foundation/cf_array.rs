@@ -44,7 +44,11 @@ fn CFArrayCreateMutable(
     callbacks: ConstPtr<CFArrayCallBacks>,
 ) -> CFMutableArrayRef {
     assert!(allocator == kCFAllocatorDefault || env.mem.read(allocator).is_system_default()); // unimplemented
-    assert!(capacity == 0); // TODO: fixed capacity support
+
+    // The capacity is a hint. Core Foundation documents it as the number of
+    // values the array is expected to hold and does not enforce it, so an array
+    // that simply grows is a faithful implementation of any capacity.
+    log_dbg!("CFArrayCreateMutable() with capacity hint {}", capacity);
 
     // A NULL callbacks pointer means the array does not retain/release its
     // values (they need not even be objects). A callbacks struct with a
@@ -63,6 +67,31 @@ fn CFArrayCreateMutable(
     } else {
         msg_class![env; _tapHLE_NSMutableArray_non_retaining new]
     }
+}
+
+/// The immutable counterpart, built from a C array of values. An app that has
+/// its values to hand builds one of these rather than creating a mutable array
+/// and appending; the result is an ordinary array here, because tapHLE has no
+/// separate immutable representation to put it in.
+fn CFArrayCreate(
+    env: &mut Environment,
+    allocator: CFAllocatorRef,
+    values: ConstPtr<ConstVoidPtr>,
+    num_values: CFIndex,
+    callbacks: ConstPtr<CFArrayCallBacks>,
+) -> CFArrayRef {
+    assert!(allocator == kCFAllocatorDefault || env.mem.read(allocator).is_system_default()); // unimplemented
+
+    let array = CFArrayCreateMutable(env, allocator, num_values, callbacks);
+    // A NULL values pointer with a count of zero is legal and means an empty
+    // array; with a non-zero count it is a caller error, and reading from it
+    // would be worse than saying so.
+    assert!(num_values == 0 || !values.is_null());
+    for i in 0..num_values {
+        let value = env.mem.read(values + i.try_into().unwrap());
+        CFArrayAppendValue(env, array, value);
+    }
+    array
 }
 
 fn CFArrayGetCount(env: &mut Environment, array: CFArrayRef) -> CFIndex {
@@ -92,9 +121,10 @@ fn CFArrayGetFirstIndexOfValue(
         let idx: NSUInteger = i.try_into().unwrap();
         let curr: id = msg![env; array objectAtIndex:idx];
         // CF's default equal callback compares by pointer identity, then by the
-        // value's equality. NSObject's isEqual: is pointer identity and CF-typed
-        // subclasses (NSString, NSNumber, ...) override it, so this mirrors both
-        // the CF semantics and the sibling `NSArray indexOfObject:`.
+        // value's equality. NSObject's isEqual: is pointer identity and
+        // CF-typed subclasses (NSString, NSNumber, ...) override it, so this
+        // mirrors both the CF semantics and the sibling `NSArray
+        // indexOfObject:`.
         let equal: bool = msg![env; value isEqual:curr];
         if equal {
             return i;
@@ -133,6 +163,10 @@ fn CFArraySetValueAtIndex(
 fn CFArrayRemoveValueAtIndex(env: &mut Environment, array: CFMutableArrayRef, idx: CFIndex) {
     let idx: NSUInteger = idx.try_into().unwrap();
     msg![env; array removeObjectAtIndex:idx]
+}
+
+fn CFArrayRemoveAllValues(env: &mut Environment, array: CFMutableArrayRef) {
+    msg![env; array removeAllObjects]
 }
 
 // Default CFArray callbacks, matching `kCFTypeArrayCallBacks`. tapHLE does not
@@ -195,6 +229,7 @@ pub const CONSTANTS: ConstantExports = &[(
 )];
 
 pub const FUNCTIONS: FunctionExports = &[
+    export_c_func!(CFArrayCreate(_, _, _, _)),
     export_c_func!(CFArrayCreateMutable(_, _, _)),
     export_c_func!(CFArrayGetCount(_)),
     export_c_func!(CFArrayGetValueAtIndex(_, _)),
@@ -203,4 +238,5 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CFArrayInsertValueAtIndex(_, _, _)),
     export_c_func!(CFArraySetValueAtIndex(_, _, _)),
     export_c_func!(CFArrayRemoveValueAtIndex(_, _)),
+    export_c_func!(CFArrayRemoveAllValues(_)),
 ];

@@ -5,7 +5,7 @@
  */
 //! `UISlider`.
 
-use crate::frameworks::core_graphics::{CGFloat, CGRect};
+use crate::frameworks::core_graphics::CGRect;
 use crate::objc::{
     id, impl_HostObject_with_superclass, msg, msg_super, objc_classes, todo_objc_setter,
     ClassExports, NSZonePtr,

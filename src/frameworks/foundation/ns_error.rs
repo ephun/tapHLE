@@ -15,11 +15,26 @@ pub type NSErrorDomain = id;
 
 pub const NSCocoaErrorDomain: &str = "NSCocoaErrorDomain";
 pub const NSOSStatusErrorDomain: &str = "NSOSStatusErrorDomain";
+/// The remaining error domains Foundation declares. Nothing here raises errors
+/// in them yet, but apps reference the symbols to compare against an error's
+/// domain, and an unbound one is a null pointer they dereference to do it.
+pub const NSPOSIXErrorDomain: &str = "NSPOSIXErrorDomain";
+pub const NSMachErrorDomain: &str = "NSMachErrorDomain";
+
+// `NSUnderlyingErrorKey` is exported from foundation.rs, with Apple's actual
+// value "NSUnderlyingError" rather than the symbol's own name.
+const NSFilePathErrorKey: &str = "NSFilePathErrorKey";
+const NSStringEncodingErrorKey: &str = "NSStringEncodingErrorKey";
+const NSLocalizedRecoverySuggestionErrorKey: &str = "NSLocalizedRecoverySuggestionErrorKey";
 
 const NSLocalizedDescriptionKey: &str = "NSLocalizedDescriptionKey";
 const NSLocalizedFailureReasonErrorKey: &str = "NSLocalizedFailureReasonErrorKey";
 
 pub const NSFileReadNoSuchFileError: NSInteger = 260;
+/// The generic "could not write it" code. Cocoa has finer-grained ones (no
+/// permission, volume full, …) but the guest filesystem does not distinguish
+/// them, so reporting a specific cause would be inventing one.
+pub const NSFileWriteUnknownError: NSInteger = 512;
 
 struct ErrorHostObject {
     domain: NSErrorDomain,
@@ -64,6 +79,14 @@ pub const CLASSES: ClassExports = objc_classes! {
     this
 }
 
+// NSObject's -description is what NSLog("%@") and every diagnostic path reach
+// for, and NSError's is documented to be the localized description. Without it
+// an app logging an error it had handled perfectly well died on an unrecognised
+// selector instead.
+- (id)description {
+    msg![env; this localizedDescription]
+}
+
 - (id)localizedDescription {
     let user_info =  env.objc.borrow::<ErrorHostObject>(this).user_info;
     let key = ns_string::get_static_str(env, NSLocalizedDescriptionKey);
@@ -97,6 +120,14 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.objc.borrow::<ErrorHostObject>(this).code
 }
 
+- (NSErrorDomain)domain {
+    env.objc.borrow::<ErrorHostObject>(this).domain
+}
+
+- (id)userInfo {
+    env.objc.borrow::<ErrorHostObject>(this).user_info
+}
+
 @end
 
 };
@@ -117,5 +148,25 @@ pub const CONSTANTS: ConstantExports = &[
     (
         "_NSOSStatusErrorDomain",
         HostConstant::NSString(NSOSStatusErrorDomain),
+    ),
+    (
+        "_NSPOSIXErrorDomain",
+        HostConstant::NSString(NSPOSIXErrorDomain),
+    ),
+    (
+        "_NSMachErrorDomain",
+        HostConstant::NSString(NSMachErrorDomain),
+    ),
+    (
+        "_NSFilePathErrorKey",
+        HostConstant::NSString(NSFilePathErrorKey),
+    ),
+    (
+        "_NSStringEncodingErrorKey",
+        HostConstant::NSString(NSStringEncodingErrorKey),
+    ),
+    (
+        "_NSLocalizedRecoverySuggestionErrorKey",
+        HostConstant::NSString(NSLocalizedRecoverySuggestionErrorKey),
     ),
 ];

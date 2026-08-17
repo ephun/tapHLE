@@ -177,6 +177,26 @@ impl BundleData {
         }
     }
 
+    /// Read a file that sits beside `Payload/` at the root of an IPA archive.
+    ///
+    /// The App Store wraps a downloaded app with files that are not part of
+    /// the bundle, most usefully `iTunesMetadata.plist`, which is where the
+    /// publisher name and genre live — an app's own `Info.plist` never records
+    /// who published it. Those files are outside the bundle, so they are not
+    /// reachable through the guest filesystem, and they only exist for an IPA:
+    /// an unpacked `.app` directory has no such wrapper.
+    ///
+    /// Returns [None] when this is not an archive or the entry is absent.
+    pub fn read_ipa_root_file(&mut self, name: &str) -> Option<Vec<u8>> {
+        let BundleData::Zip { zip, .. } = self else {
+            return None;
+        };
+        let mut file = zip.by_name(name).ok()?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf).ok()?;
+        Some(buf)
+    }
+
     pub fn read_plist(&mut self) -> Result<Vec<u8>, String> {
         match self {
             BundleData::HostDirectory(path) => {

@@ -47,8 +47,15 @@ fn CFRunLoopTimerCreate(
     context_ptr: MutPtr<CFRunLoopTimerContext>,
 ) -> CFRunLoopTimerRef {
     assert!(allocator == kCFAllocatorDefault || env.mem.read(allocator).is_system_default()); // unimplemented
-    assert_eq!(flags, 0);
-    assert_eq!(order, 0);
+
+    // Apple documents both of these as "currently ignored, pass 0", and real
+    // CoreFoundation does ignore them — `order` in particular only ever meant
+    // anything for run loop *observers*. Callers that pass something else are
+    // not doing anything unsupported, so this notes the value and moves on
+    // rather than aborting the app over an argument with no effect.
+    if flags != 0 || order != 0 {
+        log_dbg!("CFRunLoopTimerCreate: ignoring flags {flags:#x} and order {order}, as CoreFoundation does");
+    }
 
     let info: MutVoidPtr = if !context_ptr.is_null() {
         let context = env.mem.read(context_ptr);

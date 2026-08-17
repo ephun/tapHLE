@@ -61,7 +61,16 @@ pub fn pthread_cond_init(
     cond: MutPtr<pthread_cond_t>,
     attr: ConstPtr<pthread_condattr_t>,
 ) -> i32 {
-    assert!(attr.is_null());
+    // The only standard attribute is process-sharing, and there is no second
+    // process here for a condition variable to be shared with, so an attribute
+    // object carries nothing this needs. Refusing one stopped nineteen apps in
+    // a 1501-app survey.
+    if !attr.is_null() {
+        log_dbg!(
+            "pthread_cond_init() with attributes {:?}, which carry nothing we act on",
+            attr
+        );
+    }
     let opaque = pthread_cond_t {
         magic: MAGIC_COND,
         _unused: [0; 6],
@@ -93,13 +102,26 @@ fn check_or_register_cond(env: &mut Environment, cond: MutPtr<pthread_cond_t>) -
         pthread_cond_init(env, cond, Ptr::null());
         Ok(())
     } else if magic == MAGIC_COND {
+        // The magic number is left behind by pthread_cond_destroy, and freed
+        // memory holding it can be handed out again, so a value that looks
+        // initialised may have no bookkeeping entry. Re-register instead of
+        // letting the callers below unwrap a None — signalling a destroyed
+        // condition variable is a guest bug, but crashing the emulator over it
+        // reports it in the wrong place and at the wrong time.
+        if !State::get_mut(env).condition_variables.contains_key(&cond) {
+            log_dbg!(
+                "Condition variable {:?} carries the initialised magic but has no state; re-registering.",
+                cond
+            );
+            pthread_cond_init(env, cond, Ptr::null());
+        }
         Ok(())
     } else {
         Err(EINVAL)
     }
 }
 
-fn pthread_cond_timedwait(
+pub fn pthread_cond_timedwait(
     env: &mut Environment,
     cond: MutPtr<pthread_cond_t>,
     mutex: MutPtr<pthread_mutex_t>,
@@ -261,8 +283,46 @@ pub fn pthread_cond_destroy(env: &mut Environment, cond: MutPtr<pthread_cond_t>)
     0 // success
 }
 
+/// `pthread_condattr_t` is an empty struct here, so initialising one is writing
+/// the empty value and destroying one is nothing. They exist because the calls
+/// bracket every use of an attribute object, and a missing one is fatal.
+fn pthread_condattr_init(_env: &mut Environment, _attr: MutPtr<pthread_condattr_t>) -> i32 {
+    // Nothing is written, because `pthread_condattr_t` is empty here and a
+    // zero-sized write is rejected by Mem::write. There is also nothing to
+    // store: no attribute this models affects a condition variable, and
+    // pthread_cond_init ignores the object entirely.
+    0
+}
+
+fn pthread_condattr_destroy(_env: &mut Environment, _attr: MutPtr<pthread_condattr_t>) -> i32 {
+    0
+}
+
+fn pthread_condattr_setpshared(
+    _env: &mut Environment,
+    _attr: MutPtr<pthread_condattr_t>,
+    _pshared: i32,
+) -> i32 {
+    // Accepted and ignored: there is no other process to share with.
+    0
+}
+
+fn pthread_condattr_getpshared(
+    env: &mut Environment,
+    _attr: MutPtr<pthread_condattr_t>,
+    pshared: MutPtr<i32>,
+) -> i32 {
+    // PTHREAD_PROCESS_PRIVATE
+    env.mem.write(pshared, 0);
+    0
+}
+
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(pthread_cond_init(_, _)),
+    export_c_func!(pthread_condattr_init(_)),
+    export_c_func!(pthread_condattr_destroy(_)),
+    export_c_func!(pthread_condattr_setpshared(_, _)),
+    export_c_func!(pthread_condattr_getpshared(_, _)),
     export_c_func!(pthread_cond_wait(_, _)),
     export_c_func!(pthread_cond_timedwait(_, _, _)),
     export_c_func!(pthread_cond_signal(_)),

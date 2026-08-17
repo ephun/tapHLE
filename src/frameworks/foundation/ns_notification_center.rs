@@ -8,9 +8,10 @@
 use super::ns_notification::NSNotificationName;
 use super::ns_string;
 
+use crate::abi::CallFromHost;
 use crate::objc::{
-    id, msg, msg_class, msg_send, nil, objc_classes, release, retain, ClassExports, HostObject,
-    NSZonePtr, SEL,
+    block_invoke_function, id, msg, msg_class, msg_send, nil, objc_classes, release, retain,
+    ClassExports, HostObject, NSZonePtr, SEL,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -23,7 +24,10 @@ pub struct State {
 #[derive(Clone)]
 struct Observer {
     observer: id,
-    selector: SEL,
+    /// The message to send, or `None` when this registration is a block. In
+    /// that case `observer` is the block itself, which is both what gets
+    /// invoked and the token `-removeObserver:` is given back.
+    selector: Option<SEL>,
     object: id,
     /// Identity of this individual registration, unique within its centre.
     ///
@@ -118,10 +122,44 @@ pub const CLASSES: ClassExports = objc_classes! {
     host_obj.next_registration += 1;
     host_obj.observers.entry(name).or_default().push(Observer {
         observer,
-        selector,
+        selector: Some(selector),
         object,
         registration,
     });
+}
+
+// The block-based registration. Unlike the selector form there is no observer
+// object, so the returned token *is* the registration's identity — the caller
+// keeps it solely to hand back to -removeObserver:.
+//
+// The block is copied, because a stack block stops being valid as soon as the
+// registering function returns, and this one is invoked long afterwards.
+//
+// The queue argument is ignored: tapHLE delivers notifications synchronously on
+// the posting thread, and it has no separate main-queue scheduling to hop onto.
+- (id)addObserverForName:(NSNotificationName)name
+                  object:(id)object
+                   queue:(id)_queue
+              usingBlock:(id)block {
+    let name = if name != nil {
+        Some(ns_string::to_rust_string(env, name))
+    } else {
+        None
+    };
+
+    let block: id = msg![env; block copy];
+    retain(env, object);
+
+    let host_obj = env.objc.borrow_mut::<NSNotificationCenterHostObject>(this);
+    let registration = host_obj.next_registration;
+    host_obj.next_registration += 1;
+    host_obj.observers.entry(name).or_default().push(Observer {
+        observer: block,
+        selector: None,
+        object,
+        registration,
+    });
+    block
 }
 
 - (())removeObserver:(id)observer {
@@ -231,28 +269,43 @@ pub const CLASSES: ClassExports = objc_classes! {
             .is_some_and(|observers| observers.iter().any(|o| o.registration == registration));
         if !still_registered {
             log_dbg!(
-                "Observer {:?} was removed while {:?} was being posted, not sending {:?}",
+                "Observer {:?} was removed while {:?} was being posted, not delivering {:?}",
                 observer,
                 notification,
-                selector.as_str(&env.mem),
+                selector.map(|selector| selector.as_str(&env.mem).to_string()),
             );
             continue;
         }
 
-        log_dbg!(
-            "Notification {:?} observed, sending {:?} message to {:?}",
-            notification,
-            selector.as_str(&env.mem),
-            observer
-        );
-
         // In some cases, observer could be removed during the
         // processing of the notification, effectively releasing it.
-        // (This is happening with Spore Origins)
+        // (This has been observed in a shipped app)
         // We need to retain it for correctness.
         retain(env, observer);
-        // Signature should be `- (void)notification:(NSNotification *)notif`.
-        let _: () = msg_send(env, (observer, selector, notification));
+        match selector {
+            Some(selector) => {
+                log_dbg!(
+                    "Notification {:?} observed, sending {:?} message to {:?}",
+                    notification,
+                    selector.as_str(&env.mem),
+                    observer
+                );
+                // Signature should be `- (void)notification:(NSNotification
+                // *)notif`.
+                let _: () = msg_send(env, (observer, selector, notification));
+            }
+            None => {
+                log_dbg!(
+                    "Notification {:?} observed, invoking block {:?}",
+                    notification,
+                    observer
+                );
+                // `void (^)(NSNotification *)`, invoked as the block ABI
+                // requires: the block itself is the first argument.
+                let invoke = block_invoke_function(env, observer);
+                let _: () = invoke.call_from_host(env, (observer, notification));
+            }
+        }
         release(env, observer);
     }
 }

@@ -9,6 +9,7 @@ use crate::dyld::{export_c_func, ConstantExports, FunctionExports, HostConstant}
 use crate::frameworks::core_foundation::cf_string::CFStringRef;
 use crate::frameworks::core_foundation::{CFRelease, CFRetain, CFTypeRef};
 use crate::frameworks::foundation::ns_string;
+use crate::mem::GuestUSize;
 use crate::objc::{msg, objc_classes, ClassExports, HostObject};
 use crate::Environment;
 
@@ -114,6 +115,40 @@ pub fn CGColorSpaceGetModel(env: &mut Environment, cs: CGColorSpaceRef) -> CGCol
     }
 }
 
+/// How many components a colour in this model has, not counting alpha.
+///
+/// The exclusion of alpha is Apple's convention for the colour *space*, and it
+/// is the opposite of `CGColorGetNumberOfComponents`, which counts it. Two
+/// functions one letter apart disagreeing about this is a real trap, so it is
+/// said here and at the call sites.
+///
+/// This is also what tells `CGContextSetFillColor` how many entries of a
+/// component array to read before the alpha, which is why it is shared rather
+/// than written out twice.
+pub(super) fn components_in_model(model: CGColorSpaceModel) -> GuestUSize {
+    match model {
+        kCGColorSpaceModelMonochrome => 1,
+        kCGColorSpaceModelRGB => 3,
+        _ => unimplemented!("colour space model {}", model),
+    }
+}
+
+fn CGColorSpaceGetNumberOfComponents(env: &mut Environment, cs: CGColorSpaceRef) -> GuestUSize {
+    components_in_model(CGColorSpaceGetModel(env, cs))
+}
+
+/// Create a colour space object for one of the models tapHLE understands.
+///
+/// Used by `CGColorGetColorSpace`, which has to hand back an object for a
+/// colour that only stores its space as a name.
+pub(super) fn from_name(env: &mut Environment, name: &'static str) -> CGColorSpaceRef {
+    let isa = env
+        .objc
+        .get_known_class("_tapHLE_CGColorSpace", &mut env.mem);
+    env.objc
+        .alloc_object(isa, Box::new(CGColorSpaceHostObject { name }), &mut env.mem)
+}
+
 pub const kCGColorSpaceGenericRGB: &str = "kCGColorSpaceGenericRGB";
 pub const kCGColorSpaceGenericGray: &str = "kCGColorSpaceGenericGray";
 
@@ -128,6 +163,20 @@ pub const CONSTANTS: ConstantExports = &[
     ),
 ];
 
+#[cfg(test)]
+mod tests {
+    use super::{components_in_model, kCGColorSpaceModelMonochrome, kCGColorSpaceModelRGB};
+
+    #[test]
+    fn component_counts_exclude_alpha() {
+        // Grey is one component plus alpha, RGB is three plus alpha. If these
+        // ever came back as 2 and 4, CGContextSetFillColor would read the alpha
+        // entry as a colour component and one past the end as the alpha.
+        assert_eq!(components_in_model(kCGColorSpaceModelMonochrome), 1);
+        assert_eq!(components_in_model(kCGColorSpaceModelRGB), 3);
+    }
+}
+
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CGColorSpaceCreateWithName(_)),
     export_c_func!(CGColorSpaceCreateDeviceRGB()),
@@ -135,4 +184,5 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CGColorSpaceRetain(_)),
     export_c_func!(CGColorSpaceRelease(_)),
     export_c_func!(CGColorSpaceGetModel(_)),
+    export_c_func!(CGColorSpaceGetNumberOfComponents(_)),
 ];

@@ -17,11 +17,7 @@ is currently available from an App Store or another viable authorized source.
 
 The project permits good-faith compatibility research on software reasonably
 believed to be genuinely abandoned: no longer sold or supported and without a
-viable authorized way to obtain it. Compatibility records may link to a public
-Archive.org item and identify the exact tested version and hashes so another
-contributor can reproduce the result. Such a link records test provenance; it
-is not a claim that the software is public domain or a grant of redistribution
-rights.
+viable authorized way to obtain it. 
 
 Contributors must use good judgment, document why an archived title qualifies,
 and stop linking or testing a disputed artifact while maintainers review a

@@ -93,6 +93,20 @@ pub fn find_fullscreen_eagl_layer(env: &mut Environment) -> id {
             //       layer (typical example is 90° rotation).
             || !layer_host_obj.affine_transform.is_identity()
         {
+            // Say which test failed. "Composition was used instead of direct
+            // presentation" is otherwise invisible, and it is the difference
+            // between a game that draws and one that shows a blank window.
+            log_dbg!(
+                "Not a fullscreen EAGL layer: {:?} bounds {:?} (screen {:?}), anchor {:?}, position {:?}, hidden {}, opacity {}, identity transform {}",
+                layer,
+                layer_host_obj.bounds,
+                screen_bounds,
+                layer_host_obj.anchor_point,
+                layer_host_obj.position,
+                layer_host_obj.hidden,
+                layer_host_obj.opacity,
+                layer_host_obj.affine_transform.is_identity(),
+            );
             return nil;
         }
 

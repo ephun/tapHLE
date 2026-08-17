@@ -7,10 +7,10 @@
 
 use std::collections::hash_map::Entry;
 
-use crate::dyld::FunctionExports;
+use crate::dyld::{ConstantExports, FunctionExports, HostConstant};
 use crate::environment::Environment;
 use crate::export_c_func;
-use crate::mem::{ConstPtr, MutPtr};
+use crate::mem::{ConstPtr, ConstVoidPtr, MutPtr};
 
 pub type LocaleCategory = i32;
 pub const LC_ALL: LocaleCategory = 0;
@@ -50,5 +50,22 @@ pub fn setlocale(
     }
     env.libc_state.clocale.locale.get(&category).unwrap().cast()
 }
+
+/// `MB_CUR_MAX` is a macro for this variable, and it is how any code that walks
+/// a string byte by byte decides whether a byte can be a character on its own.
+/// It is 1 in the "C" locale, which is the only locale tapHLE describes:
+/// `setlocale()` above hands back "C", and the rune locale in `ctype.rs`
+/// declares its encoding as "NONE".
+///
+/// It is exported because an unbound data import is a null pointer sitting in
+/// `__DATA` waiting to be read, not a harmless warning — and this one is
+/// referenced by 40 of the 50 apps in the local collection, more than any other
+/// unbound symbol. Whatever else those apps do, none of them should be
+/// dereferencing null to ask how wide a character is.
+fn mb_cur_max(env: &mut Environment) -> ConstVoidPtr {
+    env.mem.alloc_and_write(1i32).cast_void().cast_const()
+}
+
+pub const CONSTANTS: ConstantExports = &[("___mb_cur_max", HostConstant::Custom(mb_cur_max))];
 
 pub const FUNCTIONS: FunctionExports = &[export_c_func!(setlocale(_, _))];

@@ -30,13 +30,17 @@ pub const ENOTDIR: i32 = 20;
 pub const EISDIR: i32 = 21;
 pub const EINVAL: i32 = 22;
 pub const ESPIPE: i32 = 29;
+pub const ENOSPC: i32 = 28;
 pub const EROFS: i32 = 30;
 pub const EAGAIN: i32 = 35;
 pub const EPROTONOSUPPORT: i32 = 43;
+pub const EAFNOSUPPORT: i32 = 47;
 pub const ENOTSUP: i32 = 45;
 pub const ECONNRESET: i32 = 54;
 pub const ETIMEDOUT: i32 = 60;
 pub const EOVERFLOW: i32 = 84;
+/// Darwin's "attribute not found", reported by the extended-attribute calls.
+pub const ENOATTR: i32 = 93;
 
 #[derive(Default)]
 pub struct State {
@@ -119,9 +123,12 @@ fn strerror(env: &mut Environment, err_num: i32) -> ConstPtr<u8> {
             EISDIR => "Is a directory",
             EINVAL => "Invalid argument",
             ESPIPE => "Illegal seek",
+            ENOSPC => "No space left on device",
             EROFS => "Read-only file system",
             EAGAIN => "Resource temporarily unavailable",
             EPROTONOSUPPORT => "Protocol not supported",
+            EAFNOSUPPORT => "Address family not supported by protocol family",
+            ENOATTR => "Attribute not found",
             ENOTSUP => "Operation not supported",
             ECONNRESET => "Connection reset by peer",
             ETIMEDOUT => "Operation timed out",

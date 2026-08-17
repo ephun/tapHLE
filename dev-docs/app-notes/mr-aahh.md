@@ -92,3 +92,13 @@ are not, suspect the sprite that owns them never being added.
 - `cargo fmt --all -- --check`
 - `cargo test --workspace --lib` (93 passed)
 - `cargo build --release`
+
+## 2026-07-27: 3 stars re-confirmed
+
+Re-driven after a session of broad UIKit and CoreGraphics changes, using the
+taps already recorded in this note — `(378, 148)` then `(240, 160)`. Two
+captures eight seconds apart differ by SHA-256, so the loop is running.
+
+Verified on a build of `0d8f5ec8`. The only source file changed between that and
+`trunk` is `ca_eagl_layer.rs`, and that change adds a `log_dbg!` and nothing
+else, so the emulator behaviour under test is identical to `trunk`.

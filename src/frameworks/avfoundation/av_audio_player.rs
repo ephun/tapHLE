@@ -22,11 +22,12 @@ use crate::frameworks::carbon_core::eofErr;
 use crate::frameworks::core_audio_types::AudioStreamBasicDescription;
 use crate::frameworks::core_foundation::cf_run_loop::kCFRunLoopCommonModes;
 use crate::frameworks::foundation::ns_error::NSOSStatusErrorDomain;
+use crate::frameworks::foundation::ns_run_loop;
 use crate::frameworks::foundation::{ns_string, NSInteger, NSTimeInterval, NSUInteger};
 use crate::mem::{guest_size_of, ConstVoidPtr, GuestUSize, MutPtr, MutVoidPtr, Ptr};
 use crate::objc::{
-    autorelease, id, msg, msg_class, nil, objc_classes, release, retain, todo_objc_setter, Class,
-    ClassExports, HostObject, NSZonePtr,
+    autorelease, id, msg, msg_class, msg_send, nil, objc_classes, release, retain,
+    todo_objc_setter, Class, ClassExports, HostObject, NSZonePtr,
 };
 use crate::Environment;
 
@@ -52,6 +53,54 @@ struct AVAudioPlayerHostObject {
     num_of_loops: NSInteger,
 }
 impl HostObject for AVAudioPlayerHostObject {}
+
+/// Report an `OSStatus` failure through an `NSError **`, which may be NULL.
+///
+/// Passing NULL is how a caller says it does not want the error, and it is
+/// common — an app that already knows it will give up does not need one. The
+/// two initialisers here each open-coded this, and one of them wrote through
+/// the pointer without checking, so a game that declined the error and then hit
+/// an unreadable sound file was killed by the report rather than by the
+/// failure. A game that loads a scene's sounds in bulk does both at once.
+fn write_os_status_error(env: &mut Environment, out_error: MutPtr<id>, status: NSInteger) {
+    if out_error.is_null() {
+        return;
+    }
+    let domain = ns_string::get_static_str(env, NSOSStatusErrorDomain);
+    let error = msg_class![env; NSError alloc];
+    let error: id = msg![env; error initWithDomain:domain code:status userInfo:nil];
+    autorelease(env, error);
+    env.mem.write(out_error, error);
+}
+
+/// Ask for the delegate to be told its sound reached the end, which is the only
+/// signal an `AVAudioPlayer` gives that playback is over.
+///
+/// tapHLE stopped the queue and cleared `is_playing` but told nobody, so an app
+/// that sequences itself on audio finishing — a cutscene advancing when its
+/// narration ends, a menu waiting on a sting before changing screen — waited
+/// forever.
+///
+/// It is queued on the run loop rather than sent from here, because here is
+/// inside the audio queue's own buffer callback. Delegates routinely release
+/// the player in this method, which disposes the queue that is still being
+/// serviced further up the stack; doing it synchronously crashed on a disposed
+/// queue in `prime_audio_queue`. A device delivers this on the run loop too.
+///
+/// The player is retained across the hop. The release in the delegate method is
+/// exactly the case that makes that necessary.
+fn schedule_did_finish_playing(env: &mut Environment, player: id) {
+    let delegate = env.objc.borrow::<AVAudioPlayerHostObject>(player).delegate;
+    if delegate == nil {
+        return;
+    }
+    let Some(selector) = env.objc.lookup_selector("tapHLE_deliverDidFinishPlaying") else {
+        return;
+    };
+    retain(env, player);
+    let run_loop: id = msg_class![env; NSRunLoop mainRunLoop];
+    ns_run_loop::add_perform_request(env, run_loop, player, selector, nil, Some(0.0), false);
+}
 
 pub const CLASSES: ClassExports = objc_classes! {
 
@@ -86,6 +135,18 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (id)initWithContentsOfURL:(id)url // NSURL*
                       error:(MutPtr<id>)out_error { // NSError**
+    // A nil URL gives nil back, the way AVFoundation does, rather than being
+    // read through. Games reach this on their own error paths: a sound whose
+    // file is missing produces a nil URL, and the code that then builds a
+    // player from it is the code meant to notice and carry on. The Jim and
+    // Frank Mysteries HD does exactly that while opening its first scene,
+    // where several of its sounds do not load.
+    if url == nil {
+        write_os_status_error(env, out_error, -50); // paramErr
+        release(env, this);
+        return nil;
+    }
+
     let path: id = msg![env; url path];
     let path_str = ns_string::to_rust_string(env, path);
     log_dbg!("[(AVAudioPlayer*){:?} initWithContentsOfURL:{:?} {} outError:{:?}]", this, url, path_str, out_error);
@@ -100,13 +161,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.objc.borrow_mut::<AVAudioPlayerHostObject>(this).audio_file_id = Some(audio_file_id);
     env.mem.free(tmp_afi_ptr.cast());
     if status != 0 {
-        if !out_error.is_null() {
-            let domain = ns_string::get_static_str(env, NSOSStatusErrorDomain);
-            let error = msg_class![env; NSError alloc];
-            let error = msg![env; error initWithDomain:domain code:status userInfo:nil];
-            autorelease(env, error);
-            env.mem.write(out_error, error);
-        }
+        write_os_status_error(env, out_error, status);
         release(env, this);
         return nil;
     }
@@ -116,6 +171,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (id)initWithData:(id)data // NSData*
              error:(MutPtr<id>)out_error { // NSError**
+    if data == nil {
+        write_os_status_error(env, out_error, -50); // paramErr
+        release(env, this);
+        return nil;
+    }
     let bytes: ConstVoidPtr = msg![env; data bytes];
     let length: NSUInteger = msg![env; data length];
     let data_vec = env
@@ -132,17 +192,32 @@ pub const CLASSES: ClassExports = objc_classes! {
             this
         }
         Err(_) => {
-            let domain = ns_string::get_static_str(env, NSOSStatusErrorDomain);
-            let error = msg_class![env; NSError alloc];
-            let code = -1; // TODO: set a proper code
-            let error = msg![env; error initWithDomain:domain code:code userInfo:nil];
-            autorelease(env, error);
-            env.mem.write(out_error, error);
-
+            write_os_status_error(env, out_error, -1); // TODO: a proper code
             release(env, this);
             nil
         }
     }
+}
+
+// Deliver the queued end-of-playback notification. See
+// [schedule_did_finish_playing] for why this is not sent directly.
+- (())tapHLE_deliverDidFinishPlaying {
+    let delegate = env.objc.borrow::<AVAudioPlayerHostObject>(this).delegate;
+    if delegate != nil {
+        // The delegate is not retained, per the property, so check it still
+        // answers before messaging it.
+        if let Some(selector) = env
+            .objc
+            .lookup_selector("audioPlayerDidFinishPlaying:successfully:")
+        {
+            let responds: bool = msg![env; delegate respondsToSelector:selector];
+            if responds {
+                log_dbg!("[(AVAudioPlayer*){:?}] telling {:?} playback finished", this, delegate);
+                () = msg_send(env, (delegate, selector, this, true));
+            }
+        }
+    }
+    release(env, this);
 }
 
 - (id)delegate {
@@ -472,6 +547,7 @@ fn _tapHLE_AVAudioPlayerOutputBufferHelper(
             env.objc
                 .borrow_mut::<AVAudioPlayerHostObject>(av_audio_player)
                 .is_playing = false;
+            schedule_did_finish_playing(env, av_audio_player);
         } else {
             if number_of_loops > 0 {
                 env.objc

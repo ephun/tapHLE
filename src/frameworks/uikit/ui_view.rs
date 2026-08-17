@@ -8,6 +8,7 @@
 //! Useful resources:
 //! - Apple's [View Programming Guide for iOS](https://developer.apple.com/library/archive/documentation/WindowsViews/Conceptual/ViewPG_iPhoneOS/Introduction/Introduction.html)
 
+pub mod ui_action_sheet;
 pub mod ui_alert_view;
 pub mod ui_control;
 pub mod ui_image_view;
@@ -33,7 +34,10 @@ use crate::frameworks::core_animation::CACurrentMediaTime;
 use crate::frameworks::core_foundation::time::CFTimeInterval;
 use crate::frameworks::core_graphics::cg_affine_transform::CGAffineTransform;
 use crate::frameworks::core_graphics::cg_color::CGColorRef;
-use crate::frameworks::core_graphics::cg_context::{CGContextClearRect, CGContextRef};
+use crate::frameworks::core_graphics::cg_context::{
+    CGContextClearRect, CGContextRef, CGContextRestoreGState, CGContextSaveGState,
+    CGContextScaleCTM, CGContextTranslateCTM,
+};
 use crate::frameworks::core_graphics::{CGFloat, CGPoint, CGRect, CGSize};
 use crate::frameworks::foundation::ns_string::{from_rust_string, get_static_str, to_rust_string};
 use crate::frameworks::foundation::{ns_array, NSInteger, NSTimeInterval, NSUInteger};
@@ -89,6 +93,16 @@ pub struct UIViewHostObject {
     clears_context_before_drawing: bool,
     user_interaction_enabled: bool,
     multiple_touch_enabled: bool,
+    /// `UIViewAutoresizing`. Stored and reported back, but not acted on: tapHLE
+    /// does not resize subviews when a superview's bounds change.
+    /// Round-tripping it still matters, because layout code reads the mask back
+    /// to decide what to do — and now that views actually receive a layout
+    /// pass, that happens.
+    autoresizing_mask: NSUInteger,
+    /// Likewise stored and reported back rather than acted on.
+    autoresizes_subviews: bool,
+    /// Set by `-setNeedsLayout`, cleared when the layout actually happens.
+    needs_layout: bool,
 }
 impl HostObject for UIViewHostObject {}
 impl Default for UIViewHostObject {
@@ -104,6 +118,11 @@ impl Default for UIViewHostObject {
             clears_context_before_drawing: true,
             user_interaction_enabled: true,
             multiple_touch_enabled: false,
+            // UIViewAutoresizingNone.
+            autoresizing_mask: 0,
+            // UIKit's default is YES.
+            autoresizes_subviews: true,
+            needs_layout: false,
         }
     }
 }
@@ -138,6 +157,28 @@ pub fn set_view_controller(env: &mut Environment, view: id, controller: id) {
 /// called here.
 ///
 /// Do not call this in subclasses of `UIView`.
+/// Whether `view_class` supplies its own `-drawRect:` below `UIView`.
+///
+/// `class_has_method_named` cannot answer this: it walks the whole chain, and
+/// every view inherits `UIView`'s do-nothing `-drawRect:`, so it says yes for
+/// all of them. Only a class that overrides it actually draws anything, and
+/// only those need backing store — hence `class_has_uninherited_method`, and
+/// the walk stopping at `UIView` rather than at the root.
+fn draws_its_own_content(env: &mut Environment, view_class: Class) -> bool {
+    let Some(draw_rect) = env.objc.lookup_selector("drawRect:") else {
+        return false;
+    };
+    let ui_view_class = env.objc.get_known_class("UIView", &mut env.mem);
+    let mut class = view_class;
+    while class != nil && class != ui_view_class {
+        if env.objc.class_has_uninherited_method(class, draw_rect) {
+            return true;
+        }
+        class = env.objc.class_get_superclass(class);
+    }
+    false
+}
+
 fn init_common(env: &mut Environment, this: id) -> id {
     let view_class: Class = msg![env; this class];
     let layer_class: Class = msg![env; view_class layerClass];
@@ -149,9 +190,95 @@ fn init_common(env: &mut Environment, this: id) -> id {
 
     env.objc.borrow_mut::<UIViewHostObject>(this).layer = layer;
 
+    // A new view draws itself once without being asked. A bare CALayer does
+    // not — you must call `-setNeedsDisplay` — and tapHLE was applying the
+    // layer's rule to views, so a view whose entire appearance comes from
+    // `-drawRect:` stayed blank forever unless the app happened to invalidate
+    // it for some other reason. Nothing in UIKit's contract makes an app do
+    // that, so most never did.
+    //
+    // The measured case: a bundled social SDK presents a full-screen view over
+    // the game, that view's buttons are drawn in `-drawRect:`, and across a
+    // whole startup `-drawRect:` was never called even once. The panel
+    // therefore had no button to press, and
+    // pressing one is the only thing that dismisses it.
+    //
+    // Restricted to classes that override `-drawRect:`, because displaying a
+    // layer allocates a bitmap the size of the view in guest memory. Views that
+    // draw nothing would pay that for an empty image.
+    if draws_its_own_content(env, view_class) {
+        () = msg![env; layer setNeedsDisplay];
+    }
+
     env.framework_state.uikit.ui_view.views.push(this);
 
     this
+}
+
+/// Flag a newly mounted view for layout.
+///
+/// UIKit lays out every view in a window on the next turn of the run loop, and
+/// the emphasis is on *next turn*: the layout does not happen inside
+/// `-addSubview:`. tapHLE only ever laid out at launch and for a window's root
+/// view, so a view added later never received `-layoutSubviews` at all — which
+/// matters because the standard `EAGLView` creates its renderbuffer there, and
+/// without it presents every frame into no drawable.
+///
+/// Doing it **synchronously** here, which is what this did first, breaks apps
+/// outright: an app faulted during startup because its layout ran while the
+/// view hierarchy was still being built, a moment no app expects. Merely
+/// flagging it, and letting `handle_pending_layout` service it on the next run
+/// loop turn, is both what UIKit does and what apps survive.
+///
+/// A view not yet in a window is flagged anyway; `handle_pending_layout` skips
+/// it until it is mounted, so it is laid out once it has a real size rather
+/// than at the wrong one.
+pub(super) fn mark_needs_layout_on_mount(env: &mut Environment, view: id) {
+    env.objc.borrow_mut::<UIViewHostObject>(view).needs_layout = true;
+
+    // During launch, leave it at the flag. The app is still assembling its view
+    // hierarchy, and running its layout code now is what kills it.
+    if !env.framework_state.uikit.ui_application.finished_launching {
+        return;
+    }
+
+    // Afterwards, lay out immediately if the view is already in a window.
+    // Waiting for the next run loop turn is closer to UIKit, but it costs a
+    // frame — and for an EAGLView that frame is presented into no drawable,
+    // which is how an app loses its background: the first frames of its game
+    // screen are drawn before the layout that creates the surface.
+    let window: id = msg![env; view window];
+    if window == nil {
+        return;
+    }
+    env.objc.borrow_mut::<UIViewHostObject>(view).needs_layout = false;
+    () = msg![env; view layoutSubviews];
+}
+
+/// For use by `NSRunLoop`: perform the layout that `-setNeedsLayout` deferred.
+///
+/// UIKit coalesces every request made during a turn of the run loop into one
+/// layout pass at the end of it, which is the whole reason `-setNeedsLayout` is
+/// separate from `-layoutSubviews`. Doing it here rather than at the call site
+/// is what makes it safe for a view to ask for layout from inside its own
+/// layout, and it means N requests cost one pass rather than N.
+///
+/// A view not in a window is left flagged rather than laid out, so it gets its
+/// pass when it is eventually mounted instead of being laid out at the wrong
+/// size and never revisited.
+pub fn handle_pending_layout(env: &mut Environment) {
+    let views = env.framework_state.uikit.ui_view.views.clone();
+    for view in views {
+        if !env.objc.borrow::<UIViewHostObject>(view).needs_layout {
+            continue;
+        }
+        let window: id = msg![env; view window];
+        if window == nil {
+            continue;
+        }
+        env.objc.borrow_mut::<UIViewHostObject>(view).needs_layout = false;
+        () = msg![env; view layoutSubviews];
+    }
 }
 
 pub const CLASSES: ClassExports = objc_classes! {
@@ -215,6 +342,36 @@ pub const CLASSES: ClassExports = objc_classes! {
     assert!(repeat_count >= 0.0);
     let value: id = msg_class![env; NSNumber numberWithFloat:repeat_count];
     () = msg_class![env; CATransaction setValue:value forKey:(get_static_str(env, tapHLE_kCATransactionAnimationRepeatCount))];
+}
+
++ (())setAnimationBeginsFromCurrentState:(bool)from_current_state {
+    // This chooses whether an animation that interrupts another starts from the
+    // interrupted one's presented values or from the model values. tapHLE does
+    // not model an in-flight animation's presented state, so both answers are
+    // the same here and there is nothing to record. The view still reaches the
+    // right final state either way; only the path it takes could differ.
+    log_dbg!("TODO: ignoring [UIView setAnimationBeginsFromCurrentState:{}]", from_current_state);
+}
+
++ (())setAnimationTransition:(NSInteger)transition
+                     forView:(id)view
+                       cache:(bool)cache {
+    // Flip and curl transitions. Ignoring the transition leaves the view
+    // hierarchy in its correct final state, just without the effect.
+    log_dbg!(
+        "TODO: ignoring [UIView setAnimationTransition:{} forView:{:?} cache:{}]",
+        transition, view, cache
+    );
+}
+
++ (bool)areAnimationsEnabled {
+    let disabled: bool = msg_class![env; CATransaction disableActions];
+    !disabled
+}
+
++ (())setAnimationsEnabled:(bool)enabled {
+    log_dbg!("[UIView setAnimationsEnabled:{}]", enabled);
+    () = msg_class![env; CATransaction setDisableActions:(!enabled)];
 }
 
 + (())setAnimationDelegate:(id)delegate {
@@ -299,7 +456,8 @@ pub const CLASSES: ClassExports = objc_classes! {
                animations:(id)animations // block
                completion:(id)completion { // block, may be nil
     // TODO: UIViewAnimationOptions (curve, autoreverse, repeat, allow user
-    // interaction). Delay is honoured because the older API already supports it.
+    // interaction). Delay is honoured because the older API already supports
+    // it.
     () = msg_class![env; UIView beginAnimations:nil context:(ConstVoidPtr::null())];
     () = msg_class![env; UIView setAnimationDuration:duration];
     () = msg_class![env; UIView setAnimationDelay:delay];
@@ -603,6 +761,25 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (())addSubview:(id)view {
+    if crate::log::debug_enabled_for(module_path!()) {
+        fn describe(env: &Environment, o: id) -> String {
+            if o == nil {
+                return "nil".to_string();
+            }
+            let class = ObjC::read_isa(o, &env.mem);
+            let name = env.objc.get_class_name(class);
+            let layer = env.objc.borrow::<UIViewHostObject>(o).layer;
+            if layer == nil {
+                return format!("{name} {o:?} (no layer)");
+            }
+            let layer_class = ObjC::read_isa(layer, &env.mem);
+            let layer_name = env.objc.get_class_name(layer_class);
+            format!("{name} {o:?} (layer {layer_name} {layer:?})")
+        }
+        let this_desc = describe(env, this);
+        let view_desc = describe(env, view);
+        log_dbg!("MOUNT [{this_desc} addSubview:{view_desc}]");
+    }
     log_dbg!("[(UIView*){:?} addSubview:{:?}] => ()", this, view);
 
     if view == nil {
@@ -622,6 +799,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         this_obj.subviews.push(view);
         let this_layer = this_obj.layer;
         () = msg![env; this_layer addSublayer:subview_layer];
+        mark_needs_layout_on_mount(env, view);
     }
 }
 
@@ -644,6 +822,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     assert!(index >= 0);
     () = msg![env; this_layer insertSublayer:subview_layer atIndex:(index as u32)];
+    mark_needs_layout_on_mount(env, view);
 }
 
 - (())insertSubview:(id)view belowSubview:(id)sibling {
@@ -666,6 +845,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     subviews.insert(idx, view);
 
     () = msg![env; this_layer insertSublayer:subview_layer below:sibling_layer];
+    mark_needs_layout_on_mount(env, view);
 }
 
 - (())bringSubviewToFront:(id)subview {
@@ -749,6 +929,9 @@ pub const CLASSES: ClassExports = objc_classes! {
         clears_context_before_drawing: _,
         user_interaction_enabled: _,
         multiple_touch_enabled: _,
+        autoresizing_mask: _,
+        autoresizes_subviews: _,
+        needs_layout: _,
     } = std::mem::take(env.objc.borrow_mut(this));
 
     release(env, layer);
@@ -909,7 +1092,21 @@ pub const CLASSES: ClassExports = objc_classes! {
         CGContextClearRect(env, context, bounds);
     }
     UIGraphicsPushContext(env, context);
+    // UIKit hands -drawRect: a context whose origin is the top-left corner and
+    // whose y grows downward, which is the opposite of the Core Graphics
+    // context underneath it. A view draws to those coordinates, so without the
+    // flip everything it paints lands mirrored top to bottom -- and a
+    // full-screen view drawn that way is not obviously mirrored, it just looks
+    // wrong in a way that is easy to blame on the compositor.
+    //
+    // Only this path gets the flip. A plain CALayer delegate that implements
+    // drawLayer:inContext: itself is drawing in Core Graphics' coordinates and
+    // must not be flipped, which is why this is here and not in CALayer.
+    CGContextSaveGState(env, context);
+    CGContextTranslateCTM(env, context, 0.0, bounds.size.height);
+    CGContextScaleCTM(env, context, 1.0, -1.0);
     () = msg![env; this drawRect:bounds];
+    CGContextRestoreGState(env, context);
     UIGraphicsPopContext(env);
 }
 
@@ -1012,11 +1209,44 @@ pub const CLASSES: ClassExports = objc_classes! {
     msg![env; this_layer convertRect:rect toLayer:other_layer]
 }
 
+// Stored and reported back, but not acted on: tapHLE does not resize subviews
+// when a superview's bounds change. That is a real gap and a view relying on it
+// will be laid out wrongly — but silently discarding the value was worse, since
+// a view that reads its own mask back got a different answer than it set, and
+// UIKit code branches on that.
 - (())setAutoresizingMask:(NSUInteger)mask {
-    todo_objc_setter!(this, mask);
+    log_dbg!("TODO: [(UIView*){:?} setAutoresizingMask:{}] is stored but not applied", this, mask);
+    env.objc.borrow_mut::<UIViewHostObject>(this).autoresizing_mask = mask;
+}
+// Deferred, as UIKit defers it: the layout happens on the next turn of the run
+// loop, not inside this call.
+//
+// That distinction is not pedantry here. Laying out synchronously would recurse
+// without bound the moment any view calls -setNeedsLayout from inside its own
+// -layoutSubviews, which is ordinary, correct UIKit code — a control that
+// resizes itself in response to its content does exactly that.
+- (())setNeedsLayout {
+    env.objc.borrow_mut::<UIViewHostObject>(this).needs_layout = true;
+}
+
+// The escape hatch from the deferral: lay out now, whether or not anything
+// asked for it. UIKit walks up to the top of the hierarchy first; tapHLE lays
+// out this view and its subtree, which is what callers use it for (measure a
+// view before reading its frame).
+- (())layoutIfNeeded {
+    env.objc.borrow_mut::<UIViewHostObject>(this).needs_layout = false;
+    () = msg![env; this layoutSubviews];
+}
+
+- (NSUInteger)autoresizingMask {
+    env.objc.borrow::<UIViewHostObject>(this).autoresizing_mask
 }
 - (())setAutoresizesSubviews:(bool)enabled {
-    todo_objc_setter!(this, enabled);
+    log_dbg!("TODO: [(UIView*){:?} setAutoresizesSubviews:{}] is stored but not applied", this, enabled);
+    env.objc.borrow_mut::<UIViewHostObject>(this).autoresizes_subviews = enabled;
+}
+- (bool)autoresizesSubviews {
+    env.objc.borrow::<UIViewHostObject>(this).autoresizes_subviews
 }
 
 - (CGSize)sizeThatFits:(CGSize)size {

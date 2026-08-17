@@ -12,12 +12,41 @@ use std::ops::{Add, Mul, Sub};
 use super::CGFloat;
 use crate::abi::{impl_GuestRet_for_large_struct, GuestArg};
 use crate::dyld::{export_c_func, ConstantExports, FunctionExports, HostConstant};
-use crate::mem::SafeRead;
+use crate::mem::{MutPtr, SafeRead};
 use crate::Environment;
 
-fn parse_tuple(s: &str) -> Result<(f32, f32), ()> {
-    let (a, b) = s.split_once(", ").ok_or(())?;
-    Ok((a.parse().map_err(|_| ())?, b.parse().map_err(|_| ())?))
+/// Read the numbers out of a braced geometry string, ignoring layout.
+///
+/// Core Graphics writes `{{0, 0}, {1024, 768}}` and reads back anything of that
+/// shape regardless of whitespace. tapHLE used to require the exact spelling it
+/// emits — `", "` between numbers and `"}, {"` between the pairs — which made
+/// the compact `{{0,0},{1024,768}}` fail and, per the documented contract for
+/// malformed input, come back as zeroes.
+///
+/// That is not a hypothetical spelling. A game can store
+/// every element's frame as a string in its scene plists, and its chapters use
+/// the compact form while its main menu uses the spaced one — so the menu drew
+/// and every chapter was a black screen of correctly loaded, correctly bound,
+/// zero-sized quads.
+fn parse_numbers<const N: usize>(s: &str) -> Result<[f32; N], ()> {
+    let mut out = [0.0; N];
+    let mut count = 0;
+    for field in s.split(['{', '}', ',']) {
+        let field = field.trim();
+        if field.is_empty() {
+            continue;
+        }
+        if count == N {
+            return Err(()); // more numbers than this shape holds
+        }
+        out[count] = field.parse().map_err(|_| ())?;
+        count += 1;
+    }
+    if count == N {
+        Ok(out)
+    } else {
+        Err(())
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -45,8 +74,7 @@ impl GuestArg for CGPoint {
 impl std::str::FromStr for CGPoint {
     type Err = ();
     fn from_str(s: &str) -> Result<CGPoint, ()> {
-        let s = s.strip_prefix('{').ok_or(())?.strip_suffix('}').ok_or(())?;
-        let (x, y) = parse_tuple(s)?;
+        let [x, y] = parse_numbers(s)?;
         Ok(CGPoint { x, y })
     }
 }
@@ -120,12 +148,8 @@ impl GuestArg for CGSize {
 impl std::str::FromStr for CGSize {
     type Err = ();
     fn from_str(s: &str) -> Result<CGSize, ()> {
-        let s = s.strip_prefix('{').ok_or(())?.strip_suffix('}').ok_or(())?;
-        let (w, h) = parse_tuple(s)?;
-        Ok(CGSize {
-            width: w,
-            height: h,
-        })
+        let [width, height] = parse_numbers(s)?;
+        Ok(CGSize { width, height })
     }
 }
 impl std::fmt::Display for CGSize {
@@ -201,14 +225,7 @@ impl GuestArg for CGRect {
 impl std::str::FromStr for CGRect {
     type Err = ();
     fn from_str(s: &str) -> Result<CGRect, ()> {
-        let s = s
-            .strip_prefix("{{")
-            .ok_or(())?
-            .strip_suffix("}}")
-            .ok_or(())?;
-        let (a, b) = s.split_once("}, {").ok_or(())?;
-        let (x, y) = parse_tuple(a)?;
-        let (width, height) = parse_tuple(b)?;
+        let [x, y, width, height] = parse_numbers(s)?;
         Ok(CGRect {
             origin: CGPoint { x, y },
             size: CGSize { width, height },
@@ -295,20 +312,42 @@ fn CGRectIntersectsRect(_env: &mut Environment, rect1: CGRect, rect2: CGRect) ->
             <= (rect1.origin.y + rect1.size.height).min(rect2.origin.y + rect2.size.height)
 }
 
+/// The overlap of two rectangles, or the null rectangle when there is none.
+///
+/// An empty rectangle — one with no width or no height — overlaps nothing, so
+/// it produces the null rectangle rather than being rejected. This used to
+/// assert instead, on both the inputs and a zero-area result, which turned
+/// ordinary geometry into a crash: an empty rectangle is what a view that has
+/// not been laid out yet has, and code that clips one thing against another
+/// hands it straight to this function without checking, because on a device
+/// there is nothing to check for.
+///
+/// Apps end here while laying out a scene.
 pub(super) fn CGRectIntersection(_env: &mut Environment, rect1: CGRect, rect2: CGRect) -> CGRect {
+    rect_intersection(rect1, rect2)
+}
+
+fn rect_intersection(rect1: CGRect, rect2: CGRect) -> CGRect {
     if rect1 == CGRectNull || rect2 == CGRectNull {
         return CGRectNull;
     }
-    assert!(rect1.size.height > 0.0 && rect1.size.width > 0.0); // TODO
-    assert!(rect2.size.height > 0.0 && rect2.size.width > 0.0); // TODO
+    if rect1.size.width <= 0.0
+        || rect1.size.height <= 0.0
+        || rect2.size.width <= 0.0
+        || rect2.size.height <= 0.0
+    {
+        return CGRectNull;
+    }
     let x = rect1.origin.x.max(rect2.origin.x);
     let y = rect1.origin.y.max(rect2.origin.y);
     let width = (rect1.origin.x + rect1.size.width).min(rect2.origin.x + rect2.size.width) - x;
     let height = (rect1.origin.y + rect1.size.height).min(rect2.origin.y + rect2.size.height) - y;
-    if width < 0.0 || height < 0.0 {
+    // Rectangles that merely touch along an edge produce no area, and Core
+    // Graphics counts that as not intersecting: `CGRectIntersectsRect` is false
+    // for them too.
+    if width <= 0.0 || height <= 0.0 {
         return CGRectNull;
     }
-    assert!(height != 0.0 || width != 0.0); // TODO
     CGRect {
         origin: CGPoint { x, y },
         size: CGSize { width, height },
@@ -383,7 +422,12 @@ fn CGRectOffset(_env: &mut Environment, rect: CGRect, dx: CGFloat, dy: CGFloat) 
     }
 }
 
-fn CGRectInset(_env: &mut Environment, rect: CGRect, dx: CGFloat, dy: CGFloat) -> CGRect {
+/// Shrink (or, for negative insets, grow) a rectangle about its centre.
+///
+/// Over-insetting is not an error: Core Graphics answers a rectangle that has
+/// been inset past nothing with the null rectangle, which is how a caller that
+/// insets by a fixed margin discovers the rectangle was too small to take it.
+fn rect_inset(rect: CGRect, dx: CGFloat, dy: CGFloat) -> CGRect {
     let res = CGRect {
         origin: CGPoint {
             x: rect.origin.x + dx,
@@ -394,13 +438,163 @@ fn CGRectInset(_env: &mut Environment, rect: CGRect, dx: CGFloat, dy: CGFloat) -
             height: rect.size.height - 2.0 * dy,
         },
     };
-    assert!(res.size.width >= 0.0); // TODO return a null rectangle
-    assert!(res.size.height >= 0.0); // TODO return a null rectangle
-
-    // center invariant
-    assert!(rect.origin.x + rect.size.width / 2.0 == res.origin.x + res.size.width / 2.0);
-    assert!(rect.origin.y + rect.size.height / 2.0 == res.origin.y + res.size.height / 2.0);
+    if res.size.width < 0.0 || res.size.height < 0.0 {
+        return CGRectNull;
+    }
     res
+}
+
+fn CGRectInset(_env: &mut Environment, rect: CGRect, dx: CGFloat, dy: CGFloat) -> CGRect {
+    rect_inset(rect, dx, dy)
+}
+
+/// Whether a rectangle encloses no area.
+///
+/// A zero *or negative* width or height is empty, and so is the null rectangle,
+/// which this reports through the same size test rather than as a special case.
+/// The distinction from `CGRectIsNull` is worth keeping straight: null is one
+/// specific rectangle, empty is a property many rectangles have.
+fn CGRectIsEmpty(_env: &mut Environment, rect: CGRect) -> bool {
+    rect_is_empty(rect)
+}
+
+fn rect_is_empty(rect: CGRect) -> bool {
+    // Tested for being positive rather than for being non-positive so that a
+    // NaN extent counts as empty. A rectangle whose size has picked up a NaN
+    // from guest arithmetic encloses nothing anyone can draw, and calling it
+    // non-empty would send it on to code that then divides by it.
+    let positive = |v: CGFloat| v.partial_cmp(&0.0) == Some(std::cmp::Ordering::Greater);
+    !(positive(rect.size.width) && positive(rect.size.height))
+}
+
+/// Turn a rectangle with a negative width or height into the equivalent one
+/// with positive extents.
+///
+/// Guest code produces these constantly by subtracting two points in whichever
+/// order they arrived, and most of Core Graphics is specified in terms of the
+/// standardised form, so this is what makes such a rectangle usable rather than
+/// a special case at every call site.
+fn CGRectStandardize(_env: &mut Environment, rect: CGRect) -> CGRect {
+    standardize(rect)
+}
+
+fn standardize(rect: CGRect) -> CGRect {
+    let (x, width) = if rect.size.width < 0.0 {
+        (rect.origin.x + rect.size.width, -rect.size.width)
+    } else {
+        (rect.origin.x, rect.size.width)
+    };
+    let (y, height) = if rect.size.height < 0.0 {
+        (rect.origin.y + rect.size.height, -rect.size.height)
+    } else {
+        (rect.origin.y, rect.size.height)
+    };
+    CGRect {
+        origin: CGPoint { x, y },
+        size: CGSize { width, height },
+    }
+}
+
+/// The smallest rectangle containing both arguments.
+///
+/// An empty rectangle contributes nothing, which is the specified behaviour and
+/// not a shortcut: unioning with `CGRectZero` would otherwise drag the result
+/// out to include the origin, which is a classic source of views sized to reach
+/// the top-left corner of the screen.
+fn CGRectUnion(_env: &mut Environment, rect1: CGRect, rect2: CGRect) -> CGRect {
+    if rect_is_empty(rect1) {
+        return standardize(rect2);
+    }
+    if rect_is_empty(rect2) {
+        return standardize(rect1);
+    }
+    let (a, b) = (standardize(rect1), standardize(rect2));
+    let min_x = a.origin.x.min(b.origin.x);
+    let min_y = a.origin.y.min(b.origin.y);
+    let max_x = (a.origin.x + a.size.width).max(b.origin.x + b.size.width);
+    let max_y = (a.origin.y + a.size.height).max(b.origin.y + b.size.height);
+    CGRect {
+        origin: CGPoint { x: min_x, y: min_y },
+        size: CGSize {
+            width: max_x - min_x,
+            height: max_y - min_y,
+        },
+    }
+}
+
+/// Which edge `CGRectDivide` cuts from.
+type CGRectEdge = u32;
+const CGRectMinXEdge: CGRectEdge = 0;
+const CGRectMinYEdge: CGRectEdge = 1;
+const CGRectMaxXEdge: CGRectEdge = 2;
+const CGRectMaxYEdge: CGRectEdge = 3;
+
+/// Split a rectangle into a slice of the given thickness taken off one edge,
+/// and the remainder.
+///
+/// The two out-parameters are what makes this awkward to use and easy to get
+/// wrong: `slice` is the piece cut off, `remainder` is what is left, and either
+/// pointer may be null. An amount larger than the rectangle gives the whole
+/// rectangle as the slice and an empty remainder pinned to the far edge, which
+/// is the specified result rather than an error.
+fn CGRectDivide(
+    env: &mut Environment,
+    rect: CGRect,
+    slice: MutPtr<CGRect>,
+    remainder: MutPtr<CGRect>,
+    amount: CGFloat,
+    edge: CGRectEdge,
+) {
+    let (slice_rect, remainder_rect) = divide(rect, amount, edge);
+    if !slice.is_null() {
+        env.mem.write(slice, slice_rect);
+    }
+    if !remainder.is_null() {
+        env.mem.write(remainder, remainder_rect);
+    }
+}
+
+fn divide(rect: CGRect, amount: CGFloat, edge: CGRectEdge) -> (CGRect, CGRect) {
+    let rect = standardize(rect);
+    let CGRect { origin, size } = rect;
+    // A negative amount cuts nothing; the specification clamps into the
+    // rectangle at both ends. Written as max-then-min rather than with `clamp`
+    // because `clamp` panics on a NaN bound, and the extent comes from the
+    // guest.
+    let along_x = edge == CGRectMinXEdge || edge == CGRectMaxXEdge;
+    let extent = if along_x { size.width } else { size.height };
+    let cut = amount.max(0.0).min(extent);
+    let rest = extent - cut;
+
+    let sized = |x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat| CGRect {
+        origin: CGPoint { x, y },
+        size: CGSize { width, height },
+    };
+    match edge {
+        CGRectMinXEdge => (
+            sized(origin.x, origin.y, cut, size.height),
+            sized(origin.x + cut, origin.y, rest, size.height),
+        ),
+        CGRectMaxXEdge => (
+            sized(origin.x + rest, origin.y, cut, size.height),
+            sized(origin.x, origin.y, rest, size.height),
+        ),
+        CGRectMinYEdge => (
+            sized(origin.x, origin.y, size.width, cut),
+            sized(origin.x, origin.y + cut, size.width, rest),
+        ),
+        CGRectMaxYEdge => (
+            sized(origin.x, origin.y + rest, size.width, cut),
+            sized(origin.x, origin.y, size.width, rest),
+        ),
+        // Not one of the four edges. Core Graphics has no defined answer and an
+        // app that gets here has passed uninitialised memory, so the whole
+        // rectangle comes back as the remainder and nothing is cut.
+        _ => {
+            log!("CGRectDivide() with unknown edge {}; cutting nothing", edge);
+            (CGRectZero, rect)
+        }
+    }
 }
 
 pub(super) fn CGRectIntegral(_env: &mut Environment, rect: CGRect) -> CGRect {
@@ -443,6 +637,10 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CGRectGetWidth(_)),
     export_c_func!(CGRectMake(_, _, _, _)),
     export_c_func!(CGRectIsNull(_)),
+    export_c_func!(CGRectIsEmpty(_)),
+    export_c_func!(CGRectStandardize(_)),
+    export_c_func!(CGRectUnion(_, _)),
+    export_c_func!(CGRectDivide(_, _, _, _, _)),
     export_c_func!(CGRectOffset(_, _, _)),
     export_c_func!(CGRectInset(_, _, _)),
     export_c_func!(CGRectIntegral(_)),
@@ -466,3 +664,204 @@ pub const CONSTANTS: ConstantExports = &[
         HostConstant::Custom(|env| env.mem.alloc_and_write(CGRectNull).cast().cast_const()),
     ),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        divide, rect_inset, rect_intersection, rect_is_empty, standardize, CGPoint, CGRect,
+        CGRectMaxXEdge, CGRectMaxYEdge, CGRectMinXEdge, CGRectMinYEdge, CGRectNull, CGRectZero,
+        CGSize,
+    };
+
+    #[test]
+    fn insetting_shrinks_about_the_centre() {
+        assert_eq!(
+            rect_inset(rect(0.0, 0.0, 10.0, 10.0), 2.0, 3.0),
+            rect(2.0, 3.0, 6.0, 4.0)
+        );
+    }
+
+    #[test]
+    fn negative_insets_grow_the_rectangle() {
+        assert_eq!(
+            rect_inset(rect(10.0, 10.0, 4.0, 4.0), -1.0, -1.0),
+            rect(9.0, 9.0, 6.0, 6.0)
+        );
+    }
+
+    /// Insetting a rectangle past nothing answers the null rectangle rather
+    /// than a rectangle of negative size. An app that insets by a fixed margin
+    /// meets this whenever the rectangle is smaller than the margin, so it has
+    /// to be an answer and not a failure.
+    #[test]
+    fn over_insetting_gives_the_null_rectangle() {
+        assert_eq!(rect_inset(rect(0.0, 0.0, 4.0, 100.0), 3.0, 0.0), CGRectNull);
+        assert_eq!(rect_inset(rect(0.0, 0.0, 100.0, 4.0), 0.0, 3.0), CGRectNull);
+    }
+
+    /// Exactly consuming the rectangle is not over-insetting: the result is
+    /// empty, which is a rectangle a caller can go on to use.
+    #[test]
+    fn insetting_to_exactly_nothing_is_not_null() {
+        assert_eq!(
+            rect_inset(rect(0.0, 0.0, 6.0, 6.0), 3.0, 3.0),
+            rect(3.0, 3.0, 0.0, 0.0)
+        );
+    }
+
+    /// The centre is preserved in exact arithmetic, but this is float
+    /// arithmetic: `origin + dx + (size - 2*dx)/2` rounds differently from
+    /// `origin + size/2`. Checking the invariant with `==` therefore rejects
+    /// ordinary geometry, which is why the implementation does not check it.
+    #[test]
+    fn insetting_does_not_require_the_centre_to_round_identically() {
+        let inset = rect_inset(rect(0.1, 0.2, 10.3, 20.7), 0.35, 1.15);
+        assert!((inset.origin.x + inset.size.width / 2.0 - (0.1 + 10.3 / 2.0)).abs() < 0.001);
+        assert!((inset.origin.y + inset.size.height / 2.0 - (0.2 + 20.7 / 2.0)).abs() < 0.001);
+    }
+
+    /// The ordinary case, so the null answers below are not vacuously right.
+    #[test]
+    fn overlapping_rectangles_intersect() {
+        assert_eq!(
+            rect_intersection(rect(0.0, 0.0, 10.0, 10.0), rect(5.0, 5.0, 10.0, 10.0)),
+            rect(5.0, 5.0, 5.0, 5.0)
+        );
+    }
+
+    /// An empty rectangle overlaps nothing. This used to assert, and an
+    /// unlaid-out view is empty, so games reached it on ordinary paths.
+    #[test]
+    fn an_empty_rectangle_intersects_nothing() {
+        assert_eq!(
+            rect_intersection(CGRectZero, rect(0.0, 0.0, 10.0, 10.0)),
+            CGRectNull
+        );
+        assert_eq!(
+            rect_intersection(rect(0.0, 0.0, 10.0, 0.0), rect(0.0, 0.0, 10.0, 10.0)),
+            CGRectNull
+        );
+        assert_eq!(
+            rect_intersection(rect(0.0, 0.0, 10.0, 10.0), rect(2.0, 2.0, 0.0, 5.0)),
+            CGRectNull
+        );
+    }
+
+    /// Touching along an edge is not intersecting, which is also what
+    /// `CGRectIntersectsRect` says.
+    #[test]
+    fn edge_contact_is_not_an_intersection() {
+        assert_eq!(
+            rect_intersection(rect(0.0, 0.0, 10.0, 10.0), rect(10.0, 0.0, 10.0, 10.0)),
+            CGRectNull
+        );
+    }
+
+    #[test]
+    fn separated_rectangles_do_not_intersect() {
+        assert_eq!(
+            rect_intersection(rect(0.0, 0.0, 5.0, 5.0), rect(20.0, 20.0, 5.0, 5.0)),
+            CGRectNull
+        );
+    }
+
+    fn rect(x: f32, y: f32, width: f32, height: f32) -> CGRect {
+        CGRect {
+            origin: CGPoint { x, y },
+            size: CGSize { width, height },
+        }
+    }
+
+    /// The spelling Core Graphics emits, and the compact one apps store in
+    /// plists. Both must parse; only the first used to.
+    #[test]
+    fn geometry_strings_parse_with_or_without_spaces() {
+        let spaced: CGRect = "{{-2, 634}, {-1, -1}}".parse().unwrap();
+        assert_eq!(spaced, rect(-2.0, 634.0, -1.0, -1.0));
+        let compact: CGRect = "{{0,0},{1024,768}}".parse().unwrap();
+        assert_eq!(compact, rect(0.0, 0.0, 1024.0, 768.0));
+        let roomy: CGRect = "{ { 1 , 2 } , { 3 , 4 } }".parse().unwrap();
+        assert_eq!(roomy, rect(1.0, 2.0, 3.0, 4.0));
+
+        let p: CGPoint = "{12,34}".parse().unwrap();
+        assert_eq!(p, CGPoint { x: 12.0, y: 34.0 });
+        let sz: CGSize = "{5, 6}".parse().unwrap();
+        assert_eq!(
+            sz,
+            CGSize {
+                width: 5.0,
+                height: 6.0
+            }
+        );
+    }
+
+    /// Malformed input still has to fail, so callers keep getting the
+    /// documented zeroes rather than a silently wrong rectangle.
+    #[test]
+    fn malformed_geometry_strings_are_rejected() {
+        assert!("".parse::<CGRect>().is_err());
+        assert!("{{0,0},{1,2,3}}".parse::<CGRect>().is_err()); // too many
+        assert!("{{0,0},{1}}".parse::<CGRect>().is_err()); // too few
+        assert!("{{0,0},{a,b}}".parse::<CGRect>().is_err()); // not numbers
+        assert!("{1,2}".parse::<CGPoint>().is_ok());
+        assert!("{1,2,3}".parse::<CGPoint>().is_err());
+    }
+
+    #[test]
+    fn emptiness_covers_zero_negative_and_null() {
+        assert!(!rect_is_empty(rect(0.0, 0.0, 1.0, 1.0)));
+        assert!(rect_is_empty(CGRectZero));
+        assert!(rect_is_empty(rect(5.0, 5.0, 0.0, 10.0)));
+        assert!(rect_is_empty(rect(5.0, 5.0, 10.0, 0.0)));
+        assert!(rect_is_empty(rect(5.0, 5.0, -10.0, 10.0)));
+        // The null rectangle has a zero size, so it falls out of the same test
+        // rather than needing its own.
+        assert!(rect_is_empty(CGRectNull));
+    }
+
+    #[test]
+    fn standardizing_moves_the_origin_to_the_smaller_corner() {
+        assert_eq!(
+            standardize(rect(10.0, 20.0, -4.0, -6.0)),
+            rect(6.0, 14.0, 4.0, 6.0)
+        );
+        // Already positive: unchanged.
+        assert_eq!(
+            standardize(rect(1.0, 2.0, 3.0, 4.0)),
+            rect(1.0, 2.0, 3.0, 4.0)
+        );
+    }
+
+    #[test]
+    fn dividing_off_the_low_edge_puts_the_slice_first() {
+        let (slice, remainder) = divide(rect(0.0, 0.0, 100.0, 50.0), 30.0, CGRectMinXEdge);
+        assert_eq!(slice, rect(0.0, 0.0, 30.0, 50.0));
+        assert_eq!(remainder, rect(30.0, 0.0, 70.0, 50.0));
+
+        let (slice, remainder) = divide(rect(0.0, 0.0, 100.0, 50.0), 20.0, CGRectMinYEdge);
+        assert_eq!(slice, rect(0.0, 0.0, 100.0, 20.0));
+        assert_eq!(remainder, rect(0.0, 20.0, 100.0, 30.0));
+    }
+
+    #[test]
+    fn dividing_off_the_high_edge_puts_the_slice_at_the_far_end() {
+        let (slice, remainder) = divide(rect(0.0, 0.0, 100.0, 50.0), 30.0, CGRectMaxXEdge);
+        assert_eq!(slice, rect(70.0, 0.0, 30.0, 50.0));
+        assert_eq!(remainder, rect(0.0, 0.0, 70.0, 50.0));
+
+        let (slice, remainder) = divide(rect(0.0, 0.0, 100.0, 50.0), 20.0, CGRectMaxYEdge);
+        assert_eq!(slice, rect(0.0, 30.0, 100.0, 20.0));
+        assert_eq!(remainder, rect(0.0, 0.0, 100.0, 30.0));
+    }
+
+    #[test]
+    fn dividing_by_more_than_the_rectangle_holds_gives_it_all_away() {
+        let (slice, remainder) = divide(rect(0.0, 0.0, 100.0, 50.0), 500.0, CGRectMinXEdge);
+        assert_eq!(slice, rect(0.0, 0.0, 100.0, 50.0));
+        assert_eq!(remainder, rect(100.0, 0.0, 0.0, 50.0));
+        // And a negative amount cuts nothing at all.
+        let (slice, remainder) = divide(rect(0.0, 0.0, 100.0, 50.0), -5.0, CGRectMinXEdge);
+        assert_eq!(slice, rect(0.0, 0.0, 0.0, 50.0));
+        assert_eq!(remainder, rect(0.0, 0.0, 100.0, 50.0));
+    }
+}

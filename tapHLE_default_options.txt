@@ -13,7 +13,7 @@
 # Each line in this file specifies options for an app; there should only be one
 # line per app. A line should consist of the identifier for an app, followed by
 # a colon (:), followed by the options to apply. To find out an app's
-# identifier, you can run it in tapHLE and look at the “App bundle info”
+# identifier, you can run it in tapHLE and look at the â€œApp bundle infoâ€
 # output. To get a list of possible options, see OPTIONS_HELP.txt or run
 # tapHLE with the --help flag.
 #
@@ -75,14 +75,41 @@ com.nabilchatbi.Ricky: --landscape-left --button-to-touch=DPadLeft,40,285 --butt
 # Warlords HD: Call to Arms
 # Landscape-native renderer: draws a landscape-sized scene directly rather than
 # using UIKit auto-rotation, so it needs the landscape-native screen mode to
-# avoid coming out rotated 90° and clipped.
+# avoid coming out rotated 90Â° and clipped.
 greyhoundgames.warlordshdapp: --landscape-native
+
+# Baby Monkey (going backwards on a pig)
+# Landscape-native renderer: its EAGL drawable is already 480x320, so tapHLE's
+# presentation rotation is applied to a frame that is already the right way up,
+# and the window shows a flat slate rectangle even though the menu drew
+# correctly. Verified by capturing the guest renderbuffer and the window at the
+# same moment: the first held the menu, the second did not.
+# Tilt (the analog stick) steers the pig. A = the monkey button, bottom left,
+# which jumps the monkey off the pig before a crash; B = the pig button, bottom
+# right; Start = pause, top left.
+# It used to carry --landscape-native. That was a workaround for a
+# presentation bug, not a fact about the app: it renders portrait and
+# relies on the ordinary rotation, so suppressing the rotation left a
+# portrait frame unrotated in a landscape window.
+com.kihon.babymonkey: --landscape-right --button-to-touch=A,43,274 --button-to-touch=B,439,274 --button-to-touch=Start,22,22
+
+# Redline (Cubed Rally Redline)
+# Landscape-only. It used to carry --landscape-native, which was a workaround
+# for a presentation bug rather than a fact about the app: the frame came out
+# as horizontal bands, and suppressing the rotation hid that at the cost of
+# presenting a portrait frame stretched across a landscape window.
+com.nocanwin.redline: --landscape-left
 
 # Head2Head
 com.darxun: --landscape-right --y-tilt-offset=24
 
 # Jackpot Casino
 com.chillingo.jackpotcasino: --landscape-right
+
+# The Jim and Frank Mysteries HD
+# The app declares landscape and tapHLE rotates on its own; the entry only
+# spares the player the portrait frames at startup.
+com.chillingo.thejimandfrankmysterieshd: --landscape-left
 
 # MotoRacing GP
 # A = wheelie, B = restore
@@ -242,3 +269,8 @@ com.palmheroes.PalmHeroes: --landscape-right
 # Glass Tower HD
 ru.idigger.Glass-Tower: --force-composition
 
+
+# Crafted
+# A landscape game that declares no orientation at all, so nothing asks it
+# which way up it goes and it launches portrait with its layout cut off.
+com.Pickl.Crafted: --landscape-left

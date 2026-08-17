@@ -1,0 +1,22 @@
+# Apps the regression sweep is expected to fail on, and why.
+#
+# This is a denylist, not a target list, and the difference is the point. The
+# sweep runs whatever is in the app collection; an app missing from this file
+# still gets swept and still gets reported. An app missing from a *target* list
+# is simply never run, which is how a check quietly shrinks to the apps someone
+# remembered. See "A liveness check is not a regression check" in
+# dev-docs/app-debugging-playbook.md.
+#
+# Format is "<filename substring>: <reason>". Keep the reason specific and
+# point at the note that establishes it.
+#
+# The sweep reports a listed app that starts working as FIXED, because an
+# unpruned denylist rots into a list of things nobody looks at any more. When
+# that happens, delete the line.
+
+JungleZuma: artifact is encrypted and cannot be tested; see dev-docs/app-notes/jungle-zuma.md
+MaxAdventureFree: artifact is encrypted and cannot be tested; see dev-docs/app-notes/max-adventure.md
+Mr.Oops!!: rated one star, reaches no frame; see dev-docs/app-notes/mr-oops.md
+JellyCar3: crashes with a guest MemoryError. Never assessed and has no app note, so this records that it is unmeasured rather than accepted.
+Pandemic 2.5: sends -[UIView setContext:], which does not exist, and aborts before drawing. Never assessed and has no app note, so this records that it is unmeasured rather than accepted.
+ParaPanicHD: sends -[SLCClient valueForKeyPath:], which its own class does not implement, and aborts. Never assessed; see dev-docs/app-notes/parachute-panic-hd.md for the earlier work, which predates this failure.

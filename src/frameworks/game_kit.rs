@@ -6,7 +6,7 @@
 //! GameKit framework.
 //!
 //! Some features of this framework are only in iOS 4.1+, but some games (like
-//! "Cut the Rope") may use it to check for game center availability with
+//! some) may use it to check for game center availability with
 //! a `respondsToSelector:` call to some objects of this framework.
 //! Thus, we need to provide some stubs in order to not crash on that call.
 

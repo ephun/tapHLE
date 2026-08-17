@@ -62,3 +62,26 @@ do.
 
 `File::Open(...) : WARNING! File "[DOC]MC/char.png" failed to open` is logged
 at startup by the app's own file layer; it is not fatal.
+
+## 2026-07-27: what is actually on screen, and a second blocker
+
+Confirmed by **OS-level `PrintWindow` screenshot** (not tapHLE's frame capture —
+see the playbook): the app renders its login screen, 303 distinct sampled
+colours. The pixel-block "MINECRAFTED" title, two credential fields, `Themes...`
+and `Login...` buttons, the line "Login requires an official minecraft account,
+which can be obtained at http://minecraft.net", and a `Go Private` button.
+
+So two stars is right, and the rendering is genuine rather than a capture
+artifact.
+
+### The GLES2 requirement is not the only blocker
+
+This note previously said the app "cannot reach 3 stars until tapHLE has a GLES2
+backend". That is true and incomplete. The screen above gates on **authenticating
+against a Mojang account service that no longer exists**, so the login path
+cannot succeed at any level of emulator fidelity.
+
+The `Go Private` button is the thing to try first, before anyone invests in
+GLES2 for this app: if it opens a local/offline world it is the only route to
+gameplay, and if it does not, this app is unreachable regardless. That is a
+one-tap experiment and it should be run before the expensive work, not after.

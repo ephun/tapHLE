@@ -10,6 +10,7 @@ use crate::dyld::{export_c_func, FunctionExports};
 use crate::frameworks::carbon_core::OSStatus;
 use crate::frameworks::core_audio_types::{debug_fourcc, fourcc};
 use crate::frameworks::core_foundation::cf_run_loop::{CFRunLoopMode, CFRunLoopRef};
+use crate::frameworks::foundation::ns_string;
 use crate::mem::{guest_size_of, ConstVoidPtr, GuestUSize, MutPtr, MutVoidPtr};
 use crate::Environment;
 
@@ -32,6 +33,14 @@ const kAudioSessionProperty_PreferredHardwareSampleRate: AudioSessionPropertyID 
 
 const kAudioSessionCategory_SoloAmbientSound: u32 = fourcc(b"solo");
 const kAudioSessionProperty_CurrentHardwareIOBufferDuration: u32 = fourcc(b"chbd");
+/// Set by apps that want their audio to mix with whatever else is playing.
+/// There is nothing else playing here, so the answer is the same either way —
+/// but the call has to be accepted, because refusing it stopped seven apps in a
+/// 1501-app survey.
+const kAudioSessionProperty_OverrideCategoryMixWithOthers: AudioSessionPropertyID = fourcc(b"cmix");
+/// The current audio route, as a CFStringRef. Read by apps deciding whether to
+/// duck or pause when headphones are unplugged.
+const kAudioSessionProperty_AudioRoute: AudioSessionPropertyID = fourcc(b"rout");
 
 pub struct State {
     audio_session_category: u32,
@@ -120,6 +129,13 @@ fn AudioSessionGetProperty(
             let value: f32 = state.current_hardware_output_volume;
             env.mem.write(out_data.cast(), value);
         }
+        kAudioSessionProperty_AudioRoute => {
+            // There is one output and nothing can be plugged into it, so the
+            // route is always the speaker. Apps read this to decide whether to
+            // pause when headphones are removed, which cannot happen here.
+            let route = ns_string::get_static_str(env, "Speaker");
+            env.mem.write(out_data.cast(), route);
+        }
         kAudioSessionProperty_CurrentHardwareIOBufferDuration => {
             let value: f32 = state.current_hardware_io_buffer_duration;
             env.mem.write(out_data.cast(), value);
@@ -150,7 +166,18 @@ fn AudioSessionSetProperty(
         kAudioSessionProperty_AudioCategory => guest_size_of::<u32>(),
         kAudioSessionProperty_PreferredHardwareIOBufferDuration => guest_size_of::<f32>(),
         kAudioSessionProperty_PreferredHardwareSampleRate => guest_size_of::<f64>(),
-        _ => unimplemented!("Unimplemented property ID: {}", debug_fourcc(in_ID)),
+        kAudioSessionProperty_OverrideCategoryMixWithOthers => guest_size_of::<u32>(),
+        // An unknown property is not worth dying over. Audio Session settings
+        // are preferences about routing and mixing, and tapHLE honours almost
+        // none of them already — refusing to accept one it does not recognise
+        // stops the app without improving the audio.
+        _ => {
+            log!(
+                "TODO: ignoring AudioSessionSetProperty for unimplemented property ID: {}",
+                debug_fourcc(in_ID)
+            );
+            return 0;
+        }
     };
     if in_data_size != required_size {
         log!("Warning: AudioSessionSetProperty() failed");
@@ -230,7 +257,12 @@ fn get_audio_session_property_size(in_ID: AudioSessionPropertyID) -> GuestUSize 
         kAudioSessionProperty_CurrentHardwareOutputNumberChannels => guest_size_of::<u32>(),
         kAudioSessionProperty_CurrentHardwareOutputVolume => guest_size_of::<f32>(),
         kAudioSessionProperty_CurrentHardwareIOBufferDuration => guest_size_of::<f32>(),
-        _ => unimplemented!("Unimplemented property ID: {}", debug_fourcc(in_ID)),
+        // A CFStringRef.
+        kAudioSessionProperty_AudioRoute => guest_size_of::<MutVoidPtr>(),
+        // Zero means "no such property", which makes the caller's size check
+        // fail and produces the documented kAudioSessionBadPropertySizeError.
+        // That is an answer the app is written to handle; aborting is not.
+        _ => 0,
     }
 }
 

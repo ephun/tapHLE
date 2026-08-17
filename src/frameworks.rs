@@ -21,6 +21,35 @@
 #![allow(clippy::enum_variant_names)] // Lots of Apple enums have the same prefix
 #![allow(clippy::too_many_arguments)] // It's not our fault!
 
+/// The iPhone OS version tapHLE reports to guest apps, as a literal.
+///
+/// A macro rather than a `const` so that it can also be `concat!`-ed into the
+/// longer forms other frameworks report, which needs a literal.
+macro_rules! system_version {
+    () => {
+        "2.0"
+    };
+}
+
+/// The iPhone OS version tapHLE reports to guest apps.
+///
+/// Several frameworks answer this question — `-[UIDevice systemVersion]` and
+/// `-[NSProcessInfo operatingSystemVersionString]` among them — and an app may
+/// read more than one. They must agree: an app that gate-keeps a feature on one
+/// and a workaround on the other would otherwise see a device that does not
+/// exist. Kept here rather than in either framework because neither owns the
+/// answer.
+pub const SYSTEM_VERSION: &str = system_version!();
+
+/// The same version in the longer form `-[NSProcessInfo
+/// operatingSystemVersionString]` uses.
+///
+/// Real iPhone OS names a build too, as in "Version 4.3.3 (Build 8J2)". tapHLE
+/// has no build to name, and inventing one would be a detail an app could go
+/// looking for, so the version stands alone — still well-formed, and still what
+/// a version parser reads.
+pub const OPERATING_SYSTEM_VERSION_STRING: &str = concat!("Version ", system_version!());
+
 pub mod audio_toolbox;
 pub mod avfoundation;
 pub mod carbon_core;

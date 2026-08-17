@@ -127,3 +127,14 @@ table, and leading straight to item 9.
 Complete level 1 and see whether the game advances to level 2, and what the
 inter-level screen shows. That is the boundary between this rating and a 4-star
 human test.
+
+## 2026-07-27: 3 stars re-confirmed, by OS screenshot
+
+Driven to gameplay on `73a43594` with the taps already recorded here —
+`(160, 130)`, `(58, 118)`, `(118, 155)`, `(110, 240)`. The block tower renders
+with falling debris, a `2UP` bonus indicator and a live **"TAP RISING BONUS TO
+CATCH! / BE QUICK!"** prompt.
+
+Verified with an **OS-level `PrintWindow` screenshot** rather than tapHLE's frame
+capture: 996 distinct sampled colours. See the playbook's "a frame capture is not
+necessarily the screen".

@@ -22,6 +22,12 @@ const kCATransitionMoveIn: &str = "moveIn";
 const kCATransitionPush: &str = "push";
 const kCATransitionReveal: &str = "reveal";
 
+type CATransitionSubtype = id; // NSString*
+const kCATransitionFromRight: &str = "fromRight";
+const kCATransitionFromLeft: &str = "fromLeft";
+const kCATransitionFromTop: &str = "fromTop";
+const kCATransitionFromBottom: &str = "fromBottom";
+
 pub type CAMediaTimingFillMode = id; // NSString*
 pub const kCAFillModeBackwards: &str = "backwards";
 pub const kCAFillModeBoth: &str = "both";
@@ -45,6 +51,26 @@ pub const CONSTANTS: ConstantExports = &[
     (
         "_kCATransitionReveal",
         HostConstant::NSString(kCATransitionReveal),
+    ),
+    // `CATransitionSubtype` values, which say which edge a transition of one of
+    // the directional types moves from. A binary that names a transition type
+    // usually names a subtype in the next instruction, so an unbound slot here
+    // faults as a null dereference in the middle of ordinary presentation code.
+    (
+        "_kCATransitionFromRight",
+        HostConstant::NSString(kCATransitionFromRight),
+    ),
+    (
+        "_kCATransitionFromLeft",
+        HostConstant::NSString(kCATransitionFromLeft),
+    ),
+    (
+        "_kCATransitionFromTop",
+        HostConstant::NSString(kCATransitionFromTop),
+    ),
+    (
+        "_kCATransitionFromBottom",
+        HostConstant::NSString(kCATransitionFromBottom),
     ),
     // `CAMediaTimingFillMode` values.
     (
@@ -314,6 +340,10 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())setType:(CATransitionType)transitionType {
     todo_objc_setter!(this, to_rust_string(env, transitionType));
+}
+
+- (())setSubtype:(CATransitionSubtype)subtype {
+    todo_objc_setter!(this, to_rust_string(env, subtype));
 }
 
 @end

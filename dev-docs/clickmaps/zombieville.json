@@ -1,0 +1,31 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.KelliNoda.Zombieville",
+    "display_name": "Zombieville",
+    "version": "1.0"
+  },
+  "recorded": {
+    "date": "2026-08-16",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": { "width": 480, "height": 320, "orientation": "landscape" },
+  "milestone": {
+    "rating": 3,
+    "describes": "A level plays: the character with his gun, zombies walking in, ammo and health, and the street scrolling as he walks."
+  },
+  "defaults": { "press_ms": 150, "settle_ms": 6000 },
+  "steps": [
+    { "id": "boot", "action": "wait", "settle_ms": 26000, "expect": "The title screen: ZOMBIEVILLE USA over a moonlit road, and TOUCH... IF YOU DARE!" },
+    { "id": "title", "action": "tap", "at": [240, 160], "settle_ms": 8000, "expect": "The menu: NEW GAME, HOW TO PLAY?, and the RECORDS panel with zombies and level counts." },
+    { "id": "newgame", "action": "tap", "at": [140, 55], "settle_ms": 8000, "expect": "A level. The character stands on the street with two zombies approaching, ammo x100 top left, a health bar, $0 top right, and a walk arrow in each bottom corner." },
+    { "id": "walk", "action": "tap", "at": [437, 268], "settle_ms": 5000, "expect": "The street scrolls: the same scene with the background moved and the zombies closer." }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 480x320 landscape window. On a display with scaling, driving this by converting client coordinates through ClientToScreen from a DPI-aware process puts the cursor somewhere else entirely — measure from a screen capture instead.",
+    "Left alone in the level the character is killed and a YOU DIED screen appears, which is the round ending normally rather than a fault.",
+    "The screen goes black briefly between the level and the death screen; that is the transition, not a crash."
+  ]
+}

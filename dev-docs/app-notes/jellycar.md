@@ -165,3 +165,137 @@ target list at once:
 The raw `inflate`/`deflate` stream API is a separate question; do not implement
 it speculatively. Check whether the app references those symbols at all before
 deciding, since only the gz* file path is known to be needed.
+
+## 2026-07-27: JellyCar 1's fault is a missing `Documents/scenes.xml`
+
+Still 1-star, but the `MemoryError` is no longer opaque.
+
+Two zlib bugs were found and fixed on the way (both on `trunk`, and both wrong
+independently of this app):
+
+- `gzopen` returned NULL for a file that is not in gzip format. zlib opens such
+  a file and copies its bytes through — `gzread`'s documentation says so — and
+  JellyCar opens a plain XML level file this way.
+- `gzdirect`, which is how a caller asks which of the two happened, did not
+  exist. It surfaced the moment the first fix landed.
+
+### Correction: the XML warning is not the cause
+
+An earlier version of this note said the libxml2 failure was the crash. **That
+was wrong**, and the way it was wrong is worth recording: the warning and the
+fault are both in the log, so it read as cause and effect. Counting lines shows
+the warning at line 85 of 208 — roughly 120 log lines and a good deal of work
+before the app dies. It survives the missing XML.
+
+The zlib fixes above still stand on their own terms; they were real bugs. They
+just were not this app's blocker.
+
+### Where it actually stops
+
+The last app-level message before the fault is its own:
+
+```text
+JellyCar[0] ERROR: DMOAnalytics needs to be initialized with one of its
+designated initializers, e.g. initWithURL:appKey:secret:
+```
+
+It then writes `Library/Preferences/com.walaber.jellycar.plist`, reads
+`Library/Caches/analyticsQueue.plist`, and takes a null-page access at 0x0
+(`PC 0x30190`, `R3 0x00000000`).
+
+So the blocker is the bundled **DMOAnalytics** SDK: its shared instance was
+never given a URL, app key and secret, and the app then uses it anyway.
+
+### This is the third app on this list to die in an analytics SDK
+
+Mr. Oops!! dies in OAuthConsumer with a nil `OAConsumer`; SPY mouse HD reached
+its splash and no further until a guest `NSArray` subclass in its analytics
+JSON path was fixed. That is a pattern worth treating as one problem rather
+than three: these SDKs are the code most likely to use runtime reflection,
+class clusters and network-dependent initialisation, which is exactly where
+tapHLE is thinnest.
+
+The next step for this app is to find what should have called
+`-initWithURL:appKey:secret:` and why it did not — trace allocation and
+selector activity for `DMOAnalytics` from startup. Do **not** start from the
+XML; that has now cost one wrong conclusion already.
+
+## 2026-07-27: JellyCar 2 was broken and restored, same day
+
+JellyCar 2's three-star rating stopped reproducing partway through this
+session. It aborted during startup with a guest `MemoryError`, having been a
+working three-star app since `d335f7bd`.
+
+**Cause: a tapHLE change, not the app.** The layout-on-mount pass added for Tap
+Tap Revenge 2 ran `-layoutSubviews` synchronously inside `-addSubview:`, which
+executes an app's layout code while it is still assembling its view hierarchy.
+Bisected in three builds: alive at `d335f7bd`, alive at `cc492376`, dead at
+`b1de9e9e` — the layout-pass merge.
+
+**Fix:** lay out on mount only once launching has finished. Deferring it
+entirely also worked for this app but cost Tap Tap Revenge 2 its background
+artwork, so neither "always synchronous" nor "always deferred" was right; the
+distinction that satisfies both is *when* the mount happens.
+
+### How it went unnoticed
+
+This app is **not in the routine sweep**, so nothing launched it for a dozen
+commits. Its rating was a claim about the past being treated as a claim about
+the present. See the playbook's "a liveness check is not a regression check".
+
+### What was and was not re-verified
+
+Startup and first-frame rendering are confirmed on the fix (`21a38b72`), with a
+993 KB capture matching the pre-regression one byte for byte in size.
+
+**The gameplay loop has now been re-driven** on a clean committed build
+(`JellyCar 2 (tapHLE 87acd74a)`, no `-dirty`), following the click map above:
+back arrow, CLASSIC, EASY, first level, OK. The level renders with its blue
+terrain, the orange jelly car, the drive arrows, the pump and a running timer,
+and two captures fourteen seconds apart differ by SHA-256. The three-star rating
+is confirmed on current code, not merely inherited from `d335f7bd`.
+
+No new report was filed: the recorded rating is unchanged, and a rerun that
+reproduces an existing rating is moderation noise. What changed is the evidence
+behind it, which belongs here rather than in the database.
+
+
+## 2026-07-27: JellyCar 1 advanced to 2 stars — a missing CF constant
+
+The `MemoryError` is **fixed**, and the cause was one unexported CoreFoundation
+constant.
+
+Disassembling the faulting PC (`dev-scripts/disasm-guest-fault.py`, added for
+this) showed:
+
+```text
+0x0003018e  ldr   r3, [r3]        <- r3 = *(a global)
+0x00030190  vldr  d7, [r3]        <== FAULT, with R3 = 0
+```
+
+The global lives in `__DATA,__nl_symbol_ptr` at `0x433e8`, and walking the
+indirect symbol table names it: **`_kCFAbsoluteTimeIntervalSince1970`**. The
+code is the standard `CFAbsoluteTimeGetCurrent() + kCFAbsoluteTimeIntervalSince1970`
+conversion to a Unix timestamp. tapHLE did not export it, so the slot was null
+and the guest loaded a double through address zero.
+
+It is exported now, from the value tapHLE already had
+(`SECS_FROM_UNIX_TO_APPLE_EPOCHS`).
+
+**tapHLE had been logging this all along** — `Warning: unhandled non-lazy symbol
+"_kCFAbsoluteTimeIntervalSince1970" at 0x433e8` — and the address in that warning
+is exactly the one the faulting instruction loads from. See the playbook; the
+grep is far cheaper than the disassembly and should be step one.
+
+### Where JellyCar 1 stops now
+
+The main menu renders (logo, `?` button, a JellyCar 3 promo, and EASY / AVERAGE /
+HARD difficulty cards). Tapping EASY reaches the level-loading screen with its
+"Tilt the device to add rotation to the car!" tip and a progress bar — and stops
+there; repeated screenshots are byte-identical.
+
+Behind it, the log shows the two things recorded earlier: libxml2 failing to load
+`Documents/scenes.xml`, and `DMOAnalytics needs to be initialized`. Those are now
+the frontier rather than a guess, since everything ahead of them is cleared.
+
+Two star: it reaches menus but no gameplay.

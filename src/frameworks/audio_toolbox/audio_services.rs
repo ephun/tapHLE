@@ -268,7 +268,8 @@ fn AudioServicesRemoveSystemSoundCompletion(env: &mut Environment, sys_sound_id:
 /// since the last check. Called from the run loop.
 pub fn handle_system_sound_completions(env: &mut Environment) {
     // Collect first: a completion routine is guest code, which may play, add,
-    // remove or dispose sounds, so the map must not be borrowed across the call.
+    // remove or dispose sounds, so the map must not be borrowed across the
+    // call.
     let mut finished = Vec::new();
     {
         let (state, context) =

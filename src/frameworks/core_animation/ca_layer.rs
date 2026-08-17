@@ -12,12 +12,13 @@ use crate::frameworks::core_graphics::cg_affine_transform::{
     CGAffineTransform, CGAffineTransformIdentity,
 };
 use crate::frameworks::core_graphics::cg_bitmap_context::{
-    CGBitmapContextCreate, CGBitmapContextGetHeight, CGBitmapContextGetWidth,
+    self, CGBitmapContextCreate, CGBitmapContextGetHeight, CGBitmapContextGetWidth,
 };
 use crate::frameworks::core_graphics::cg_color::{CGColorHostObject, CGColorRef};
 use crate::frameworks::core_graphics::cg_color_space::CGColorSpaceCreateDeviceRGB;
 use crate::frameworks::core_graphics::cg_context::{
-    CGContextClearRect, CGContextRef, CGContextRelease, CGContextTranslateCTM,
+    CGContextClearRect, CGContextDrawImage, CGContextFillRect, CGContextRef, CGContextRelease,
+    CGContextSetRGBFillColor, CGContextTranslateCTM,
 };
 use crate::frameworks::core_graphics::cg_image::{
     kCGImageAlphaPremultipliedLast, kCGImageByteOrder32Big,
@@ -62,6 +63,10 @@ pub(super) struct CALayerHostObject {
     pub(super) needs_display_on_bounds_change: bool,
     /// `CGImageRef*`
     pub(super) contents: id,
+    /// `NSString*`, one of the `kCAGravity*` names, or nil while it has never
+    /// been set. Stored and reported back, but not honoured when compositing:
+    /// contents are always stretched to the bounds. A strong reference.
+    pub(super) contents_gravity: id,
     /// For CAEAGLLayer only
     pub(super) drawable_properties: id,
     /// For CAEAGLLayer only (internal state for compositor)
@@ -101,7 +106,30 @@ pub const kCAFilterLinear: &str = "kCAFilterLinear";
 pub const kCAFilterNearest: &str = "kCAFilterNearest";
 pub const kCAFilterTrilinear: &str = "kCAFilterTrilinear";
 
+/// `contentsGravity` values. tapHLE does not honour the gravity when drawing a
+/// layer's contents — they are always stretched to the bounds — but an app sets
+/// it by reading one of these constants, and an unbound one is a null pointer
+/// it dereferences to do so.
+pub const kCAGravityCenter: &str = "center";
+pub const kCAGravityTop: &str = "top";
+pub const kCAGravityBottom: &str = "bottom";
+pub const kCAGravityLeft: &str = "left";
+pub const kCAGravityRight: &str = "right";
+pub const kCAGravityTopLeft: &str = "topLeft";
+pub const kCAGravityTopRight: &str = "topRight";
+pub const kCAGravityBottomLeft: &str = "bottomLeft";
+pub const kCAGravityBottomRight: &str = "bottomRight";
+pub const kCAGravityResize: &str = "resize";
+pub const kCAGravityResizeAspect: &str = "resizeAspect";
+pub const kCAGravityResizeAspectFill: &str = "resizeAspectFill";
+
+/// The action key a layer looks up when it is about to be replaced on screen.
+/// It is an ordinary string like the gravity and filter names, and apps read it
+/// to install or ask for a transition rather than to compare against.
+pub const kCATransition: &str = "transition";
+
 pub const CONSTANTS: ConstantExports = &[
+    ("_kCATransition", HostConstant::NSString(kCATransition)),
     ("_kCAFilterLinear", HostConstant::NSString(kCAFilterLinear)),
     (
         "_kCAFilterNearest",
@@ -111,7 +139,99 @@ pub const CONSTANTS: ConstantExports = &[
         "_kCAFilterTrilinear",
         HostConstant::NSString(kCAFilterTrilinear),
     ),
+    (
+        "_kCAGravityCenter",
+        HostConstant::NSString(kCAGravityCenter),
+    ),
+    ("_kCAGravityTop", HostConstant::NSString(kCAGravityTop)),
+    (
+        "_kCAGravityBottom",
+        HostConstant::NSString(kCAGravityBottom),
+    ),
+    ("_kCAGravityLeft", HostConstant::NSString(kCAGravityLeft)),
+    ("_kCAGravityRight", HostConstant::NSString(kCAGravityRight)),
+    (
+        "_kCAGravityTopLeft",
+        HostConstant::NSString(kCAGravityTopLeft),
+    ),
+    (
+        "_kCAGravityTopRight",
+        HostConstant::NSString(kCAGravityTopRight),
+    ),
+    (
+        "_kCAGravityBottomLeft",
+        HostConstant::NSString(kCAGravityBottomLeft),
+    ),
+    (
+        "_kCAGravityBottomRight",
+        HostConstant::NSString(kCAGravityBottomRight),
+    ),
+    (
+        "_kCAGravityResize",
+        HostConstant::NSString(kCAGravityResize),
+    ),
+    (
+        "_kCAGravityResizeAspect",
+        HostConstant::NSString(kCAGravityResizeAspect),
+    ),
+    (
+        "_kCAGravityResizeAspectFill",
+        HostConstant::NSString(kCAGravityResizeAspectFill),
+    ),
 ];
+
+/// Recursive body of `-[CALayer renderInContext:]`; see the note there for the
+/// deliberate limits.
+fn render_in_context_inner(env: &mut Environment, layer: id, context: CGContextRef) {
+    let (hidden, bounds, background_color, contents, sublayers) = {
+        let host_object = env.objc.borrow::<CALayerHostObject>(layer);
+        (
+            host_object.hidden,
+            host_object.bounds,
+            host_object.background_color,
+            host_object.contents,
+            host_object.sublayers.clone(),
+        )
+    };
+    if hidden {
+        return;
+    }
+
+    // The layer's own coordinate space starts at its bounds origin.
+    let rect = CGRect {
+        origin: CGPoint { x: 0.0, y: 0.0 },
+        size: bounds.size,
+    };
+
+    if let Some(color) = background_color {
+        CGContextSetRGBFillColor(env, context, color.r, color.g, color.b, color.a);
+        CGContextFillRect(env, context, rect);
+    }
+    if contents != nil {
+        CGContextDrawImage(env, context, rect, contents);
+    }
+
+    for sublayer in sublayers {
+        // Translation only. A sublayer's origin in this layer's space is its
+        // position minus its anchor point scaled by its own size.
+        let (position, anchor_point, sub_bounds) = {
+            let host_object = env.objc.borrow::<CALayerHostObject>(sublayer);
+            (
+                host_object.position,
+                host_object.anchor_point,
+                host_object.bounds,
+            )
+        };
+        let dx = position.x - anchor_point.x * sub_bounds.size.width;
+        let dy = position.y - anchor_point.y * sub_bounds.size.height;
+
+        // There is no CGContextSaveGState here, so undo the translation
+        // afterwards instead. That is exact for a pure translation.
+        CGContextTranslateCTM(env, context, dx, dy);
+        render_in_context_inner(env, sublayer, context);
+        CGContextTranslateCTM(env, context, -dx, -dy);
+    }
+}
 
 pub const CLASSES: ClassExports = objc_classes! {
 
@@ -142,6 +262,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         needs_display: false,
         needs_display_on_bounds_change: false,
         contents: nil,
+        contents_gravity: nil,
         drawable_properties: nil,
         presented_pixels: None,
         cg_context: None,
@@ -162,6 +283,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let &mut CALayerHostObject {
         drawable_properties,
         contents,
+        contents_gravity,
         superlayer,
         cg_context,
         ref mut sublayers,
@@ -175,6 +297,10 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     if contents != nil {
         release(env, contents);
+    }
+
+    if contents_gravity != nil {
+        release(env, contents_gravity);
     }
 
     if let Some(cg_context) = cg_context {
@@ -365,6 +491,29 @@ pub const CLASSES: ClassExports = objc_classes! {
 // Stored and reported back, so a guest that sets it and reads it back sees
 // what it wrote, but the compositor does not clip sublayers to the layer's
 // bounds yet. See the clipping TODO in the composition module.
+// Draw this layer and its sublayers into a CoreGraphics context.
+//
+// Deliberately partial, and the boundary is worth stating precisely because
+// the full behaviour is large: this draws each layer's **background colour**
+// and its **contents image**, then recurses into sublayers positioned by
+// translation. It does **not** apply affine transforms, opacity, corner radius,
+// masking, or a delegate's -drawLayer:inContext:, and it does not consult any
+// running animation's presentation values.
+//
+// That covers the common use — snapshotting a tree of image-backed layers into
+// a UIGraphics image context — and nothing else. A layer relying on any of the
+// omitted features renders wrong rather than not at all, so this logs once to
+// say so.
+//
+// The layer tree is drawn with tapHLE's OpenGL compositor everywhere else, so
+// there is no existing path to share; a faithful implementation would either
+// grow this into a real CoreGraphics renderer or render through GL and read
+// back.
+- (())renderInContext:(CGContextRef)context {
+    log_once!("TODO: -[CALayer renderInContext:] draws only background colour and contents; transforms, opacity, masking and drawLayer:inContext: are ignored");
+    render_in_context_inner(env, this, context);
+}
+
 - (bool)masksToBounds {
     env.objc.borrow::<CALayerHostObject>(this).masks_to_bounds
 }
@@ -533,6 +682,12 @@ pub const CLASSES: ClassExports = objc_classes! {
             color_space,
             kCGImageByteOrder32Big | kCGImageAlphaPremultipliedLast
         );
+        // The compositor draws this bitmap with its vertical texture
+        // coordinate inverted (see composition.rs), so anything drawn into it
+        // that has a handedness has to be written the other way up. Drawing
+        // cannot work that out from the transform, so it is recorded here,
+        // where it is known.
+        cg_bitmap_context::mark_flipped_on_presentation(env, cg_context);
         env.objc.borrow_mut::<CALayerHostObject>(this).cg_context = Some(cg_context);
         cg_context
     } else {
@@ -556,6 +711,22 @@ pub const CLASSES: ClassExports = objc_classes! {
     let old_contents = std::mem::replace(&mut host_obj.contents, new_contents);
     retain(env, new_contents);
     release(env, old_contents);
+}
+
+// How the contents are placed when they do not fill the layer's bounds. tapHLE
+// always stretches them, so this is kept and reported back rather than obeyed —
+// but an app sets it while building its layers, long before anything is drawn,
+// and not understanding the message at all cost the whole app. The gravity
+// names it passes are already exported as constants above.
+- (id)contentsGravity {
+    env.objc.borrow::<CALayerHostObject>(this).contents_gravity
+}
+- (())setContentsGravity:(id)gravity { // NSString*
+    log_once!("[CALayer setContentsGravity:] is stored but contents are always stretched to the bounds");
+    let host_obj = env.objc.borrow_mut::<CALayerHostObject>(this);
+    let old_gravity = std::mem::replace(&mut host_obj.contents_gravity, gravity);
+    retain(env, gravity);
+    release(env, old_gravity);
 }
 
 - (())setEdgeAntialiasingMask:(u32)mask {

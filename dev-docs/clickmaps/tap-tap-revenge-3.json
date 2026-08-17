@@ -1,0 +1,33 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.tapulous.taptaprevengeIII",
+    "display_name": "Tap Tap",
+    "version": "3.5.4",
+    "sha256": "5c37763200da8dba06346164e8f104b7fb82b1de883d4f58d305109dbc978cec"
+  },
+  "recorded": {
+    "date": "2026-08-15",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": { "width": 320, "height": 480, "orientation": "portrait" },
+  "milestone": {
+    "rating": 2,
+    "describes": "The main menu is the rated milestone. The rest of this route is the frontier: it reaches the song list and starts loading a song, which is where the app currently stops."
+  },
+  "defaults": { "press_ms": 150, "settle_ms": 6000 },
+  "steps": [
+    { "id": "boot", "action": "wait", "settle_ms": 40000, "expect": "Main menu: the logo, the tutorial banner, the avatar panel, the \"You are offline\" notice, the Online / 1 Player / 2 Player wheel and the red Play button. This is the two-star milestone." },
+    { "id": "play", "action": "tap", "at": [159, 390], "settle_ms": 10000, "expect": "The Career song list: Back and Home in the bar, Easy / Medium / Hard / Extreme tabs, and three songs with their artwork - Get Crazy, Tap Tap Domination, Louder Than Boom." },
+    { "id": "song", "action": "tap", "at": [160, 120], "settle_ms": 30000, "expect": "The loading screen for the first song: its artwork and title under a \"Loading\" banner, with a gameplay tip along the bottom." },
+    { "id": "watch", "action": "wait", "settle_ms": 20000, "expect": "Still the loading screen. It does not finish - see dev-docs/app-notes/tap-tap-revenge-3.md for what is known about the stall." }
+  ],
+  "notes": [
+    "The song list was empty until UITableView learned to load its rows on first layout. If a replay finds it empty again, that is the regression to look for first.",
+    "The rows are at roughly (160, 120), (160, 200) and (160, 280); they are ordinary table rows 80 points apart.",
+    "Text tapHLE draws for this app comes out rotated 180 degrees, so the song titles and the tip read backwards. That is a rendering bug, not a sign the replay went wrong.",
+    "The difficulty tabs across the top are live - a tap on one reaches a UIButton - but the list does not visibly change, so there is no way to tell from a capture which is selected."
+  ]
+}

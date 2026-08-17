@@ -26,8 +26,33 @@
 
 use super::{autorelease, id, nil, release, retain};
 use crate::dyld::{export_c_func, FunctionExports};
-use crate::mem::MutPtr;
+use crate::mem::{MutPtr, MutVoidPtr};
+use crate::msg_class;
 use crate::Environment;
+
+/// `@autoreleasepool { … }` compiles to a push/pop pair rather than to an
+/// `NSAutoreleasePool` the app ever names. The token is opaque to the guest, so
+/// the pool object itself serves as it: pushing creates one, which registers it
+/// on this thread's pool stack, and popping releases it, which drains it along
+/// with any pool left above it — the same recovery Apple's runtime performs for
+/// an unbalanced inner pool.
+///
+/// This matters beyond ARC-era code: a survey of 1300 apps found this pair
+/// among the most common reasons an app died before reaching its own code, and
+/// it is one of the few runtime entry points that cannot be usefully stubbed —
+/// returning nothing would leak every autoreleased object in the block.
+fn objc_autoreleasePoolPush(env: &mut Environment) -> MutVoidPtr {
+    let pool: id = msg_class![env; NSAutoreleasePool new];
+    pool.cast()
+}
+
+fn objc_autoreleasePoolPop(env: &mut Environment, token: MutVoidPtr) {
+    if token.is_null() {
+        return;
+    }
+    let pool: id = token.cast();
+    release(env, pool);
+}
 
 fn objc_retain(env: &mut Environment, object: id) -> id {
     retain(env, object)
@@ -122,6 +147,8 @@ fn objc_destroyWeak(env: &mut Environment, location: MutPtr<id>) {
 }
 
 pub const FUNCTIONS: FunctionExports = &[
+    export_c_func!(objc_autoreleasePoolPush()),
+    export_c_func!(objc_autoreleasePoolPop(_)),
     export_c_func!(objc_retain(_)),
     export_c_func!(objc_release(_)),
     export_c_func!(objc_autorelease(_)),

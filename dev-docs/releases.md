@@ -17,6 +17,76 @@ prerelease is `0.3.0-alpha.1`, and the first stable tapHLE release will be
 - Reserve 1.0 for a dependable Windows distribution with established release,
   configuration, save-data, and compatibility expectations.
 
+## The first release is on hold
+
+**The first numbered tapHLE release waits for the new GUI.** Until that ships,
+the trigger below does not fire, however full `Unreleased` gets. This is a
+maintainer decision recorded here so that the rule is visibly held rather than
+quietly not working, and `dev-scripts/release-readiness.ps1` reports it as a
+blocker for the same reason.
+
+The reasoning is that a first release is the one release that gets looked at as
+a statement of what the project is. Everything after it is an increment against
+that baseline. Shipping `0.3.0-alpha.1` as a command-line emulator would set
+the baseline in the wrong place.
+
+This is a hold on the *first* release only. When the GUI ships, lift it by
+flipping the flag at the top of `release-readiness.ps1` and deleting this
+section; the mechanical trigger below then applies from that point on and is
+not subject to further judgement calls.
+
+## When to cut one
+
+The trigger is the changelog, not a commit count and not a judgement call about
+significance:
+
+**If `## Unreleased` in `CHANGELOG.md` has at least one user-visible entry and
+`trunk` is green, cut a prerelease before starting the next body of work.**
+
+Run `dev-scripts/release-readiness.ps1` to evaluate this. It reports MET or NOT
+MET with reasons and exits non-zero when a release should not be cut, so the
+answer does not depend on anyone remembering to look. Check it after merging a
+batch of work; `-Quick` skips the test suites for a fast look while a build is
+otherwise occupied, and says that it cannot report readiness on its own.
+
+That is the whole rule. It is deliberately mechanical, because the previous
+wording — a "meaningful milestone" — had no edge, and something with no edge
+never fires: the project reached hundreds of commits and an untouched
+`Unreleased` heading without a single release. A rule that depends on deciding
+whether work was important enough will always lose to the next piece of work.
+
+Consequences worth stating so the rule is not quietly softened:
+
+- An `alpha.N` is cheap and is meant to be. Bump `N` and cut another; there is
+  no cost to a prerelease that turns out to be a small one, and a large cost to
+  a backlog nobody can summarise.
+- If `Unreleased` is empty, there is nothing to release. Refactors, tests,
+  tooling and documentation legitimately produce no entry, and a period with no
+  release is the correct outcome rather than a missed one.
+- Do not batch several capabilities into one release to make it look
+  substantial. The changelog records what happened; the version number is a
+  label, not a verdict.
+
+The version *number* still follows the rules above: within `0.3.0`, successive
+prereleases increment `alpha.N`; a meaningful capability milestone increments the
+minor version and restarts at `alpha.1`.
+
+## Release notes are the changelog
+
+The body of a published release is the `CHANGELOG.md` section for that version,
+used as it stands. Do not write release notes separately.
+
+Two hand-maintained descriptions of the same release drift, and the one nobody
+reads is maintained worst. Keeping a single source also means the entries are
+written on the branch that earned them, while the reasoning is still to hand,
+rather than reconstructed from the log at tag time.
+
+At release, rename `## Unreleased` to `## <version> - YYYY-MM-DD` — the exact
+form `dev-scripts/release_version.py` validates, ASCII hyphen included — open a
+fresh empty `## Unreleased` above it, and paste that section into the published
+release. If a release would have no changelog section, that is a sign it should
+not be published.
+
 Do not put app names, upstream revisions, dates, or a permanent `tap` suffix in
 the Cargo version. Compatibility records already identify exact app versions
 and emulator commits. Release notes should record the upstream base when that
@@ -40,8 +110,15 @@ for example `v0.3.0-alpha.1`. The Windows archive is named:
 tapHLE-v0.3.0-alpha.1-Windows-x86_64.zip
 ```
 
-Windows x86_64 is the only release artifact. macOS remains a best-effort
-development validation target, and Android is not a release target.
+Windows x86_64 is the only release artifact today. Linux and macOS are
+intended desktop platforms that nothing has been released for; Android is not a
+release target. `packaging.md` records what each would need.
+
+A release artifact contains both programs: `tapHLE-gui`, the desktop frontend,
+and `tapHLE`, the emulator it launches. A Windows release should also carry the
+installer built from `dev-scripts/tapHLE.iss`, which has been written but not
+yet built — do not publish one without checking its shortcut, its uninstall
+entry and an upgrade over an existing installation.
 
 The repository pins its Rust compiler, Clippy, and Rustfmt version in
 `rust-toolchain.toml`. Update that file deliberately, run the full lint and
@@ -59,8 +136,7 @@ A numbered release must:
 3. pass repository policy, formatting, unit/integration tests, and the release
    Windows build in CI;
 4. contain the executable, runtime libraries/fonts, default and user option
-   templates, app-picker directory, README/changelog, and
-   license text; and
+   templates, README/changelog, and license text; and
 5. avoid claims broader than the exact committed compatibility evidence.
 
 An alpha may have incomplete game compatibility. Its release notes must state

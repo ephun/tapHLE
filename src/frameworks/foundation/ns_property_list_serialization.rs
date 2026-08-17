@@ -41,12 +41,27 @@ pub const CLASSES: ClassExports = objc_classes! {
 + (id)dataFromPropertyList:(id)plist
                     format:(NSPropertyListFormat)format
                 errorDescription:(MutPtr<id>)error_string { // NSString **
-    assert_eq!(format, NSPropertyListBinaryFormat_v1_0); // TODO
-
     let value = serialize_plist(env, plist);
     log_dbg!("dataFromPropertyList value {:?}", value);
     let mut buf = Vec::new();
-    value.to_writer_binary(&mut buf).unwrap();
+    // Both documented formats are supported. The old-style OpenStep format
+    // (`NSPropertyListOpenStepFormat`) is write-only on Apple's too and is not
+    // one of these, so an unknown format is a caller error rather than a gap.
+    match format {
+        NSPropertyListXMLFormat_v1_0 => value.to_writer_xml(&mut buf).unwrap(),
+        NSPropertyListBinaryFormat_v1_0 => value.to_writer_binary(&mut buf).unwrap(),
+        _ => {
+            log!("dataFromPropertyList: unsupported format {}, returning nil", format);
+            if !error_string.is_null() {
+                let message = crate::frameworks::foundation::ns_string::from_rust_string(
+                    env,
+                    format!("Unsupported property list format {format}"),
+                );
+                env.mem.write(error_string, message);
+            }
+            return nil;
+        }
+    }
     let len: u32 = buf.len().try_into().unwrap();
     log_dbg!("dataFromPropertyList buf len {}", len);
     let ptr = env.mem.alloc(len);
@@ -63,6 +78,20 @@ pub const CLASSES: ClassExports = objc_classes! {
           mutabilityOption:(NSPropertyListMutabilityOptions)opt
                     format:(MutPtr<NSPropertyListFormat>)format
           errorDescription:(MutPtr<id>)error_string { // NSString **
+    // Nil data is not a caller error worth aborting over: it is what an app
+    // holds after a file it expected turns out not to be there, and it hands it
+    // straight on. Apple answers nil with an error description, which is the
+    // same answer as unparseable data, and the caller already has to handle it.
+    if data == nil {
+        if !error_string.is_null() {
+            let error_message =
+                ns_string::from_rust_string(env, String::from("Cannot parse a NULL data object"));
+            env.mem.write(error_string, error_message);
+            autorelease(env, error_message);
+        }
+        return nil;
+    }
+
     let slice = ns_data::to_rust_slice(env, data);
 
     if let Ok(root) = Value::from_reader_xml(Cursor::new(slice)) {

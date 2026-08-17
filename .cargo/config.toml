@@ -1,3 +1,16 @@
+[env]
+# CMake 4 removed support for projects that declare a minimum policy version
+# below 3.5, and the vendored SDL, Dynarmic and OpenAL sources all do. Without
+# this, a from-scratch build of those crates fails during configure with
+# "Compatibility with CMake < 3.5 has been removed" — which looks like a broken
+# checkout rather than a toolchain change, and which a release build hides for
+# as long as its prebuilt artifacts survive.
+#
+# This is exactly the fallback CMake itself suggests in that message: it only
+# supplies a minimum policy version for projects that name one too old, and
+# changes nothing for anything else.
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"
+
 [build]
 # the documentation for the tapHLE crate is intended to include private items
 # alas this isn't scoped to that crate!

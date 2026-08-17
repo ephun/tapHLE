@@ -25,9 +25,18 @@
 // so this warning is unhelpful.
 #![allow(rustdoc::private_intra_doc_links)]
 
+// A few modules are `pub` because the desktop frontend (`tapHLE_gui`) links
+// this library rather than growing a second, drifting copy of bundle parsing
+// and option parsing. What it may use is deliberately narrow: `app_bundle` is
+// a facade written for it, and `options`, `paths`, `licenses` and `log` are
+// small and already shaped for outside use. The guest filesystem, the bundle
+// reader and the renderer stay private — they are the emulator's internals,
+// and exposing them would make every one of their signatures part of what
+// tapHLE promises.
 #[macro_use]
-mod log;
+pub mod log;
 mod abi;
+pub mod app_bundle;
 mod audio;
 mod bundle;
 mod cpu;
@@ -38,17 +47,23 @@ mod font;
 mod frameworks;
 mod fs;
 mod gdb;
+// Not public: the frontend has no use for it, and exposing it would make
+// Environment publicly reachable and drag half the emulator's internals into
+// the crate's public interface.
 mod gles;
 mod image;
 mod libc;
-mod licenses;
+pub mod licenses;
 mod mach_o;
 mod matrix;
 mod mem;
 mod objc;
-mod options;
-mod paths;
+pub mod options;
+pub mod paths;
 mod stack;
+// Not public, for the same reason as `gles`: its host-facing helpers take an
+// Environment. The frontend reads device families and orientations through
+// `bundle` and `options`, which do not require naming the types.
 mod window;
 
 // Environment is used very frequently used and used to be in this module, so
@@ -99,9 +114,9 @@ const USAGE: &str = "\
 Usage:
     tapHLE [PATH] [OPTIONS]
 
-PATH should be a path to a .app bundle or .ipa file.
-
-If no app path or special option is specified, a GUI app picker is displayed.
+PATH should be a path to a .app bundle or .ipa file, and is required unless a
+special option below is used. For a library, settings and a log, run tapHLE-gui
+instead.
 
 Special options:
     --help
@@ -181,26 +196,13 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         return Ok(());
     }
 
-    let bundle_path = if let Some(bundle_path) = bundle_path {
-        bundle_path
-    } else {
-        let mut options = options::Options::default();
-        // Apply command-line options only (no app-specific options apply)
-        for option_arg in &option_args {
-            let parse_result = options.parse_argument(option_arg);
-            assert!(parse_result == Ok(true));
-        }
-        if options.headless {
-            return Err(
-                "No app specified. Use the --help flag to see command-line usage.".to_string(),
-            );
-        }
-        echo!(
-            "No app specified, opening app picker. Use the --help flag to see command-line usage."
+    let Some(bundle_path) = bundle_path else {
+        echo!("{}", USAGE);
+        return Err(
+            "No app specified. Pass the path to a .app bundle or .ipa file, or run tapHLE-gui \
+             to pick one from a library."
+                .to_string(),
         );
-        let (bundle_path, mut extra_options) = environment::app_picker::app_picker(options)?;
-        option_args.append(&mut extra_options);
-        bundle_path
     };
 
     // When PowerShell does tab-completion on a directory, for some reason it
@@ -275,10 +277,13 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         }
     }
 
-    if required_device_capabilities.contains(&"opengles-2")
-        || required_device_capabilities.contains(&"opengles-3")
-    {
-        echo!("Warning: app requires OpenGL ES 2.0+ support. Only OpenGL ES 1.1 is currently supported.");
+    // OpenGL ES 2.0 is supported: an app that asks for a 2.0 context gets a
+    // native one, and its rendering is presented through the ES 2.0 path in
+    // `frameworks::opengles::eagl`. Only 3.0 is still beyond tapHLE, so only
+    // that is worth warning about — saying "only 1.1 is supported" told every
+    // shader-based app, and everyone reading its log, something untrue.
+    if required_device_capabilities.contains(&"opengles-3") {
+        echo!("Warning: app requires OpenGL ES 3.0 support. Only OpenGL ES 1.1 and 2.0 are currently supported.");
     }
 
     if just_info {

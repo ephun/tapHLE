@@ -47,6 +47,32 @@ fn CFDataCreateWithBytesNoCopy(
     msg![env; new initWithBytesNoCopy:bytes length:length freeWhenDone:false]
 }
 
+pub type CFMutableDataRef = CFDataRef;
+
+/// `capacity` is a maximum, not an initial size, and zero means "no limit".
+/// The created data is always empty; a caller grows it with [CFDataSetLength]
+/// and then writes through [CFDataGetMutableBytePtr].
+fn CFDataCreateMutable(
+    env: &mut Environment,
+    allocator: CFAllocatorRef,
+    capacity: CFIndex,
+) -> CFMutableDataRef {
+    assert!(allocator == kCFAllocatorDefault || env.mem.read(allocator).is_system_default()); // unimplemented
+    let capacity: NSUInteger = capacity.try_into().unwrap();
+    let new: id = msg_class![env; NSMutableData alloc];
+    msg![env; new initWithCapacity:capacity]
+}
+
+fn CFDataGetMutableBytePtr(env: &mut Environment, data: CFMutableDataRef) -> MutPtr<u8> {
+    let ptr: MutVoidPtr = msg![env; data mutableBytes];
+    ptr.cast()
+}
+
+fn CFDataSetLength(env: &mut Environment, data: CFMutableDataRef, length: CFIndex) {
+    let length: NSUInteger = length.try_into().unwrap();
+    msg![env; data setLength:length]
+}
+
 pub fn CFDataGetLength(env: &mut Environment, data: CFDataRef) -> CFIndex {
     let len: NSUInteger = msg![env; data length];
     len.try_into().unwrap()
@@ -68,6 +94,9 @@ fn CFDataGetBytes(env: &mut Environment, data: CFDataRef, range: CFRange, buffer
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CFDataCreate(_, _, _)),
     export_c_func!(CFDataCreateWithBytesNoCopy(_, _, _, _)),
+    export_c_func!(CFDataCreateMutable(_, _)),
+    export_c_func!(CFDataGetMutableBytePtr(_)),
+    export_c_func!(CFDataSetLength(_, _)),
     export_c_func!(CFDataGetLength(_)),
     export_c_func!(CFDataGetBytePtr(_)),
     export_c_func!(CFDataGetBytes(_, _, _)),

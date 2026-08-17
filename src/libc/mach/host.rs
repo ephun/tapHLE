@@ -11,7 +11,9 @@ use crate::dyld::FunctionExports;
 use crate::libc::mach::arm::vm_types::vm_size_t;
 use crate::libc::mach::core_types::natural_t;
 use crate::libc::mach::port::mach_port_t;
-use crate::libc::mach::thread_info::{kern_return_t, mach_msg_type_number_t, KERN_SUCCESS};
+use crate::libc::mach::thread_info::{
+    kern_return_t, mach_msg_type_number_t, KERN_FAILURE, KERN_INVALID_ARGUMENT, KERN_SUCCESS,
+};
 use crate::mem::{guest_size_of, MutPtr, SafeRead, PAGE_SIZE};
 use crate::{export_c_func, Environment};
 
@@ -79,10 +81,33 @@ fn host_statistics(
     host_info_out_count: MutPtr<mach_msg_type_number_t>,
 ) -> kern_return_t {
     assert_eq!(host, MACH_HOST_SELF);
-    assert_eq!(flavor, HOST_VM_INFO);
+    if flavor != HOST_VM_INFO {
+        log!(
+            "TODO: host_statistics() with flavor {}, returning KERN_INVALID_ARGUMENT",
+            flavor
+        );
+        return KERN_INVALID_ARGUMENT;
+    }
+
+    // The count is the size of the buffer the caller is offering, not a promise
+    // that the caller's idea of `vm_statistics` matches ours. Unreal Engine 3
+    // apps (Epic Citadel, Infinity Blade 2, Dark Meadow) pass 60 here, which is
+    // the size in bytes rather than in words, and an app built against another
+    // SDK revision of the structure passes that revision's word count. The
+    // kernel copies out as much as both sides have room for and writes back how
+    // much it wrote, so a caller offering more room than needed reads a short
+    // reply instead of being refused.
     let out_size_available = env.mem.read(host_info_out_count);
     let out_size_expected = guest_size_of::<vm_statistics>() / guest_size_of::<natural_t>();
-    assert_eq!(out_size_expected, out_size_available);
+    if out_size_available < out_size_expected {
+        log!(
+            "host_statistics() reply buffer holds {} words but vm_statistics needs {}",
+            out_size_available,
+            out_size_expected
+        );
+        return KERN_FAILURE;
+    }
+
     // Below values corresponds to a run of an iPod Touch 4 running iOS 6.1.
     // As tapHLE doesn't have a paging system (yet? never?),
     // those numbers are (mostly) meaningless.
@@ -112,6 +137,9 @@ fn host_statistics(
             speculative_count: 0,
         },
     );
+    // Report what was actually written, which is how a caller with a larger
+    // buffer learns where our reply ends.
+    env.mem.write(host_info_out_count, out_size_expected);
     KERN_SUCCESS
 }
 

@@ -57,12 +57,19 @@ pub const CLASSES: ClassExports = objc_classes! {
 + (id)nibWithNibName:(id)nib_name // NSString *
               bundle:(id)bundle { //NSBundle *
     let main_bundle = msg_class![env; NSBundle mainBundle];
-    let bundle: id = if bundle == nil {
+    let bundle: id = if bundle == nil || bundle == main_bundle {
         main_bundle
     } else {
-        // TODO: non-main bundles
-        assert_eq!(bundle, main_bundle);
-        bundle
+        // tapHLE has only the main bundle, so a nib named against another one
+        // is looked for there. That is where an app's own nibs actually live:
+        // the other bundle is normally a framework whose resources were folded
+        // into the app at build time. Aborting instead lost the whole interface
+        // over a lookup that usually succeeds.
+        log!(
+            "TODO: [UINib nibWithNibName:bundle:] with the non-main bundle {:?}; looking in the main bundle instead",
+            bundle
+        );
+        main_bundle
     };
 
     retain(env, nib_name);
@@ -98,14 +105,30 @@ pub const CLASSES: ClassExports = objc_classes! {
     let type_: id = get_static_str(env, "nib");
     let path: id  = msg![env; bundle pathForResource:nib_name ofType:type_];
 
-    assert!(path != nil);
-    assert!(msg![env; path isAbsolutePath]);
+    // A nib named in a xib or Info.plist that is not in the bundle is a
+    // packaging mistake in the app, not a reason to stop running it.
+    if path == nil {
+        log!("Warning: no nib named {:?} in the bundle; instantiating nothing", nib_name);
+        return msg_class![env; NSArray array];
+    }
     let nib_path = to_rust_string(env, path).to_string();
 
-    assert!(env.objc.borrow::<UINibHostObject>(this).file_owner == nil);
+    // A UINib is a loadable template, not a one-shot: instantiating the same
+    // nib repeatedly, with a different owner each time, is exactly what a table
+    // view doing cell reuse does. Requiring the owner slot to be empty allowed
+    // only the first instantiation and killed twelve apps in a 1501-app survey
+    // on the second.
     env.objc.borrow_mut::<UINibHostObject>(this).file_owner = owner;
 
-    let unarchiver = load_nib_file(env, this, GuestPathBuf::from(nib_path)).unwrap();
+    // load_nib_file already treats an unloadable nib as a legitimate outcome
+    // and says so; discarding that with unwrap() turned its careful handling
+    // back into a crash. An empty array is what UIKit returns when a nib
+    // produces nothing, and it is what a caller enumerating the result copes
+    // with — the screen is missing either way, but the app survives to show
+    // the rest of itself.
+    let Ok(unarchiver) = load_nib_file(env, this, GuestPathBuf::from(nib_path)) else {
+        return msg_class![env; NSArray array];
+    };
     let top_level_objects_key = get_static_str(env, "UINibTopLevelObjectsKey");
     let top_level_objects = msg![env; unarchiver decodeObjectForKey:top_level_objects_key];
 
@@ -131,6 +154,24 @@ pub const CLASSES: ClassExports = objc_classes! {
             continue;
         }
         () = msg![env; filtered addObject:obj];
+    }
+
+    // What a nib actually produced is the first thing anyone asks when a screen
+    // is missing, and it is otherwise invisible.
+    if crate::log::debug_enabled_for(module_path!()) {
+        let filtered_count: NSUInteger = msg![env; filtered count];
+        let mut names = Vec::with_capacity(filtered_count as usize);
+        for i in 0..filtered_count {
+            let obj: id = msg![env; filtered objectAtIndex:i];
+            let class: Class = msg![env; obj class];
+            names.push(env.objc.get_class_name(class).to_string());
+        }
+        log_dbg!(
+            "Nib instantiated {} top-level object(s) (of {} decoded): {:?}",
+            filtered_count,
+            count,
+            names
+        );
     }
 
     release(env, unarchiver);
@@ -348,6 +389,28 @@ pub const CLASSES: ClassExports = objc_classes! {
         label,
         source
     } = env.objc.borrow(this);
+
+    // An outlet that silently fails to connect leaves the app holding a
+    // default-constructed object instead of the one the nib designed, which is
+    // very hard to see from the outside.
+    if crate::log::debug_enabled_for(module_path!()) {
+        let name = |env: &mut crate::Environment, o: id| -> String {
+            if o == nil {
+                "nil".to_string()
+            } else {
+                let c = crate::objc::ObjC::read_isa(o, &env.mem);
+                env.objc.get_class_name(c).to_string()
+            }
+        };
+        let src = name(env, source);
+        let dst = name(env, destination);
+        let label_str = crate::frameworks::foundation::ns_string::to_rust_string(env, label)
+            .to_string();
+        log_dbg!(
+            "OUTLET [{} {:?}].{} = {} {:?}",
+            src, source, label_str, dst, destination
+        );
+    }
 
     () = msg![env; source setValue:destination forKey:label];
 }
