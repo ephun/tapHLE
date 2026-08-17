@@ -65,7 +65,10 @@ reject. The accepted shape, confirmed against the deployment:
 ```json
 {
   "app_id": 26,
-  "version": {"name": "2.5.1", "bundle_version": "2.5.1", "minimum_os_version": "3.0"},
+  "version": {
+    "name": "2.5.1",
+    "extra": {"bundle_version": "2.5.1", "minimum_os_version": "3.0"}
+  },
   "report": {
     "rating": 3,
     "supersedes": 53,
@@ -81,9 +84,24 @@ reject. The accepted shape, confirmed against the deployment:
 }
 ```
 
+The version's identity fields go **inside `version.extra`**, not beside `name`.
+Putting them beside it is rejected with
+`version.extra is missing a required field`, which at least names the object.
+
 `app_id` and `version` may instead be an `app` object and a `version` object to
 create new ones; look the app up first with `GET /api/apps` so an existing entry
-is reused rather than duplicated. `source_type`, `source_name` and
+is reused rather than duplicated. The `app` object takes `name` and an `extra`
+holding at least `bundle_identifier`.
+
+**An app_id from an app note may no longer exist.** Rows are removed in
+moderation, and the note does not find out: Omium's recorded app 25 returned
+`app_id does not exist`, because the moderator had removed it along with a bad
+neighbouring row. Check with `GET /api/apps/<id>` before trusting an id a note
+gives you, and create the app rather than guessing another number.
+
+A rejected submission publishes nothing, so correcting one of these and
+retrying is safe. That is not licence to discover the schema by probing — the
+warning above stands, because a probe that *succeeds* is a published report. `source_type`, `source_name` and
 `taphle_version` are the required `extra` fields. `cpu`, `gpu`, `frontier` and
 `supersedes` are optional. **`os` and `booted` are not accepted keys** and cause
 a flat `report was rejected (check rating, extra fields and screenshot)`, which
