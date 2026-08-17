@@ -453,6 +453,10 @@
   to be nothing. Finding nothing is an ordinary answer, and games are
   written to take it, but tapHLE stopped on the spot instead. Every version
   of Fieldrunners died this way while building its first screen.
+- Divide and take a remainder in one step, the way some games' arithmetic is
+  built. tapHLE understood one of the two spellings compilers use for this
+  and not the other, and a game built with the other could not do that
+  arithmetic at all, so it never started. OLO 1.31 stopped there.
 
 ### Known limitations
 
