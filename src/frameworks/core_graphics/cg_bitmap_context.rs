@@ -38,6 +38,14 @@ pub(super) struct CGBitmapContextData {
     bytes_per_row: GuestUSize,
     color_space: &'static str,
     alpha_info: CGImageAlphaInfo,
+    /// Whether this bitmap is flipped again between here and the screen.
+    ///
+    /// A layer's backing bitmap is: the compositor draws it with its vertical
+    /// texture coordinate inverted. A bitmap an app made for itself is not.
+    /// Nothing about the bitmap's contents distinguishes them, so the layer
+    /// says so when it creates one, and drawing that has a handedness — text —
+    /// asks rather than guessing from the current transform.
+    pub(super) flipped_on_presentation: bool,
 }
 
 pub fn CGBitmapContextCreate(
@@ -85,6 +93,9 @@ pub fn CGBitmapContextCreate(
             bytes_per_row,
             color_space,
             alpha_info: bitmap_info & kCGBitmapAlphaInfoMask,
+            // An app's own bitmap goes to the screen as it is. Only a layer's
+            // backing bitmap is flipped again, and CALayer marks that itself.
+            flipped_on_presentation: false,
         }),
         // A new context's fill and stroke colour space is device grey, which is
         // what CGContextSetFillColor reads a component array in if the caller
@@ -125,6 +136,17 @@ pub fn CGBitmapContextGetHeight(env: &mut Environment, context: CGContextRef) ->
     let host_obj = env.objc.borrow::<CGContextHostObject>(context);
     let CGContextSubclass::CGBitmapContext(bitmap_data) = host_obj.subclass;
     bitmap_data.height
+}
+
+/// Say that this bitmap is flipped again on its way to the screen.
+///
+/// Called by `CALayer` for the bitmap it hands to `-drawRect:`, because the
+/// compositor draws that one with its vertical texture coordinate inverted.
+/// Not a Core Graphics function: nothing in the guest can ask this.
+pub fn mark_flipped_on_presentation(env: &mut Environment, context: CGContextRef) {
+    let host_obj = env.objc.borrow_mut::<CGContextHostObject>(context);
+    let CGContextSubclass::CGBitmapContext(ref mut bitmap_data) = host_obj.subclass;
+    bitmap_data.flipped_on_presentation = true;
 }
 
 fn CGBitmapContextGetBytesPerRow(env: &mut Environment, context: CGContextRef) -> GuestUSize {
@@ -461,6 +483,11 @@ impl CGBitmapContextDrawer<'_> {
     /// [Self::iter_transformed_pixels].
     pub fn transform(&self) -> CGAffineTransform {
         self.transform
+    }
+    /// Whether this bitmap is flipped again between here and the screen.
+    /// See [CGBitmapContextData::flipped_on_presentation].
+    pub fn flipped_on_presentation(&self) -> bool {
+        self.bitmap_info.flipped_on_presentation
     }
     /// Convert an sRGB colour with straight alpha into what [Self::put_pixel]
     /// wants: linear RGB, premultiplied if this context's format is.

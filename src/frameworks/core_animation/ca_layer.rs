@@ -12,7 +12,7 @@ use crate::frameworks::core_graphics::cg_affine_transform::{
     CGAffineTransform, CGAffineTransformIdentity,
 };
 use crate::frameworks::core_graphics::cg_bitmap_context::{
-    CGBitmapContextCreate, CGBitmapContextGetHeight, CGBitmapContextGetWidth,
+    self, CGBitmapContextCreate, CGBitmapContextGetHeight, CGBitmapContextGetWidth,
 };
 use crate::frameworks::core_graphics::cg_color::{CGColorHostObject, CGColorRef};
 use crate::frameworks::core_graphics::cg_color_space::CGColorSpaceCreateDeviceRGB;
@@ -672,6 +672,12 @@ pub const CLASSES: ClassExports = objc_classes! {
             color_space,
             kCGImageByteOrder32Big | kCGImageAlphaPremultipliedLast
         );
+        // The compositor draws this bitmap with its vertical texture
+        // coordinate inverted (see composition.rs), so anything drawn into it
+        // that has a handedness has to be written the other way up. Drawing
+        // cannot work that out from the transform, so it is recorded here,
+        // where it is known.
+        cg_bitmap_context::mark_flipped_on_presentation(env, cg_context);
         env.objc.borrow_mut::<CALayerHostObject>(this).cg_context = Some(cg_context);
         cg_context
     } else {

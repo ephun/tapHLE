@@ -399,30 +399,47 @@ pub fn draw_font_glyph(
     }
 }
 
-/// Undo a y-axis flip in the context, about the horizontal band the text is
-/// about to occupy. Returns whether anything was changed, so the caller knows
-/// whether to restore.
+/// Flip the context about the horizontal band the text is about to occupy,
+/// when that is what makes the text land upright. Returns whether anything was
+/// changed, so the caller knows whether to restore.
 ///
 /// Text layout here runs y-downward: lines are placed one below the next and a
-/// glyph's bitmap rows run top to bottom. UIKit hands `-drawRect:` a context
-/// whose y axis is flipped for exactly that convention, and `UIView` installs
-/// that flip around every `-drawRect:` — including tapHLE's own `UILabel` and
-/// button title drawing, which is already written y-downward. The result was
-/// text mirrored top to bottom: whole strings upside down, and a wrapped
-/// paragraph with its lines in reverse order.
+/// glyph's bitmap rows run top to bottom. Two separate things can turn that
+/// over on its way to the screen, and whether the text ends up upright depends
+/// on **both**:
 ///
-/// Flipping again about the text's own band turns the two flips into a pure
-/// translation, so the text lands upright *and* in the place it was asked for.
-/// Doing it here, rather than per glyph, is what keeps line order right:
-/// mirroring each glyph on its own fixes the letters and leaves the lines
-/// stacked upwards.
+/// - **The transform.** UIKit lays out downward and Core Graphics upward, so
+///   `UIView` installs a y-axis flip around every `-drawRect:` call.
+/// - **The destination.** The compositor draws a layer's backing bitmap with
+///   its vertical texture coordinate inverted, so everything in it is turned
+///   over once more on its way to a texture. A bitmap an app made for itself
+///   is not touched.
+///
+/// Two flips cancel. So the text needs flipping back exactly when those two
+/// **agree** — both on, or both off — and must be left alone when they differ.
+///
+/// Deciding this from the transform alone is what produced the two remaining
+/// faults. An app that draws a string into its own bitmap with no flip in
+/// force got no correction and came out mirrored; an app that flips its own
+/// bitmap context first — the correct way to draw UIKit text into one — got a
+/// correction it did not need. Both are the same mistake: the transform is
+/// only half of the question.
+///
+/// Doing it about the band, rather than per glyph, is what keeps line order
+/// right: mirroring each glyph on its own fixes the letters and leaves the
+/// lines of a paragraph stacked upwards.
 fn counter_flip_for_text(
     env: &mut Environment,
     context: CGContextRef,
     band_origin_y: CGFloat,
     band_height: CGFloat,
 ) -> bool {
-    if CGContextGetCTM(env, context).d >= 0.0 {
+    let transform_flipped = CGContextGetCTM(env, context).d < 0.0;
+    let destination_flipped = {
+        let drawer = CGBitmapContextDrawer::new(&env.objc, &mut env.mem, context);
+        drawer.flipped_on_presentation()
+    };
+    if transform_flipped != destination_flipped {
         return false;
     }
     CGContextSaveGState(env, context);
