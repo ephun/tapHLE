@@ -99,14 +99,6 @@ fn show_empty(ui: &mut Ui, context: &LibraryContext<'_>, actions: &mut Vec<Actio
     });
 }
 
-/// The height of the row under an app's name where its version is chosen.
-///
-/// Every cell reserves it, including the apps that only have one version.
-/// The lattice is the point of the grid, and a row of cells that changed
-/// height according to how many versions each app happened to have would not
-/// be one.
-const VERSION_ROW: f32 = 17.0;
-
 /// The size of one cell in the grid.
 ///
 /// The horizontal and vertical multipliers are where the home-screen rhythm
@@ -116,7 +108,7 @@ const VERSION_ROW: f32 = 17.0;
 fn cell_size(icon_points: f32) -> Vec2 {
     let width = (icon_points * 1.85).max(84.0);
     let label_height = 30.0;
-    Vec2::new(width, icon_points + label_height + 16.0 + VERSION_ROW)
+    Vec2::new(width, icon_points + label_height + 16.0)
 }
 
 fn show_grid(ui: &mut Ui, context: &LibraryContext<'_>, actions: &mut Vec<Action>) {
@@ -208,7 +200,7 @@ fn grid_cell(
 
     let label_rect = Rect::from_min_max(
         egui::pos2(rect.left() + 4.0, icon_rect.bottom() + 5.0),
-        egui::pos2(rect.right() - 4.0, rect.bottom() - 2.0 - VERSION_ROW),
+        egui::pos2(rect.right() - 4.0, rect.bottom() - 2.0),
     );
     let colour = if entry.missing {
         palette.text_dim
@@ -239,14 +231,11 @@ fn grid_cell(
         colour,
     );
 
-    if group.has_choice() {
-        let chip = Rect::from_center_size(
-            egui::pos2(rect.center().x, rect.bottom() - 2.0 - VERSION_ROW / 2.0),
-            Vec2::new((cell.x - 10.0).min(104.0), VERSION_ROW - 2.0),
-        );
-        version_chip(ui, context, group, chip, actions);
-    }
-
+    // Which version is on show is decided in the details sidebar, and only
+    // there. A dropdown in every cell put a control in the middle of what is
+    // meant to read as a home screen, and repeated it once per app; the
+    // sidebar already names the selected version next to the rating, the
+    // settings and the Play button that all belong to it.
     handle_entry_interaction(ui, context, group, &response, actions);
 }
 
@@ -264,30 +253,6 @@ fn is_selected(context: &LibraryContext<'_>, group: &VersionGroup) -> bool {
         .versions
         .iter()
         .any(|&index| context.library.entries[index].id == selected)
-}
-
-/// The button under an app's name that says which version is on show.
-fn version_chip(
-    ui: &mut Ui,
-    context: &LibraryContext<'_>,
-    group: &VersionGroup,
-    rect: Rect,
-    actions: &mut Vec<Action>,
-) {
-    let entry = &context.library.entries[group.shown];
-    let label = format!("{} ▾", group_label(context, group, entry));
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect)
-            .layout(egui::Layout::top_down(egui::Align::Center)),
-    );
-    child.spacing_mut().button_padding = Vec2::new(4.0, 0.0);
-    child
-        .menu_button(egui::RichText::new(label).small(), |ui| {
-            version_menu(ui, context, group, actions);
-        })
-        .response
-        .on_hover_text(format!("{} versions of this app", group.versions.len()));
 }
 
 /// One version's name, as distinct from the others in its group.
@@ -441,18 +406,7 @@ fn list_row(
                 .unwrap_or_default(),
         ),
     ];
-    for (column, (column_width, text)) in columns.into_iter().enumerate() {
-        // The version column is where an app with several versions is
-        // switched between them, so it is a real control rather than text.
-        if column == 2 && group.has_choice() {
-            let chip = Rect::from_min_size(
-                egui::pos2(x - 2.0, rect.center().y - 9.0),
-                Vec2::new(column_width - 6.0, 18.0),
-            );
-            version_chip(ui, context, group, chip, actions);
-            x += column_width;
-            continue;
-        }
+    for (column_width, text) in columns {
         let galley = {
             let mut job =
                 egui::text::LayoutJob::simple(text, font.clone(), colour, column_width - 8.0);
