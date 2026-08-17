@@ -440,6 +440,10 @@
   something a game does right after making the view, and it was not understood
   at all, so the game ended before the screen holding the view was ever built.
   tapHLE still draws the view blank, as it always has.
+- Let a game ask a collection for the copy of a value it already holds, rather
+  than only whether it holds one. Games use this to keep a single shared copy
+  of a name or a setting, and the question could not be asked at all, so
+  asking it ended the game. PapiJump stopped there during start-up.
 
 ### Known limitations
 
