@@ -6,6 +6,7 @@
 //! `UIWebView`.
 
 use crate::frameworks::foundation::ns_string::{get_static_str, to_rust_string};
+use crate::frameworks::foundation::NSUInteger;
 use crate::msg;
 use crate::objc::{id, msg_super, nil, objc_classes, ClassExports};
 use std::borrow::Cow;
@@ -32,6 +33,15 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (())setScalesPageToFit:(bool)_scales {
+    // TODO
+}
+// Which kinds of text — phone numbers, addresses, links — the web engine
+// should turn into tappable links by itself. There is no engine and no
+// document, so there is nothing for the setting to apply to; it is accepted
+// and dropped, like the other presentation settings above. An app configures
+// this immediately after creating the view, so refusing it ends the app
+// before the screen holding the web view is ever built.
+- (())setDataDetectorTypes:(NSUInteger)_types {
     // TODO
 }
 - (())setDelegate:(id)_delegate {

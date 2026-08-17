@@ -426,6 +426,11 @@
   screen for it, so it was being rotated twice and the finished frame arrived
   as flat horizontal bands; it now launches in landscape-native mode. Racing,
   crashing, reading the results and starting another race all work.
+- Stop games quitting while setting up a web view. Saying which kinds of text
+  in a page should become tappable — phone numbers, addresses, links — is
+  something a game does right after making the view, and it was not understood
+  at all, so the game ended before the screen holding the view was ever built.
+  tapHLE still draws the view blank, as it always has.
 
 ### Known limitations
 
