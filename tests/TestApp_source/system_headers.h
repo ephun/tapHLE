@@ -173,6 +173,7 @@ static inline NSRange NSMakeRange(NSUInteger loc, NSUInteger len) {
 - (ObjectType)anyObject;
 - (NSUInteger)count;
 - (BOOL)containsObject:(ObjectType)object;
+- (ObjectType)member:(ObjectType)object;
 - (BOOL)intersectsSet:(NSSet *)other;
 - (BOOL)isSubsetOfSet:(NSSet *)other;
 - (BOOL)isEqualToSet:(NSSet *)other;

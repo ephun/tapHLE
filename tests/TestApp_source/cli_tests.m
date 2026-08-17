@@ -7004,6 +7004,38 @@ int test_NSMutableSet_setAlgebra() {
   return result;
 }
 
+// member: answers with the set's own object rather than with the one it was
+// asked about, which is the whole reason it exists next to containsObject: —
+// a caller uses the returned instance in place of its own equal copy. An
+// object the set does not hold gives nil.
+int test_NSSet_member() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  // A separately built string, equal to the stored one but not the same
+  // object, so "returns the stored instance" is distinguishable from
+  // "returns its argument".
+  NSString *stored = [NSString stringWithUTF8String:"a"];
+  NSSet *set = [NSSet setWithObjects:stored, @"b", nil];
+  NSString *equalCopy = [NSString stringWithUTF8String:"a"];
+
+  int result = 0;
+  if (equalCopy == stored) {
+    // Not a failure of member:, but the test below would prove nothing.
+    result = -1;
+  } else if ([set member:equalCopy] != stored) {
+    result = -2;
+  } else if ([set member:@"c"] != nil) {
+    result = -3;
+  } else if (![set containsObject:equalCopy]) {
+    result = -4;
+  } else if ([set containsObject:@"c"]) {
+    result = -5;
+  }
+
+  [pool drain];
+  return result;
+}
+
 // A nil counterpart in the co-ordinate conversion methods means the window's
 // space, but it must not require the receiver to actually be in a window: a
 // view built from a nib converts before it is ever mounted. With no window, the
@@ -7358,6 +7390,7 @@ struct {
     FUNC_DEF(test_NSObject_self),
     FUNC_DEF(test_NSObject_superclass),
     FUNC_DEF(test_NSMutableSet_setAlgebra),
+    FUNC_DEF(test_NSSet_member),
     FUNC_DEF(test_UIView_convert_nilView_withoutWindow),
     FUNC_DEF(test_malloc_zone_basic),
     FUNC_DEF(test_malloc_zone_struct_dispatch),

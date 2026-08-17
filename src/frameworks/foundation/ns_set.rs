@@ -53,7 +53,8 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 // NSSet is an abstract class. A subclass must provide:
 // - (NSUInteger)count;
-// - (id)member:(id)object;
+// - (id)member:(id)object;   (NSSet below implements this in terms of the
+//                             enumerator, so a subclass need not)
 // - (NSEnumerator*)objectEnumerator;
 // We can pick whichever subclass we want for the various alloc methods.
 // For the time being, that will always be _tapHLE_NSSet.
@@ -101,17 +102,34 @@ pub const CLASSES: ClassExports = objc_classes! {
     copy_set(env, this, true)
 }
 
-- (bool)containsObject:(id)object {
+// The set's *own* object equal to the argument, or nil. That is a different
+// question from containsObject:, and the difference is the point of the
+// method: a set used to intern values is asked for the instance it already
+// holds, so the caller can use that one instead of its own copy.
+//
+// It is listed above as a primitive a subclass provides, and neither concrete
+// subclass provided it, so asking was fatal. Implementing it here in terms of
+// the enumerator gives it to both, and to any guest subclass that supplies
+// only the three primitives.
+- (id)member:(id)object {
     let enumerator: id = msg![env; this objectEnumerator];
     loop {
         let next: id = msg![env; enumerator nextObject];
         if next == nil {
-            return false;
+            return nil;
         }
         if msg![env; next isEqual:object] {
-            return true;
+            return next;
         }
     }
+}
+
+- (bool)containsObject:(id)object {
+    // Apple defines this as whether member: found anything. Answering the same
+    // question a second way is how the two answers come to disagree, so it is
+    // asked once.
+    let member: id = msg![env; this member:object];
+    member != nil
 }
 
 - (bool)intersectsSet:(id)other { // NSSet *

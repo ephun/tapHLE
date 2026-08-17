@@ -426,6 +426,10 @@
   screen for it, so it was being rotated twice and the finished frame arrived
   as flat horizontal bands; it now launches in landscape-native mode. Racing,
   crashing, reading the results and starting another race all work.
+- Let a game ask a collection for the copy of a value it already holds, rather
+  than only whether it holds one. Games use this to keep a single shared copy
+  of a name or a setting, and the question could not be asked at all, so
+  asking it ended the game. PapiJump stopped there during start-up.
 
 ### Known limitations
 
