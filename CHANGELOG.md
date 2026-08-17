@@ -426,6 +426,10 @@
   screen for it, so it was being rotated twice and the finished frame arrived
   as flat horizontal bands; it now launches in landscape-native mode. Racing,
   crashing, reading the results and starting another race all work.
+- Stop games ending when they look something up under a key that turned out
+  to be nothing. Finding nothing is an ordinary answer, and games are
+  written to take it, but tapHLE stopped on the spot instead. Every version
+  of Fieldrunners died this way while building its first screen.
 
 ### Known limitations
 
