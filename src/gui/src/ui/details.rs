@@ -28,6 +28,9 @@ pub struct DetailsContext<'a> {
     pub running: bool,
     /// Whether the compatibility database has been read successfully.
     pub database_available: bool,
+    /// Every version of the selected app, newest first. One element when the
+    /// library holds only the one.
+    pub versions: Vec<&'a LibraryEntry>,
 }
 
 pub fn show(ui: &mut Ui, context: &DetailsContext<'_>, actions: &mut Vec<Action>) {
@@ -82,11 +85,7 @@ fn header(
             if let Some(publisher) = &entry.metadata.publisher {
                 ui.label(egui::RichText::new(publisher).color(theme::LIGHT.text_dim));
             }
-            ui.label(
-                egui::RichText::new(format!("Version {}", entry.metadata.version_for_display()))
-                    .small()
-                    .color(theme::LIGHT.text_dim),
-            );
+            version_row(ui, context, entry, actions);
         });
     });
 
@@ -132,6 +131,66 @@ fn header(
                 .color(theme::LIGHT.accent),
         );
     }
+}
+
+/// The version line under the app's name.
+///
+/// With one version it is what it always was: a line of dim text. With
+/// several it becomes the dropdown that decides which of them everything
+/// below — the rating, the settings, the Play button — is about, because
+/// those belong to the exact build rather than to the app in general.
+fn version_row(
+    ui: &mut Ui,
+    context: &DetailsContext<'_>,
+    entry: &LibraryEntry,
+    actions: &mut Vec<Action>,
+) {
+    if context.versions.len() < 2 {
+        ui.label(
+            egui::RichText::new(format!("Version {}", entry.metadata.version_for_display()))
+                .small()
+                .color(theme::LIGHT.text_dim),
+        );
+        return;
+    }
+
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new("Version")
+                .small()
+                .color(theme::LIGHT.text_dim),
+        );
+        egui::ComboBox::from_id_salt("details-version")
+            .selected_text(crate::library::version_label(
+                entry,
+                context.versions.iter().copied(),
+            ))
+            .width(120.0)
+            .show_ui(ui, |ui| {
+                for other in &context.versions {
+                    let mut label =
+                        crate::library::version_label(other, context.versions.iter().copied());
+                    if other.missing {
+                        label.push_str(" — missing");
+                    }
+                    if ui
+                        .selectable_label(other.id == entry.id, label)
+                        .on_hover_text(&other.id)
+                        .clicked()
+                    {
+                        actions.push(Action::ChooseVersion {
+                            bundle_identifier: other.metadata.bundle_identifier.clone(),
+                            entry_id: other.id.clone(),
+                        });
+                    }
+                }
+            })
+            .response
+            .on_hover_text(format!(
+                "The library holds {} versions of this app",
+                context.versions.len()
+            ));
+    });
 }
 
 fn compatibility(

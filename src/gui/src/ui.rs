@@ -40,6 +40,12 @@ pub enum Action {
     /// Remove without asking again, which is what the confirmation sends.
     ConfirmedRemove(String),
     ToggleFavorite(String),
+    /// Show a different version of an app: its bundle identifier, and the
+    /// entry to show for it.
+    ChooseVersion {
+        bundle_identifier: String,
+        entry_id: String,
+    },
     CopyText(String),
     OpenPath(std::path::PathBuf),
     OpenUrl(String),

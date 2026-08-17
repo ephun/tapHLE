@@ -15,6 +15,7 @@
 //! it said; it never copies, unpacks or rewrites the file.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::compat::{DatabaseSnapshot, LocalRating};
@@ -345,6 +346,120 @@ pub fn visible_entries(
     indices
 }
 
+/// The versions of one app that are currently visible, and which of them the
+/// library is showing.
+///
+/// A collection accumulates versions — four BabyMonkeys, five Labyrinths —
+/// and shown as separate icons they crowd out every app that has only one.
+/// They are the same app, so they get one place in the library and a way to
+/// say which version that place stands for.
+#[derive(Clone, Debug)]
+pub struct VersionGroup {
+    /// Every visible version, newest first.
+    pub versions: Vec<usize>,
+    /// The one on display. Always a member of `versions`.
+    pub shown: usize,
+}
+
+impl VersionGroup {
+    pub fn has_choice(&self) -> bool {
+        self.versions.len() > 1
+    }
+}
+
+/// Collapse an ordered list of entries so each app appears once.
+///
+/// Grouping is by bundle identifier, which is what makes two files the same
+/// app: it is the field the compatibility database matches on, and it is the
+/// only one that survives a publisher renaming their game between releases.
+/// Titles are not used — "Labyrinth 2" and "Labyrinth 2 HD" read as versions
+/// of each other and are separate apps with separate identifiers.
+///
+/// A group takes the position of its best-placed version, so the sort the
+/// person chose still decides where it sits.
+pub fn group_versions(
+    library: &Library,
+    order: &[usize],
+    chosen: &HashMap<String, String>,
+) -> Vec<VersionGroup> {
+    let mut groups: Vec<VersionGroup> = Vec::new();
+    let mut position: HashMap<&str, usize> = HashMap::new();
+    for &index in order {
+        let identifier = library.entries[index].metadata.bundle_identifier.as_str();
+        match position.get(identifier) {
+            Some(&at) => groups[at].versions.push(index),
+            None => {
+                position.insert(identifier, groups.len());
+                groups.push(VersionGroup {
+                    versions: vec![index],
+                    shown: index,
+                });
+            }
+        }
+    }
+
+    for group in &mut groups {
+        group.versions.sort_by(|&a, &b| {
+            let (a, b) = (&library.entries[a], &library.entries[b]);
+            version_key(&b.metadata.bundle_version)
+                .cmp(&version_key(&a.metadata.bundle_version))
+                .then_with(|| b.metadata.bundle_version.cmp(&a.metadata.bundle_version))
+        });
+        // The newest version is the default, and an explicit choice wins —
+        // but only while that version is still visible, or a search would
+        // show an app under a version it had filtered out.
+        let identifier = &library.entries[group.versions[0]]
+            .metadata
+            .bundle_identifier;
+        group.shown = chosen
+            .get(identifier)
+            .and_then(|id| {
+                group
+                    .versions
+                    .iter()
+                    .copied()
+                    .find(|&index| library.entries[index].id == *id)
+            })
+            .unwrap_or(group.versions[0]);
+    }
+    groups
+}
+
+/// How one version is named where it sits beside the others.
+///
+/// Normally the marketing version, which is what the app calls itself and
+/// what a person recognises. Two builds can carry the same marketing version
+/// and differ in their build number, though, and a dropdown offering the same
+/// label twice is a dropdown that cannot be used — so where that happens, the
+/// build number is added to the ones that collide.
+pub fn version_label<'a>(
+    entry: &LibraryEntry,
+    siblings: impl IntoIterator<Item = &'a LibraryEntry>,
+) -> String {
+    let display = entry.metadata.version_for_display();
+    let shared = siblings
+        .into_iter()
+        .any(|other| other.id != entry.id && other.metadata.version_for_display() == display);
+    if shared {
+        format!("{display} (build {})", entry.metadata.bundle_version)
+    } else {
+        display.to_string()
+    }
+}
+
+/// Sort key for a version string: its numbers, in order.
+///
+/// Compared as text, 1.10 sorts before 1.9 and 3.086 before 3.1, which is the
+/// wrong way round for both. Only the numbers are taken, so a build suffix
+/// falls back to comparing the strings themselves.
+fn version_key(version: &str) -> Vec<u64> {
+    version
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u64>().ok())
+        .collect()
+}
+
 fn matches_search(entry: &LibraryEntry, needle: &str) -> bool {
     let metadata = &entry.metadata;
     [
@@ -505,6 +620,141 @@ mod tests {
         };
         let order = visible_entries(&library, &filter, &database);
         assert_eq!(library.entries[order[0]].title(), "Low");
+    }
+
+    fn versioned(title: &str, id: &str, version: &str) -> LibraryEntry {
+        LibraryEntry {
+            id: format!("{id}@{version}"),
+            metadata: AppMetadata {
+                display_name: title.to_string(),
+                bundle_identifier: id.to_string(),
+                bundle_version: version.to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    fn grouped(library: &Library, chosen: &HashMap<String, String>) -> Vec<VersionGroup> {
+        let filter = ViewFilter {
+            search: "",
+            favorites_only: false,
+            sort: SortOrder::Title,
+            descending: false,
+        };
+        let order = visible_entries(library, &filter, &DatabaseSnapshot::default());
+        group_versions(library, &order, chosen)
+    }
+
+    /// Four copies of one game are one app in the library, not four icons.
+    #[test]
+    fn versions_of_one_app_collapse_into_one_place() {
+        let library = library_of(vec![
+            versioned("Baby Monkey", "com.kihon.babymonkey", "1.01"),
+            versioned("Baby Monkey", "com.kihon.babymonkey", "1.3.5"),
+            versioned("Baby Monkey", "com.kihon.babymonkey", "1.2.3"),
+            versioned("Bookworm", "com.popcap.bookworm", "1.0"),
+        ]);
+        let groups = grouped(&library, &HashMap::new());
+        assert_eq!(groups.len(), 2, "two apps, not four entries");
+        let monkey = &groups[0];
+        assert_eq!(monkey.versions.len(), 3);
+        assert!(monkey.has_choice());
+        assert!(!groups[1].has_choice());
+    }
+
+    /// Versions are offered newest first, and "newest" is by number: 1.10 is
+    /// newer than 1.9 even though it sorts before it as text.
+    #[test]
+    fn versions_are_ordered_by_number_not_by_text() {
+        let library = library_of(vec![
+            versioned("Game", "com.a", "1.9"),
+            versioned("Game", "com.a", "1.10"),
+            versioned("Game", "com.a", "1.2"),
+        ]);
+        let groups = grouped(&library, &HashMap::new());
+        let versions: Vec<&str> = groups[0]
+            .versions
+            .iter()
+            .map(|&i| library.entries[i].metadata.bundle_version.as_str())
+            .collect();
+        assert_eq!(versions, ["1.10", "1.9", "1.2"]);
+        assert_eq!(
+            library.entries[groups[0].shown].metadata.bundle_version, "1.10",
+            "the newest version is what the library shows by default"
+        );
+    }
+
+    #[test]
+    fn a_chosen_version_is_the_one_shown() {
+        let library = library_of(vec![
+            versioned("Game", "com.a", "1.0"),
+            versioned("Game", "com.a", "2.0"),
+        ]);
+        let chosen = HashMap::from([("com.a".to_string(), "com.a@1.0".to_string())]);
+        let groups = grouped(&library, &chosen);
+        assert_eq!(library.entries[groups[0].shown].id, "com.a@1.0");
+    }
+
+    /// A choice that is filtered out cannot be what the group displays, or an
+    /// app would appear under a version the filter had just excluded.
+    #[test]
+    fn a_chosen_version_that_is_not_visible_is_ignored() {
+        let mut old = versioned("Game", "com.a", "1.0");
+        old.favorite = false;
+        let mut new = versioned("Game", "com.a", "2.0");
+        new.favorite = true;
+        let library = library_of(vec![old, new]);
+        let chosen = HashMap::from([("com.a".to_string(), "com.a@1.0".to_string())]);
+        let filter = ViewFilter {
+            search: "",
+            favorites_only: true,
+            sort: SortOrder::Title,
+            descending: false,
+        };
+        let order = visible_entries(&library, &filter, &DatabaseSnapshot::default());
+        let groups = group_versions(&library, &order, &chosen);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(library.entries[groups[0].shown].id, "com.a@2.0");
+    }
+
+    /// Grouping must not disturb the order the person asked for: the group
+    /// sits where its best-placed version sat.
+    #[test]
+    fn grouping_keeps_the_chosen_sort_order() {
+        let library = library_of(vec![
+            versioned("Zebra", "com.z", "1.0"),
+            versioned("Apple", "com.a", "1.0"),
+            versioned("Apple", "com.a", "2.0"),
+        ]);
+        let groups = grouped(&library, &HashMap::new());
+        let titles: Vec<&str> = groups
+            .iter()
+            .map(|group| library.entries[group.shown].title())
+            .collect();
+        assert_eq!(titles, ["Apple", "Zebra"]);
+    }
+
+    /// Two builds that call themselves the same thing have to be told apart,
+    /// or the dropdown offers the same label twice and neither can be picked
+    /// deliberately.
+    #[test]
+    fn versions_sharing_a_marketing_version_are_told_apart() {
+        let mut old = versioned("Game", "com.a", "1.01");
+        old.metadata.short_version = Some("1.0".to_string());
+        let mut new = versioned("Game", "com.a", "1.02");
+        new.metadata.short_version = Some("1.0".to_string());
+        let mut only = versioned("Game", "com.a", "2.0");
+        only.metadata.short_version = Some("2.0".to_string());
+        let siblings = [&old, &new, &only];
+
+        assert_eq!(version_label(&old, siblings), "1.0 (build 1.01)");
+        assert_eq!(version_label(&new, siblings), "1.0 (build 1.02)");
+        assert_eq!(
+            version_label(&only, siblings),
+            "2.0",
+            "a version nothing collides with keeps its plain label"
+        );
     }
 
     #[test]
