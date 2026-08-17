@@ -185,6 +185,41 @@ where
         .find_map(|lists| search_lists(lists, symbol))
 }
 
+/// Whether a guest dylib's definition of a symbol must be used in preference to
+/// tapHLE's own.
+///
+/// The usual order is the other way round — tapHLE's implementation of a libc
+/// or framework function is the one that knows about the emulator — and that
+/// stays the default. This is the exception, and it exists for a specific
+/// shape of problem: a **set** of functions that share hidden state, where
+/// tapHLE implements some of the set and the app carries a complete, real
+/// implementation of all of it.
+///
+/// The unwinder is exactly that. `_Unwind_SjLj_Register` and its partner
+/// maintain a per-thread chain of function contexts, and `..._RaiseException`
+/// walks that chain, so all three have to agree about where it lives. tapHLE
+/// keeps the chain but cannot walk it: unwinding needs each frame's
+/// personality routine and language-specific data, which are guest code and
+/// guest tables. Apps that use exceptions link `/usr/lib/libgcc_s.1.dylib`,
+/// which tapHLE bundles and which contains the whole unwinder — including the
+/// part tapHLE stops at — so when it is there it is simply better.
+///
+/// Without this the two halves came from different implementations, because
+/// the two binding paths disagreed: a non-lazy pointer is already bound to a
+/// guest dylib's definition ahead of the host's, while a lazy stub was not.
+/// Which one a given call took then decided whether the chain was the host's
+/// or libgcc's.
+///
+/// An app that does not link libgcc is unaffected: nothing exports these, so
+/// the host implementation is still what binds, and the registration
+/// bookkeeping that keeps such apps alive is unchanged.
+fn guest_definition_wins(symbol: &str) -> bool {
+    // The leading underscore is the C symbol mangling, so the family is spelled
+    // with two: `__Unwind_SjLj_Register`, `__Unwind_DeleteException`, and the
+    // `_Unwind_Get*`/`_Unwind_Set*` accessors a personality routine calls.
+    symbol.starts_with("__Unwind_")
+}
+
 /// Helper for working with [ClassExports]/[ConstantExports]/[FunctionExports].
 fn search_lists<T>(
     lists: &'static [&'static [(&'static str, T)]],
@@ -768,6 +803,27 @@ impl Dyld {
         let idx = (offset / info.entry_size) as usize;
 
         let symbol = info.indirect_undef_symbols[idx].as_deref().unwrap();
+
+        // A symbol the guest brings its own real implementation of is bound to
+        // that implementation, before the host is consulted at all. See
+        // [guest_definition_wins].
+        if guest_definition_wins(symbol) {
+            for dylib in bins.iter() {
+                if let Some(&addr) = dylib.exported_symbols.get(symbol) {
+                    let (stub_function_ptr, la_symbol_ptr) =
+                        link_by_restoring_stub(mem, cpu, addr, svc_pc, info.entry_size, pic_offset);
+                    log_dbg!(
+                        "Linked {} at {:?}/{:?} to {:#x} from {}, in preference to tapHLE's own",
+                        symbol,
+                        stub_function_ptr,
+                        la_symbol_ptr,
+                        addr,
+                        dylib.name
+                    );
+                    return None;
+                }
+            }
+        }
 
         if let Some(&addr) = self.non_lazy_host_functions.get(symbol) {
             // The host function was already linked non-lazily, point the
