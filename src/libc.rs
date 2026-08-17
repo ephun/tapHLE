@@ -57,6 +57,7 @@ pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
     aliases: &["/usr/lib/libSystem.dylib"],
     class_exports: &[],
     constant_exports: &[
+        clocale::CONSTANTS,
         ctype::CONSTANTS,
         dispatch::CONSTANTS,
         stdio::CONSTANTS,
