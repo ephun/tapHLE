@@ -31,7 +31,17 @@ param(
     [switch]$Validate,
     # Skip steps whose requires_save_state is "absent" (i.e. the app already
     # has a save). The runner cannot detect this for you.
-    [switch]$HasSaveState
+    [switch]$HasSaveState,
+    # Leave the app running when the replay ends, and print its process id.
+    #
+    # The frames here come from PrintWindow, which asks the window to draw
+    # itself into a device context. That is enough for most apps but not for
+    # one presenting through OpenGL ES 2.0, where it can return the last
+    # composited content rather than the live frame — so a map for such an app
+    # says to verify with a screen capture instead. A screen capture needs the
+    # window still on screen, which is what this is for. The caller closes the
+    # process afterwards.
+    [switch]$KeepOpen
 )
 
 $ErrorActionPreference = 'Stop'
@@ -328,11 +338,19 @@ if ($failed) {
     Write-Output "        Look at the last frame, then explore from there. If this map is"
     Write-Output "        recorded at a rating the app no longer reaches, that is a regression"
     Write-Output "        and gets a report naming this step."
-    try { $proc.Kill() } catch { }
+    if ($KeepOpen) {
+        Write-Output "        Left running as pid $($proc.Id); close it when you are done."
+    } else {
+        try { $proc.Kill() } catch { }
+    }
     exit 1
 }
 
 Write-Output "RESULT: replayed to the end. Recorded milestone: $($cm.milestone.rating) star - $($cm.milestone.describes)"
 Write-Output "        Check the last frames against that description before claiming it."
-try { $proc.Kill() } catch { }
+if ($KeepOpen) {
+    Write-Output "        Left running as pid $($proc.Id); close it when you are done."
+} else {
+    try { $proc.Kill() } catch { }
+}
 exit 0
