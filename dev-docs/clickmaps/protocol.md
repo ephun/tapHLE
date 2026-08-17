@@ -23,7 +23,8 @@ what is worth a screenshot.
 - `dev-docs/clickmaps/<slug>.json` — one map per app, slug matching the app
   note in `dev-docs/app-notes/`.
 - `dev-scripts/clickmap.ps1` — the runner. `-Validate` checks a map without
-  launching anything.
+  launching anything; `-KeepOpen` leaves the app running at the end and prints
+  its process id.
 
 The app note stays the place for narrative: what was tried, what was ruled out,
 why a coordinate is where it is. The clickmap is only the route. Keep the note
@@ -48,6 +49,14 @@ about the machine rather than about the app: something else took the
 foreground. Do not remove the check to make a replay finish — a run that
 skipped it once left a brush stroke on an unsaved document in another
 application.
+
+The frames come from `PrintWindow`, which asks the window to draw itself into a
+device context. That is enough for most apps, but an app presenting through
+OpenGL ES 2.0 can hand back the last composited content instead of the live
+frame — so its captures show a screen it left behind, and a milestone verified
+from them would be verified against nothing. Where a map says to use a screen
+capture, replay it with `-KeepOpen` and capture the window off the desktop
+while it is still up, then close the process. OLO is the current example.
 
 What it does **not** do is decide whether a step worked. It cannot: `expect` is
 prose, and comparing frames is what
