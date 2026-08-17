@@ -17,8 +17,10 @@
 
 - Several versions of one game are one app in the library. A folder holding
   BabyMonkey 1.01, 1.2.3 and 1.3.5 used to fill three places in the grid and
-  push everything else down; now it fills one, with a dropdown under the name
-  for choosing which version to play. The newest is shown to begin with, the
+  push everything else down; now it fills one, and the panel beside the
+  library is where you pick which version to play — one place, next to the
+  rating and the settings that belong to that build, rather than a dropdown
+  repeated under every app. The newest is shown to begin with, the
   choice is remembered, and each version keeps its own settings, rating and
   play time — they are different builds, and only you know which one you
   meant.
