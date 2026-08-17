@@ -59,14 +59,6 @@ impl Bundle {
         Ok((bundle, fs))
     }
 
-    /// Create a fake bundle (see [crate::Environment::new_without_app]).
-    pub fn new_fake_bundle() -> Bundle {
-        Bundle {
-            path: GuestPathBuf::from(String::new()),
-            plist: Dictionary::new(),
-        }
-    }
-
     pub fn bundle_path(&self) -> &GuestPath {
         &self.path
     }

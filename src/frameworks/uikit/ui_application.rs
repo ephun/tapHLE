@@ -571,16 +571,12 @@ pub(super) fn exit(env: &mut Environment) {
     {
         let pool: id = msg_class![env; NSAutoreleasePool new];
 
-        // Skip NSUserDefaults code while in the app picker, otherwise we get
-        // a strange error when existing tapHLE due to the fake bundle.
-        if !env.is_app_picker {
-            // Apple's docs (used to) vaguely mention that `synchronize` is
-            // invoked on periodic intervals.
-            // Second best - and implemented here - is to save before app exits.
-            // TODO: call `synchronize` periodically
-            let user_defaults: id = msg_class![env; NSUserDefaults standardUserDefaults];
-            let _: bool = msg![env; user_defaults synchronize];
-        }
+        // Apple's docs (used to) vaguely mention that `synchronize` is
+        // invoked on periodic intervals.
+        // Second best - and implemented here - is to save before app exits.
+        // TODO: call `synchronize` periodically
+        let user_defaults: id = msg_class![env; NSUserDefaults standardUserDefaults];
+        let _: bool = msg![env; user_defaults synchronize];
 
         let delegate: id = msg![env; ui_application delegate];
         if env

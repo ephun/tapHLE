@@ -34,7 +34,12 @@
   matters wherever options come from more than one place, because previously
   a setting turned on for a particular game could not be turned back off.
 
-- Running tapHLE from a terminal is unchanged.
+- The emulator's own app picker is gone. It was a second, much smaller library
+  screen drawn inside the emulator, and the window described above replaces it.
+  Running tapHLE with no app path now says to pass one or to open tapHLE-gui,
+  instead of showing the old picker.
+
+- Running tapHLE from a terminal is otherwise unchanged.
 
 - Let games ask which of two moments came first. The question had no answer at
   all, so asking it ended the game.
