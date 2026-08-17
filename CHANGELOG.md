@@ -430,6 +430,11 @@
   game asking for something two or three objects away — the name of the player
   of the current game — was asking a question tapHLE had no answer for at all,
   and the attempt ended it.
+- Tell a game how the pixels of a picture are arranged. A game that asks
+  before reading a picture's pixels itself — which is what a game does to
+  build its own textures — was asking something tapHLE could not answer at
+  all, and the attempt ended it during start-up. Fieldrunners for iPad stopped
+  there.
 
 ### Known limitations
 
