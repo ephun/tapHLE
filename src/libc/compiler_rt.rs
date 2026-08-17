@@ -17,7 +17,7 @@
 //!   defines the `__aeabi_*` spellings and their register conventions.
 
 use crate::dyld::{export_c_func, FunctionExports};
-use crate::mem::{GuestUSize, MutVoidPtr};
+use crate::mem::{GuestUSize, MutPtr, MutVoidPtr};
 use crate::Environment;
 
 /// Division by zero is undefined in C, and the real helpers do not check for it
@@ -160,6 +160,36 @@ fn __aeabi_idivmod(env: &mut Environment, numerator: i32, denominator: i32) -> u
     ((remainder as u64) << 32) | quotient as u64
 }
 
+// compiler-rt's own divide-and-remainder helpers. They compute what
+// `__aeabi_uidivmod` and `__aeabi_idivmod` above compute, and differ only in
+// how the second result gets back: these return the quotient and write the
+// remainder through a pointer, where the ARM run-time ABI spellings return
+// both in a register pair. Both exist in the wild because an app can be built
+// against either runtime, and a static library inside it against the other, so
+// implementing one spelling does not cover the other.
+
+fn __udivmodsi4(
+    env: &mut Environment,
+    numerator: u32,
+    denominator: u32,
+    remainder_out: MutPtr<u32>,
+) -> u32 {
+    let remainder = __umodsi3(env, numerator, denominator);
+    env.mem.write(remainder_out, remainder);
+    __udivsi3(env, numerator, denominator)
+}
+
+fn __divmodsi4(
+    env: &mut Environment,
+    numerator: i32,
+    denominator: i32,
+    remainder_out: MutPtr<i32>,
+) -> i32 {
+    let remainder = __modsi3(env, numerator, denominator);
+    env.mem.write(remainder_out, remainder);
+    __divsi3(env, numerator, denominator)
+}
+
 // The C++ ABI's allocation operators. C++ code in these apps is usually a game
 // engine or a third-party SDK, and it allocates before it does anything else.
 //
@@ -208,6 +238,8 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(__aeabi_idiv(_, _)),
     export_c_func!(__aeabi_uidivmod(_, _)),
     export_c_func!(__aeabi_idivmod(_, _)),
+    export_c_func!(__udivmodsi4(_, _, _)),
+    export_c_func!(__divmodsi4(_, _, _)),
     export_c_func!(_Znwm(_)),
     export_c_func!(_Znam(_)),
     export_c_func!(_ZdlPv(_)),
