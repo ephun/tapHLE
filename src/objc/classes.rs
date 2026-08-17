@@ -177,7 +177,7 @@ unsafe impl SafeRead for class_rw_t {}
 /// many pointers to protocols. Both the class's own list and a protocol's list
 /// of protocols it adopts have this shape.
 #[repr(C, packed)]
-struct protocol_list_t {
+pub(super) struct protocol_list_t {
     count: GuestUSize,
     // Followed by `count` pointers to protocol_t, read individually.
 }
