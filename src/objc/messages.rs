@@ -983,6 +983,7 @@ mod tests {
             guest_method_signatures: HashMap::new(),
             ivars: HashMap::new(),
             properties: Vec::new(),
+            base_protocols: ConstPtr::null(),
             instance_start: 4,
             instance_size: 4,
             is_initialized: InitializationStatus::NotInitialized,
