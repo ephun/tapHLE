@@ -416,9 +416,9 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 // The write direction: everything but the final component locates the object
-// to write to, and that component is then an ordinary `setValue:forKey:` on it
-// — which is what makes a subclass's setter, and its `setValue:forUndefinedKey:`
-// fallback, apply here too.
+// to write to, and that component is then an ordinary `setValue:forKey:` on
+// it — which is what makes a subclass's setter, and its
+// `setValue:forUndefinedKey:` fallback, apply here too.
 - (())setValue:(id)value
     forKeyPath:(id)keyPath { // NSString*
     let path_string = to_rust_string(env, keyPath);
