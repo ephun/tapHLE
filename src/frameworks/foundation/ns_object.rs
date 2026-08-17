@@ -496,15 +496,33 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (id)valueForUndefinedKey:(id)key { // NSString*
-    // TODO: Raise NSUnknownKeyException
+    // The read half of the same story as `setValue:forUndefinedKey:` below,
+    // and it ends the same way. Foundation raises NSUnknownKeyException, which
+    // an app can catch and routinely does — asking for a key that may not be
+    // there is how optional configuration is read. tapHLE cannot raise, and
+    // aborting turned a survivable miss into a dead app: all four versions of
+    // Spaceteam stop here during start-up.
+    //
+    // nil is what the caller of a caught exception ends up with anyway, and it
+    // is the answer the two halves of KVC now agree on.
     let class: Class = ObjC::read_isa(this, &env.mem);
-    let class_name_string = env.objc.get_class_name(class).to_owned(); // TODO: Avoid copying
+    let class_name_string = env.objc.get_class_name(class).to_owned();
     let key_string = to_rust_string(env, key);
-    panic!("Object {:?} of class {:?} ({:?}) does not have a getter for {} ({:?})\
-        \nAvailable selectors: {}\nAvailable ivars: {}",
-        this, class_name_string, class, key_string, key,
+    log!(
+        "Warning: {:?} of class {:?} has no getter or ivar for the key {:?}, which Foundation would raise NSUnknownKeyException for; returning nil",
+        this, class_name_string, key_string
+    );
+    // What the class *does* have is the useful half of the old panic, and it is
+    // what tells you whether the key is misspelled here or genuinely absent.
+    // It is far too long for a warning that can repeat, so it is kept behind
+    // the module's debug logging.
+    log_dbg!(
+        "{:?} available selectors: {}\navailable ivars: {}",
+        this,
         env.objc.debug_all_class_selectors_as_strings(&env.mem, class).join(", "),
-        env.objc.debug_all_class_ivars_as_strings(class).join(", "));
+        env.objc.debug_all_class_ivars_as_strings(class).join(", ")
+    );
+    nil
 }
 
 - (())setNilValueForKey:(id)key { // NSString*
