@@ -313,6 +313,32 @@ fn arc4random(env: &mut Environment) -> u32 {
     env.libc_state.stdlib.arc4random
 }
 
+/// A number in `0..upper_bound`, without the bias that `arc4random() % n` has.
+///
+/// The bias is not academic: the low residues come up more often whenever the
+/// bound does not divide 2^32, which is almost always, and that is the whole
+/// reason this function exists next to `arc4random()`. BSD rejects the values
+/// in the first incomplete block rather than folding them in, so the ones that
+/// remain are spread evenly, and this does the same.
+///
+/// A bound of zero has no number to return. BSD's own implementation divides by
+/// it; answering zero keeps the emulator alive and is the only value in the
+/// empty range's closure.
+fn arc4random_uniform(env: &mut Environment, upper_bound: u32) -> u32 {
+    if upper_bound < 2 {
+        return 0;
+    }
+    // The smallest value that leaves a whole number of blocks of `upper_bound`
+    // above it: 2^32 % upper_bound, computed without a 64-bit modulo.
+    let min = upper_bound.wrapping_neg() % upper_bound;
+    loop {
+        let candidate = arc4random(env);
+        if candidate >= min {
+            return candidate % upper_bound;
+        }
+    }
+}
+
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
 #[repr(C, packed)]
@@ -721,6 +747,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(srandomdev()),
     export_c_func!(random()),
     export_c_func!(arc4random()),
+    export_c_func!(arc4random_uniform(_)),
     export_c_func!(div(_, _)),
     export_c_func!(getenv(_)),
     export_c_func!(setenv(_, _, _)),
