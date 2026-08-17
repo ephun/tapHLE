@@ -24,6 +24,14 @@
 //! actually throws is told so plainly rather than being allowed to continue on
 //! a corrupted context chain.
 //!
+//! **This is the fallback, not the usual path.** An app that uses exceptions
+//! links `/usr/lib/libgcc_s.1.dylib`, which tapHLE bundles and which contains
+//! the real unwinder — raising included. Where that dylib is loaded, its
+//! definitions bind in preference to these; see `guest_definition_wins` in
+//! [crate::dyld] for why the whole family has to come from one place. What is
+//! left here is for the apps that import the registration calls from libSystem
+//! without bringing libgcc, which is the majority of the 87 above.
+//!
 //! Resources:
 //! - libgcc's `unwind-sjlj.c`, which defines the context layout and the
 //!   register/unregister contract.
@@ -85,7 +93,8 @@ fn _Unwind_SjLj_Unregister(env: &mut Environment, fc: MutPtr<SjLj_Function_Conte
 /// broken, and fail later somewhere unrelated.
 fn _Unwind_SjLj_RaiseException(_env: &mut Environment, exception: MutVoidPtr) -> i32 {
     unimplemented!(
-        "The app threw an exception ({:?}), but SjLj unwinding is not implemented. \
+        "The app threw an exception ({:?}), but SjLj unwinding is not implemented \
+         here, and this app did not bring the libgcc that implements it. \
          Registration and unregistration of function contexts are, so this app got \
          further than it used to; catching is the remaining work.",
         exception
