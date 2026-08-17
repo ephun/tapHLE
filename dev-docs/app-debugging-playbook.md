@@ -866,6 +866,56 @@ A corollary: a rotated capture proves nothing about orientation, because the
 renderbuffer capture is taken before host rotation. Neither does an unchanged
 capture after passing `--landscape-native`, which only affects `present_frame`.
 
+## Before implementing a stub, check whether tapHLE already ships the real thing
+
+`tapHLE_dylibs/` holds real Apple-era libraries — `libgcc_s.1.dylib`,
+`libstdc++.6.0.9.dylib`, `libxml2`, `libz`, `libsqlite3` — and an app that links
+one of them gets the genuine implementation loaded as guest code. So when an app
+stops inside a tapHLE stub, the question is not only "how do I implement this",
+it is **"is this already here?"**
+
+It was, for the whole SjLj unwinder. tapHLE kept the function-context chain and
+stopped at a throw with "SjLj unwinding is not implemented", which reads like a
+missing feature and would have cost a large, delicate piece of work to write:
+the personality routine, the LSDA tables, installing a context. `llvm-nm` on the
+bundled `libgcc_s.1.dylib` shows `__Unwind_SjLj_RaiseException` and the rest of
+the family defined, right next to the two calls tapHLE was stubbing. Both
+versions of Bookworm went from dying during start-up to running, with no
+unwinder written at all.
+
+Two checks, both cheap:
+
+```powershell
+$llvmBin = Join-Path (rustc --print sysroot) `
+    'lib\rustlib\x86_64-pc-windows-msvc\bin'
+& (Join-Path $llvmBin 'llvm-nm.exe') --defined-only tapHLE_dylibs\libgcc_s.1.dylib |
+    Select-String Unwind
+```
+
+and, on the app, whether it links the library at all — a `LC_LOAD_DYLIB` for
+`/usr/lib/libgcc_s.1.dylib` is what decides whether the real implementation is
+even present for that app.
+
+**Which one binds is not obvious, and was not consistent.** tapHLE's host
+exports normally win, which is right: they are the ones that know about the
+emulator. But a *set* of functions sharing hidden state has to come from one
+place, and the two binding paths disagreed about which — a non-lazy symbol
+pointer already preferred a guest dylib's definition, while a lazy stub
+preferred the host's. `guest_definition_wins` in `src/dyld.rs` is where that
+exception is stated; extend it only for the same shape of problem, and say why.
+
+## A suite that aborts has not run the tests after the abort
+
+`test_NSRunLoop_runMode` panicked under the headless harness, and the integration
+suite stopped there — at test 125 of 142. The seventeen tests behind it had never
+run, including two added afterwards, and one of them was failing. For weeks the
+honest summary was "the integration test fails", which sounded like one known
+problem and was in fact one known problem hiding an unknown number.
+
+So when a suite aborts rather than reporting failures, treat everything after the
+abort as **unverified, not passing**. Fix the abort first, then read the result;
+and be suspicious of a newly added test that has only ever been seen to compile.
+
 ## An opaque guest MemoryError is usually a name you already have
 
 `Error during CPU execution: MemoryError` is what tapHLE reports for *any* bad
