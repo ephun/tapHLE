@@ -480,6 +480,9 @@
   the bottom of a screen. tapHLE treated that row as decoration rather than
   as a control, so a game asking to be told about it ended there. Both
   Carnivores games stopped during start-up.
+- Give games the evenly-spread random numbers they ask for. The call had no
+  implementation at all, so a game using it ended at the first one it
+  needed — all four versions of Spaceteam stopped during start-up.
 
 ### Known limitations
 
