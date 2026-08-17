@@ -459,6 +459,11 @@
   built. tapHLE understood one of the two spellings compilers use for this
   and not the other, and a game built with the other could not do that
   arithmetic at all, so it never started. OLO 1.31 stopped there.
+- Stop games quitting while arranging a layer's contents. Saying how a
+  picture should sit inside the space it is given is something a game does
+  while building its screen, and the instruction was not understood at all,
+  so the game ended there. Zippo Lighter 1.1 stopped during start-up.
+  tapHLE still stretches contents to fit, as it always has.
 
 ### Known limitations
 

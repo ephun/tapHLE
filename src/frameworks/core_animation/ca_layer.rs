@@ -63,6 +63,10 @@ pub(super) struct CALayerHostObject {
     pub(super) needs_display_on_bounds_change: bool,
     /// `CGImageRef*`
     pub(super) contents: id,
+    /// `NSString*`, one of the `kCAGravity*` names, or nil while it has never
+    /// been set. Stored and reported back, but not honoured when compositing:
+    /// contents are always stretched to the bounds. A strong reference.
+    pub(super) contents_gravity: id,
     /// For CAEAGLLayer only
     pub(super) drawable_properties: id,
     /// For CAEAGLLayer only (internal state for compositor)
@@ -258,6 +262,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         needs_display: false,
         needs_display_on_bounds_change: false,
         contents: nil,
+        contents_gravity: nil,
         drawable_properties: nil,
         presented_pixels: None,
         cg_context: None,
@@ -278,6 +283,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let &mut CALayerHostObject {
         drawable_properties,
         contents,
+        contents_gravity,
         superlayer,
         cg_context,
         ref mut sublayers,
@@ -291,6 +297,10 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     if contents != nil {
         release(env, contents);
+    }
+
+    if contents_gravity != nil {
+        release(env, contents_gravity);
     }
 
     if let Some(cg_context) = cg_context {
@@ -701,6 +711,22 @@ pub const CLASSES: ClassExports = objc_classes! {
     let old_contents = std::mem::replace(&mut host_obj.contents, new_contents);
     retain(env, new_contents);
     release(env, old_contents);
+}
+
+// How the contents are placed when they do not fill the layer's bounds. tapHLE
+// always stretches them, so this is kept and reported back rather than obeyed —
+// but an app sets it while building its layers, long before anything is drawn,
+// and not understanding the message at all cost the whole app. The gravity
+// names it passes are already exported as constants above.
+- (id)contentsGravity {
+    env.objc.borrow::<CALayerHostObject>(this).contents_gravity
+}
+- (())setContentsGravity:(id)gravity { // NSString*
+    log_once!("[CALayer setContentsGravity:] is stored but contents are always stretched to the bounds");
+    let host_obj = env.objc.borrow_mut::<CALayerHostObject>(this);
+    let old_gravity = std::mem::replace(&mut host_obj.contents_gravity, gravity);
+    retain(env, gravity);
+    release(env, old_gravity);
 }
 
 - (())setEdgeAntialiasingMask:(u32)mask {
