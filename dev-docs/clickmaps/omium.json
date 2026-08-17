@@ -1,0 +1,49 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.eeenmachine.",
+    "display_name": "Omium",
+    "version": "1.0"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": { "width": 768, "height": 1024, "orientation": "portrait" },
+  "milestone": {
+    "rating": 3,
+    "describes": "A Dodge round plays: the ship, the AMMO and BAD GUYS gauges, particle effects, and a timer counting up."
+  },
+  "defaults": { "press_ms": 150, "settle_ms": 4000 },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 20000,
+      "expect": "The menu: the OMIUM logo drawn in drifting particles, with Dodge, Juggle, Infinite and a greyed-out More Games listed under it."
+    },
+    {
+      "id": "dodge",
+      "action": "tap",
+      "at": [384, 631],
+      "settle_ms": 6000,
+      "expect": "The Dodge instruction screen: the ship, the AMMO gauge, the mirrored two-player layout and a 0.00 timer."
+    },
+    {
+      "id": "play",
+      "action": "tap",
+      "at": [384, 512],
+      "settle_ms": 8000,
+      "expect": "The round is running: the timer is counting up and particle effects are moving. Two captures several seconds apart differ."
+    }
+  ],
+  "notes": [
+    "The bundle identifier really is `com.eeenmachine.`, with a trailing dot and no app segment. It is not a truncation.",
+    "`Press here to play` is at (384, 512). An earlier version of the app note gave (384, 631) for it; that is the Dodge entry on the menu screen before it, not the start button.",
+    "Coordinates are client coordinates for the 768x1024 portrait window. On a display with scaling, converting them through ClientToScreen from a DPI-aware process lands somewhere else — measure the target from a screen capture instead.",
+    "The round proves itself by the timer counting rather than by anything moving on its own: check two captures a few seconds apart differ.",
+    "The instruction and play screens are mirrored top to bottom on purpose: it is a two-player game on one iPad, so the second player's half is rotated 180 degrees to face them. That is the app's design, not a rendering fault."
+  ]
+}
