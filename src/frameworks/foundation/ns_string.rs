@@ -776,13 +776,26 @@ pub const CLASSES: ClassExports = objc_classes! {
     to_rust_string(env, this).ends_with(&str)
 }
 
+// The two localized comparisons. tapHLE has no locale-aware collation, so each
+// is its unlocalized counterpart, and the difference only shows on text a
+// locale would order differently.
+//
+// Neither asserts that its operands are ASCII any more. They used to, and that
+// turned an ordinary sort of ordinary text into a dead app — non-ASCII is not a
+// programming error, it is a name with an accent in it. Comparing by code unit
+// is the wrong *order* for such text, which is a defect worth fixing when
+// collation exists; ending the app is not a better answer than the wrong order.
+//
+// TODO: use the current locale, and support compatibility equivalence in the
+// Unicode standard. More info: https://www.objc.io/issues/9-strings/unicode/
 - (NSComparisonResult)localizedCompare:(id)other { // NSString*
-    // TODO: use current locale
-    // TODO: support `compatibility equivalence` in the Unicode standard
-    // More info: https://www.objc.io/issues/9-strings/unicode/
-    assert!(to_rust_string(env, this).is_ascii());
-    assert!(to_rust_string(env, other).is_ascii());
+    log_once!("TODO: -[NSString localizedCompare:] ignores the locale");
     msg![env; this compare:other]
+}
+
+- (NSComparisonResult)localizedCaseInsensitiveCompare:(id)other { // NSString*
+    log_once!("TODO: -[NSString localizedCaseInsensitiveCompare:] ignores the locale");
+    msg![env; this caseInsensitiveCompare:other]
 }
 
 - (NSComparisonResult)compare:(id)other { // NSString*

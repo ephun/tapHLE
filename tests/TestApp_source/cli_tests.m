@@ -6884,6 +6884,28 @@ int test_NSString_percentEscapes() {
   return [escaped isEqual:@"a%20%5Bb%5D%C3%A9"] ? 0 : -1;
 }
 
+// The localized comparisons are their unlocalized counterparts until tapHLE
+// has locale-aware collation. What is asserted here is the case folding and
+// the ordering of plain ASCII, plus the thing that used to be fatal: text
+// outside ASCII must not end the app. Its *order* is deliberately not
+// asserted, because without collation it is comparison by code unit, which is
+// not the order a device would give.
+int test_NSString_localizedCaseInsensitiveCompare() {
+  if ([@"apple" localizedCaseInsensitiveCompare:@"APPLE"] != 0)
+    return -1;
+  if ([@"apple" localizedCaseInsensitiveCompare:@"banana"] >= 0)
+    return -2;
+  if ([@"banana" localizedCaseInsensitiveCompare:@"APPLE"] <= 0)
+    return -3;
+  if ([@"apple" localizedCompare:@"apple"] != 0)
+    return -4;
+
+  // "café" and "CAFE", as UTF-8 octal escapes to match the file's convention.
+  [@"caf\303\251" localizedCompare:@"cafe"];
+  [@"caf\303\251" localizedCaseInsensitiveCompare:@"CAFE"];
+  return 0;
+}
+
 // A concrete NSDictionary subclass only needs to supply the primitive
 // dictionary methods. allKeys is inherited from NSDictionary and builds its
 // result through the subclass's keyEnumerator.
@@ -7474,6 +7496,7 @@ struct {
     FUNC_DEF(test_CTTelephonyNetworkInfo_noCellularProvider),
     FUNC_DEF(test_NSData_description),
     FUNC_DEF(test_NSString_percentEscapes),
+    FUNC_DEF(test_NSString_localizedCaseInsensitiveCompare),
     FUNC_DEF(test_NSDictionary_allKeys_forSubclass),
     FUNC_DEF(test_NSObject_setValue_nil),
     FUNC_DEF(test_NSObject_self),
