@@ -1428,6 +1428,24 @@ pub const CLASSES: ClassExports = objc_classes! {
     let text = to_rust_string(env, this);
     ui_font::size_with_font(env, font, &text, None)
 }
+// The `forWidth:` measurement, whose drawing counterpart
+// -drawAtPoint:forWidth:withFont:lineBreakMode: is already below. UIKit keeps
+// this family on one line and lets the line break mode decide what happens to
+// the text that does not fit, where the `constrainedToSize:` family wraps into
+// a box. Both reach the same width-and-mode calculation here, which is exactly
+// what the drawing counterpart does — so a string measured this way and then
+// drawn that way agrees with itself, which is the property a caller is relying
+// on when it uses the two together.
+- (CGSize)sizeWithFont:(id)font // UIFont*
+              forWidth:(CGFloat)width
+         lineBreakMode:(UILineBreakMode)line_break_mode {
+    // TODO: avoid copy
+    let text = to_rust_string(env, this);
+    // Only the width is consulted; the height stands for "as tall as it needs
+    // to be", which is what a single line asks for.
+    let size = CGSize { width, height: CGFloat::INFINITY };
+    ui_font::size_with_font(env, font, &text, Some((size, line_break_mode)))
+}
 - (CGSize)sizeWithFont:(id)font // UIFont*
      constrainedToSize:(CGSize)size {
     msg![env; this sizeWithFont:font

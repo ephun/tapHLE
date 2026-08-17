@@ -444,6 +444,11 @@
   than only whether it holds one. Games use this to keep a single shared copy
   of a name or a setting, and the question could not be asked at all, so
   asking it ended the game. PapiJump stopped there during start-up.
+- Measure a line of text the way a game asks for it when the line has a
+  width to fit into. tapHLE could measure text on its own and text inside a
+  box, but not this third way, which is what a game uses to lay out a label
+  before drawing it — so asking ended the game. Ragdoll Blaster 2 and its
+  free version both stopped there.
 
 ### Known limitations
 
