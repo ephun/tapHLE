@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 use crate::compat::{self, CompatibilityProvider, DatabaseSnapshot, ReportDraft, TapHledbProvider};
 use crate::http::{CurlTransport, Transport};
 use crate::launcher::{self, Launcher};
-use crate::library::{self, ImportOutcome, Library, ScanResult, ViewFilter};
+use crate::library::{self, ImportOutcome, Library, ScanResult, VersionGroup, ViewFilter};
 use crate::logstore::{self, LogLevel, SharedLog};
 use crate::metadata::AppIcon;
 use crate::settings::{EmulatorSettings, FrontendSettings, UiState};
@@ -114,6 +114,8 @@ pub struct Frontend {
     /// exactly when it needs to be and not every frame.
     library_revision: u64,
     order_cache: Vec<usize>,
+    /// The same order with each app's versions collapsed into one place.
+    group_cache: Vec<VersionGroup>,
     order_key: String,
     dirty: Dirty,
     last_save: Instant,
@@ -186,6 +188,7 @@ impl Frontend {
             repaint: cc.egui_ctx.clone(),
             library_revision: 0,
             order_cache: Vec::new(),
+            group_cache: Vec::new(),
             order_key: String::new(),
             dirty: Dirty::default(),
             last_save: Instant::now(),
@@ -452,8 +455,12 @@ impl Frontend {
         self.library_revision += 1;
     }
 
-    /// The entries to show, rebuilt only when something it depends on moved.
-    fn visible_order(&mut self) -> &[usize] {
+    /// The apps to show, rebuilt only when something it depends on moved.
+    ///
+    /// Each is one app with its visible versions, so a collection holding
+    /// four builds of one game takes one place in the library rather than
+    /// four.
+    fn visible_groups(&mut self) -> &[VersionGroup] {
         let key = format!(
             "{}|{}|{:?}|{}|{}|{}",
             self.library_revision,
@@ -472,8 +479,36 @@ impl Frontend {
                 descending: self.state.sort_descending,
             };
             self.order_cache = library::visible_entries(&self.library, &filter, &self.database);
+            self.group_cache = library::group_versions(
+                &self.library,
+                &self.order_cache,
+                &self.state.chosen_versions,
+            );
         }
-        &self.order_cache
+        &self.group_cache
+    }
+
+    /// Every version of the app the selection is in, newest first.
+    fn versions_of_selection(&self) -> Vec<&crate::library::LibraryEntry> {
+        let Some(entry) = self.selected_entry() else {
+            return Vec::new();
+        };
+        self.group_cache
+            .iter()
+            .find(|group| {
+                group
+                    .versions
+                    .iter()
+                    .any(|&index| self.library.entries[index].id == entry.id)
+            })
+            .map(|group| {
+                group
+                    .versions
+                    .iter()
+                    .map(|&index| &self.library.entries[index])
+                    .collect()
+            })
+            .unwrap_or_else(|| vec![entry])
     }
 
     fn selected_entry(&self) -> Option<&crate::library::LibraryEntry> {
@@ -837,6 +872,21 @@ impl Frontend {
                     self.invalidate_order();
                 }
             }
+            Action::ChooseVersion {
+                bundle_identifier,
+                entry_id,
+            } => {
+                // Selecting the version too is the point of picking one:
+                // the rating, the per-app settings and the Play button all
+                // act on the selection, and leaving it on the version that
+                // was just replaced would make every one of them lie.
+                self.state
+                    .chosen_versions
+                    .insert(bundle_identifier, entry_id.clone());
+                self.state.selected_app = Some(entry_id);
+                self.dirty.state = true;
+                self.invalidate_order();
+            }
             Action::CopyText(text) => {
                 if !text.is_empty() {
                     ctx.copy_text(text);
@@ -1050,6 +1100,18 @@ fn build_description() -> String {
     }
 }
 
+/// How many apps the library holds, counting every version of one app once.
+fn distinct_apps(library: &Library) -> usize {
+    let mut identifiers: Vec<&str> = library
+        .entries
+        .iter()
+        .map(|entry| entry.metadata.bundle_identifier.as_str())
+        .collect();
+    identifiers.sort_unstable();
+    identifiers.dedup();
+    identifiers.len()
+}
+
 fn plural(count: usize) -> &'static str {
     if count == 1 {
         ""
@@ -1091,7 +1153,7 @@ impl eframe::App for Frontend {
         let mut actions: Vec<Action> = Vec::new();
         // The order is settled before the chrome is built so the status bar
         // can say how many apps are shown this frame rather than last.
-        let order = self.visible_order().to_vec();
+        let groups = self.visible_groups().to_vec();
         // The toolbar owns the search box while it is drawn, and the chrome
         // context borrows the rest, so the string is lifted out and put back.
         let mut search = std::mem::take(&mut self.search);
@@ -1165,6 +1227,7 @@ impl eframe::App for Frontend {
                     entry,
                     database: &self.database,
                     database_available: self.database_available,
+                    versions: self.versions_of_selection(),
                 };
                 crate::ui::details::show(ui, &details, &mut actions);
             });
@@ -1189,7 +1252,7 @@ impl eframe::App for Frontend {
                 let library_is_empty = self.library.entries.is_empty();
                 let context = LibraryContext {
                     library: &self.library,
-                    order: &order,
+                    groups: &groups,
                     icons: &self.icons,
                     database: &self.database,
                     selected: selected.as_deref(),
@@ -1246,8 +1309,10 @@ impl Frontend {
             selection_missing: entry.is_some_and(|entry| entry.missing),
             running_count: self.launcher.running().len(),
             selected_running: entry.is_some_and(|entry| self.launcher.is_running(&entry.id)),
-            library_count: self.library.entries.len(),
-            shown_count: self.order_cache.len(),
+            // Counted in apps rather than files, to agree with what the
+            // library shows now that versions of one app share a place.
+            library_count: distinct_apps(&self.library),
+            shown_count: self.group_cache.len(),
             view_mode: self.state.view_mode,
             icon_size: self.state.icon_size,
             sort_order: self.state.sort_order,

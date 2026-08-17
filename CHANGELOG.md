@@ -15,6 +15,14 @@
   the general setting — so getting one awkward game to behave does not mean
   configuring the rest of them.
 
+- Several versions of one game are one app in the library. A folder holding
+  BabyMonkey 1.01, 1.2.3 and 1.3.5 used to fill three places in the grid and
+  push everything else down; now it fills one, with a dropdown under the name
+  for choosing which version to play. The newest is shown to begin with, the
+  choice is remembered, and each version keeps its own settings, rating and
+  play time — they are different builds, and only you know which one you
+  meant.
+
 - The emulator's output has somewhere to go. A Log panel along the bottom of
   the window carries everything tapHLE prints, with search and filters for
   errors, warnings and the part of the emulator a message came from. It is

@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use egui::{Color32, Rect, Sense, Stroke, Ui, Vec2};
 
 use crate::compat::DatabaseSnapshot;
-use crate::library::{Library, LibraryEntry};
+use crate::library::{Library, LibraryEntry, VersionGroup};
 use crate::settings::ViewMode;
 use crate::theme;
 use crate::timefmt;
@@ -30,8 +30,9 @@ use crate::ui::{self, Action};
 /// Everything the library view needs to draw itself.
 pub struct LibraryContext<'a> {
     pub library: &'a Library,
-    /// Indices into the library, already filtered and sorted.
-    pub order: &'a [usize],
+    /// One place per app, already filtered and sorted, each holding the
+    /// versions of that app that survived the filter.
+    pub groups: &'a [VersionGroup],
     pub icons: &'a HashMap<String, egui::TextureHandle>,
     pub database: &'a DatabaseSnapshot,
     pub selected: Option<&'a str>,
@@ -47,7 +48,7 @@ pub fn show(ui: &mut Ui, context: &LibraryContext<'_>, actions: &mut Vec<Action>
     ui.painter()
         .rect_filled(ui.max_rect(), 0.0, theme::LIGHT.content);
 
-    if context.order.is_empty() {
+    if context.groups.is_empty() {
         show_empty(ui, context, actions);
         return;
     }
@@ -98,6 +99,14 @@ fn show_empty(ui: &mut Ui, context: &LibraryContext<'_>, actions: &mut Vec<Actio
     });
 }
 
+/// The height of the row under an app's name where its version is chosen.
+///
+/// Every cell reserves it, including the apps that only have one version.
+/// The lattice is the point of the grid, and a row of cells that changed
+/// height according to how many versions each app happened to have would not
+/// be one.
+const VERSION_ROW: f32 = 17.0;
+
 /// The size of one cell in the grid.
 ///
 /// The horizontal and vertical multipliers are where the home-screen rhythm
@@ -107,14 +116,14 @@ fn show_empty(ui: &mut Ui, context: &LibraryContext<'_>, actions: &mut Vec<Actio
 fn cell_size(icon_points: f32) -> Vec2 {
     let width = (icon_points * 1.85).max(84.0);
     let label_height = 30.0;
-    Vec2::new(width, icon_points + label_height + 16.0)
+    Vec2::new(width, icon_points + label_height + 16.0 + VERSION_ROW)
 }
 
 fn show_grid(ui: &mut Ui, context: &LibraryContext<'_>, actions: &mut Vec<Action>) {
     let cell = cell_size(context.icon_points);
     let available = ui.available_width() - ui.spacing().scroll.bar_width - 8.0;
     let columns = ((available / cell.x).floor() as usize).max(1);
-    let rows = context.order.len().div_ceil(columns);
+    let rows = context.groups.len().div_ceil(columns);
     // Spread the leftover width so the lattice sits centred rather than
     // hard against the left edge with a ragged gap on the right.
     let margin = ((available - columns as f32 * cell.x) / 2.0).max(0.0);
@@ -127,10 +136,10 @@ fn show_grid(ui: &mut Ui, context: &LibraryContext<'_>, actions: &mut Vec<Action
                     ui.spacing_mut().item_spacing = Vec2::ZERO;
                     ui.add_space(margin + 4.0);
                     for column in 0..columns {
-                        let Some(&index) = context.order.get(row * columns + column) else {
+                        let Some(group) = context.groups.get(row * columns + column) else {
                             break;
                         };
-                        grid_cell(ui, context, &context.library.entries[index], cell, actions);
+                        grid_cell(ui, context, group, cell, actions);
                     }
                 });
             }
@@ -140,12 +149,13 @@ fn show_grid(ui: &mut Ui, context: &LibraryContext<'_>, actions: &mut Vec<Action
 fn grid_cell(
     ui: &mut Ui,
     context: &LibraryContext<'_>,
-    entry: &LibraryEntry,
+    group: &VersionGroup,
     cell: Vec2,
     actions: &mut Vec<Action>,
 ) {
+    let entry = &context.library.entries[group.shown];
     let (rect, response) = ui.allocate_exact_size(cell, Sense::click());
-    let selected = context.selected == Some(entry.id.as_str());
+    let selected = is_selected(context, group);
     let running = context.running.contains(&entry.id);
     let palette = &theme::LIGHT;
 
@@ -198,7 +208,7 @@ fn grid_cell(
 
     let label_rect = Rect::from_min_max(
         egui::pos2(rect.left() + 4.0, icon_rect.bottom() + 5.0),
-        egui::pos2(rect.right() - 4.0, rect.bottom() - 2.0),
+        egui::pos2(rect.right() - 4.0, rect.bottom() - 2.0 - VERSION_ROW),
     );
     let colour = if entry.missing {
         palette.text_dim
@@ -229,7 +239,95 @@ fn grid_cell(
         colour,
     );
 
-    handle_entry_interaction(ui, context, entry, &response, actions);
+    if group.has_choice() {
+        let chip = Rect::from_center_size(
+            egui::pos2(rect.center().x, rect.bottom() - 2.0 - VERSION_ROW / 2.0),
+            Vec2::new((cell.x - 10.0).min(104.0), VERSION_ROW - 2.0),
+        );
+        version_chip(ui, context, group, chip, actions);
+    }
+
+    handle_entry_interaction(ui, context, group, &response, actions);
+}
+
+/// Whether the selection is anywhere in this group.
+///
+/// The selection follows a version, not an app, because settings, ratings and
+/// play time all belong to the exact build. A group is highlighted when any
+/// of its versions is selected, so picking a version out of the dropdown does
+/// not look like it deselected the app.
+fn is_selected(context: &LibraryContext<'_>, group: &VersionGroup) -> bool {
+    let Some(selected) = context.selected else {
+        return false;
+    };
+    group
+        .versions
+        .iter()
+        .any(|&index| context.library.entries[index].id == selected)
+}
+
+/// The button under an app's name that says which version is on show.
+fn version_chip(
+    ui: &mut Ui,
+    context: &LibraryContext<'_>,
+    group: &VersionGroup,
+    rect: Rect,
+    actions: &mut Vec<Action>,
+) {
+    let entry = &context.library.entries[group.shown];
+    let label = format!("{} ▾", group_label(context, group, entry));
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::top_down(egui::Align::Center)),
+    );
+    child.spacing_mut().button_padding = Vec2::new(4.0, 0.0);
+    child
+        .menu_button(egui::RichText::new(label).small(), |ui| {
+            version_menu(ui, context, group, actions);
+        })
+        .response
+        .on_hover_text(format!("{} versions of this app", group.versions.len()));
+}
+
+/// One version's name, as distinct from the others in its group.
+fn group_label(context: &LibraryContext<'_>, group: &VersionGroup, entry: &LibraryEntry) -> String {
+    crate::library::version_label(
+        entry,
+        group
+            .versions
+            .iter()
+            .map(|&index| &context.library.entries[index]),
+    )
+}
+
+/// The list of versions, wherever one can be picked.
+fn version_menu(
+    ui: &mut Ui,
+    context: &LibraryContext<'_>,
+    group: &VersionGroup,
+    actions: &mut Vec<Action>,
+) {
+    ui.set_min_width(180.0);
+    let shown = context.library.entries[group.shown].id.as_str();
+    for &index in &group.versions {
+        let entry = &context.library.entries[index];
+        let mut label = format!("Version {}", group_label(context, group, entry));
+        if entry.missing {
+            label.push_str(" — file missing");
+        }
+        if ui
+            .selectable_label(entry.id == shown, label)
+            .on_hover_text(&entry.id)
+            .clicked()
+        {
+            actions.push(Action::ChooseVersion {
+                bundle_identifier: entry.metadata.bundle_identifier.clone(),
+                entry_id: entry.id.clone(),
+            });
+            ui.close();
+        }
+    }
 }
 
 fn draw_entry_icon(ui: &mut Ui, context: &LibraryContext<'_>, entry: &LibraryEntry, rect: Rect) {
@@ -286,18 +384,10 @@ fn show_list(ui: &mut Ui, context: &LibraryContext<'_>, actions: &mut Vec<Action
     let row_height = 26.0;
     egui::ScrollArea::both()
         .auto_shrink([false, false])
-        .show_rows(ui, row_height, context.order.len(), |ui, row_range| {
+        .show_rows(ui, row_height, context.groups.len(), |ui, row_range| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for row in row_range {
-                let index = context.order[row];
-                list_row(
-                    ui,
-                    context,
-                    &context.library.entries[index],
-                    row_height,
-                    row,
-                    actions,
-                );
+                list_row(ui, context, &context.groups[row], row_height, row, actions);
             }
         });
 }
@@ -305,14 +395,15 @@ fn show_list(ui: &mut Ui, context: &LibraryContext<'_>, actions: &mut Vec<Action
 fn list_row(
     ui: &mut Ui,
     context: &LibraryContext<'_>,
-    entry: &LibraryEntry,
+    group: &VersionGroup,
     height: f32,
     row: usize,
     actions: &mut Vec<Action>,
 ) {
+    let entry = &context.library.entries[group.shown];
     let width = ui.available_width().max(560.0);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
-    let selected = context.selected == Some(entry.id.as_str());
+    let selected = is_selected(context, group);
     let palette = &theme::LIGHT;
 
     if selected {
@@ -341,7 +432,7 @@ fn list_row(
     let columns: [(f32, String); 4] = [
         (250.0, entry.title().to_string()),
         (160.0, entry.metadata.publisher.clone().unwrap_or_default()),
-        (80.0, entry.metadata.version_for_display().to_string()),
+        (90.0, entry.metadata.version_for_display().to_string()),
         (
             110.0,
             entry
@@ -350,7 +441,18 @@ fn list_row(
                 .unwrap_or_default(),
         ),
     ];
-    for (column_width, text) in columns {
+    for (column, (column_width, text)) in columns.into_iter().enumerate() {
+        // The version column is where an app with several versions is
+        // switched between them, so it is a real control rather than text.
+        if column == 2 && group.has_choice() {
+            let chip = Rect::from_min_size(
+                egui::pos2(x - 2.0, rect.center().y - 9.0),
+                Vec2::new(column_width - 6.0, 18.0),
+            );
+            version_chip(ui, context, group, chip, actions);
+            x += column_width;
+            continue;
+        }
         let galley = {
             let mut job =
                 egui::text::LayoutJob::simple(text, font.clone(), colour, column_width - 8.0);
@@ -386,17 +488,18 @@ fn list_row(
         }
     }
 
-    handle_entry_interaction(ui, context, entry, &response, actions);
+    handle_entry_interaction(ui, context, group, &response, actions);
 }
 
 /// Clicking, double-clicking and the context menu, shared by both views.
 fn handle_entry_interaction(
     _ui: &mut Ui,
     context: &LibraryContext<'_>,
-    entry: &LibraryEntry,
+    group: &VersionGroup,
     response: &egui::Response,
     actions: &mut Vec<Action>,
 ) {
+    let entry = &context.library.entries[group.shown];
     if response.clicked() || response.secondary_clicked() {
         actions.push(Action::Select(entry.id.clone()));
     }
@@ -416,6 +519,12 @@ fn handle_entry_interaction(
         if running && ui.button("Stop").clicked() {
             actions.push(Action::StopAll);
             ui.close();
+        }
+        if group.has_choice() {
+            ui.menu_button(
+                format!("Version ({})", group_label(context, group, entry)),
+                |ui| version_menu(ui, context, group, actions),
+            );
         }
         ui.separator();
         if ui.button("Settings for this App…").clicked() {

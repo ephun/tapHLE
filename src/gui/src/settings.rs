@@ -475,6 +475,9 @@ pub struct UiState {
     pub sort_order: SortOrder,
     pub sort_descending: bool,
     pub favorites_only: bool,
+    /// Which version of an app the library shows, keyed by bundle identifier.
+    /// Absent means the newest one, which is what a fresh library shows.
+    pub chosen_versions: std::collections::HashMap<String, String>,
 }
 
 impl Default for UiState {
@@ -492,6 +495,7 @@ impl Default for UiState {
             sort_order: SortOrder::default(),
             sort_descending: false,
             favorites_only: false,
+            chosen_versions: std::collections::HashMap::new(),
         }
     }
 }
