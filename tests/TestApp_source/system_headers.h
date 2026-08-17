@@ -49,6 +49,11 @@ static inline NSRange NSMakeRange(NSUInteger loc, NSUInteger len) {
 }
 + (Class)class;
 + (Class)superclass;
+// A class object is a singleton, so Foundation declares these on the class
+// side to answer the class itself. The zone is typed as void * because
+// struct _NSZone is not declared here.
++ (id)copyWithZone:(void *)zone;
++ (id)mutableCopyWithZone:(void *)zone;
 + (instancetype)alloc;
 + (instancetype)new;
 + (BOOL)respondsToSelector:(SEL)selector;

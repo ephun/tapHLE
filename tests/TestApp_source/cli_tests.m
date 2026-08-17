@@ -6795,6 +6795,19 @@ int test_NSDictionary_valueForKey_nil() {
   return 0;
 }
 
+// A class object is a singleton, so copying one answers the class itself.
+// Foundation declares this on the class side for that reason; the instance
+// side is deliberately absent, because NSObject does not adopt NSCopying.
+int test_NSObject_class_copy() {
+  Class cls = [NSString class];
+
+  if ([cls copyWithZone:NULL] != (id)cls)
+    return -1;
+  if ([cls mutableCopyWithZone:NULL] != (id)cls)
+    return -2;
+  return 0;
+}
+
 // NSMutableDictionary inherits NSObject's allocation path, so its capacity
 // factory must still produce mutable dictionary storage.
 int test_NSMutableDictionary_dictionaryWithCapacity() {
@@ -7451,6 +7464,7 @@ struct {
     FUNC_DEF(test_NSObject_valueForKeyPath),
     FUNC_DEF(test_NSObject_dictionaryWithValuesForKeys),
     FUNC_DEF(test_NSDictionary_valueForKey_nil),
+    FUNC_DEF(test_NSObject_class_copy),
     FUNC_DEF(test_NSMutableDictionary_dictionaryWithCapacity),
     FUNC_DEF(test_NSAssertionHandler_currentHandler),
     FUNC_DEF(test_NSException_accessors_and_raise),

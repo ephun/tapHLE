@@ -59,6 +59,23 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.objc.class_is_subclass_of(this, class)
 }
 
+// Copying a *class* answers the class itself. A class object is a singleton,
+// so there is nothing to duplicate, and Foundation declares these on NSObject
+// for exactly that reason — note that the instance-side `copyWithZone:` is
+// deliberately not here, because NSObject does not adopt NSCopying and a class
+// that wants to be copied says so itself.
+//
+// This is not a curiosity: code that keeps classes in a collection gets them
+// copied by the collection, and without these the send reached the metaclass,
+// found nothing, and ended the app. That is what happens to a game storing
+// component classes in a dictionary.
++ (id)copyWithZone:(NSZonePtr)_zone {
+    this
+}
++ (id)mutableCopyWithZone:(NSZonePtr)_zone {
+    this
+}
+
 // See the instance method section for the normal versions of these.
 + (id)retain {
     this // classes are not refcounted
