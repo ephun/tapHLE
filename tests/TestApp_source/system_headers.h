@@ -215,6 +215,8 @@ enum { NSASCIIStringEncoding = 1, NSUTF8StringEncoding = 4 };
                                              range:(NSRange)range;
 - (BOOL)isEqualToString:(NSString *)other;
 - (NSInteger)compare:(NSString *)other;
+- (NSInteger)localizedCompare:(NSString *)other;
+- (NSInteger)localizedCaseInsensitiveCompare:(NSString *)other;
 - (NSString *)stringByAddingPercentEscapesUsingEncoding:(NSStringEncoding)encoding;
 @end
 @interface NSMutableString : NSString

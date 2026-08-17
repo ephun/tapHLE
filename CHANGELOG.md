@@ -470,6 +470,12 @@
   but tapHLE ended the game over the question. All four versions of
   Spaceteam stopped during start-up. Setting an absent value was already
   survivable; now reading one is too.
+- Sort text the way a game asks for it, ignoring case. The comparison did
+  not exist at all, so a game sorting a list of names ended there — every
+  version of Doodle Jump stopped during start-up. Sorting text with
+  accented or non-English characters also no longer ends the game: the
+  order is not yet the one a device would give, but that is a better
+  answer than stopping.
 
 ### Known limitations
 
