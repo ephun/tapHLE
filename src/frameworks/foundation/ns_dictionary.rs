@@ -543,6 +543,16 @@ pub const CLASSES: ClassExports = objc_classes! {
 // TODO
 
 - (id)valueForKey:(id)key { // NSString*
+    // The key is only turned into text to look for the '@' prefix, and a nil
+    // one has no text — it went straight into to_rust_string(), which borrows
+    // the object table and aborted the emulator. Nothing can be looked up
+    // under no key, so nil is the answer, and saying so keeps the nil visible:
+    // it came from somewhere, and that somewhere is usually the real gap.
+    // This is the same mistake -initWithContentsOfFile: made above.
+    if key == nil {
+        log!("Warning: -[NSDictionary valueForKey:nil], returning nil");
+        return nil;
+    }
     let key_str = to_rust_string(env, key);
     // TODO: strip '@' and call super
     assert!(!key_str.starts_with('@'));
