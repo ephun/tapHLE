@@ -426,6 +426,11 @@
   screen for it, so it was being rotated twice and the finished frame arrived
   as flat horizontal bands; it now launches in landscape-native mode. Racing,
   crashing, reading the results and starting another race all work.
+- Measure a line of text the way a game asks for it when the line has a
+  width to fit into. tapHLE could measure text on its own and text inside a
+  box, but not this third way, which is what a game uses to lay out a label
+  before drawing it — so asking ended the game. Ragdoll Blaster 2 and its
+  free version both stopped there.
 
 ### Known limitations
 
