@@ -464,6 +464,10 @@
   while building its screen, and the instruction was not understood at all,
   so the game ended there. Zippo Lighter 1.1 stopped during start-up.
   tapHLE still stretches contents to fit, as it always has.
+- Let a game respond when the player changes page with the row of dots at
+  the bottom of a screen. tapHLE treated that row as decoration rather than
+  as a control, so a game asking to be told about it ended there. Both
+  Carnivores games stopped during start-up.
 
 ### Known limitations
 
