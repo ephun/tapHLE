@@ -420,15 +420,29 @@ pub fn run_run_loop(
 
         // We want to process those only on the main run loop
         if is_main_run_loop {
-            let next_due = uikit::handle_events(env);
-            limit_sleep_time(&mut sleep_until, next_due);
+            // Draining events and compositing are both about a window: one
+            // reads what the window produced, the other draws into it. In
+            // headless mode there is neither, and asking for the window there
+            // panics — so they are skipped rather than reached. Everything
+            // else in this loop (timers, queued selectors, audio) has nothing
+            // to do with a window and still runs, which is what makes
+            // `-[NSRunLoop runMode:beforeDate:]` work without one.
+            if env.window.is_some() {
+                let next_due = uikit::handle_events(env);
+                limit_sleep_time(&mut sleep_until, next_due);
+            }
 
-            // Before compositing, not after: a view that asked for layout this
-            // turn must be laid out before the frame that shows it is drawn.
+            // Not inside that condition: laying out a view runs the app's own
+            // `layoutSubviews`, which is guest code and is not about the
+            // window. It stays before compositing, because a view that asked
+            // for layout this turn must be laid out before the frame that
+            // shows it is drawn.
             crate::frameworks::uikit::ui_view::handle_pending_layout(env);
 
-            let next_due = core_animation::recomposite_if_necessary(env, false);
-            limit_sleep_time(&mut sleep_until, next_due);
+            if env.window.is_some() {
+                let next_due = core_animation::recomposite_if_necessary(env, false);
+                limit_sleep_time(&mut sleep_until, next_due);
+            }
         }
 
         assert!(timers_tmp.is_empty());
