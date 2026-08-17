@@ -435,6 +435,11 @@
   build its own textures — was asking something tapHLE could not answer at
   all, and the attempt ended it during start-up. Fieldrunners for iPad stopped
   there.
+- Stop games quitting while setting up a web view. Saying which kinds of text
+  in a page should become tappable — phone numbers, addresses, links — is
+  something a game does right after making the view, and it was not understood
+  at all, so the game ended before the screen holding the view was ever built.
+  tapHLE still draws the view blank, as it always has.
 
 ### Known limitations
 
