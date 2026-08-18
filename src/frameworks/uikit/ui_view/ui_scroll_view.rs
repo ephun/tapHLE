@@ -37,6 +37,24 @@ pub struct UIScrollViewHostObject {
     shows_horizontal_scroll_indicator: bool,
     shows_vertical_scroll_indicator: bool,
     scroll_indicator_insets: UIEdgeInsets,
+    /// Whether a drag is confined to one axis once it has picked one, and
+    /// whether a tap on the status bar scrolls this view to the top. Stored
+    /// and reported back for the same reason as the indicators above: one
+    /// constrains dragging and the other answers a gesture on a status bar
+    /// tapHLE does not draw, but an app configures both during setup and may
+    /// read them back.
+    directional_lock_enabled: bool,
+    scrolls_to_top: bool,
+    /// The rest of the scroll view's drag behaviour, stored on the same terms.
+    /// Nothing here drags, decelerates or pages the content, so what these
+    /// buy is that setting one is not fatal and reading it back gives the
+    /// answer the app set.
+    paging_enabled: bool,
+    bounces: bool,
+    always_bounce_horizontal: bool,
+    always_bounce_vertical: bool,
+    delays_content_touches: bool,
+    can_cancel_content_touches: bool,
     /// Whether a touch is currently down on the scroll view, and whether that
     /// touch has moved the content yet. Apps read these to tell "the user is
     /// working the view right now" from "the view is idle", and defer work
@@ -62,6 +80,17 @@ impl Default for UIScrollViewHostObject {
             shows_horizontal_scroll_indicator: true,
             shows_vertical_scroll_indicator: true,
             scroll_indicator_insets: Default::default(),
+            directional_lock_enabled: false,
+            // UIKit's default, and an app turning it off is the common case:
+            // it has more than one scroll view and only one of them may claim
+            // the gesture.
+            scrolls_to_top: true,
+            paging_enabled: false,
+            bounces: true,
+            always_bounce_horizontal: false,
+            always_bounce_vertical: false,
+            delays_content_touches: true,
+            can_cancel_content_touches: true,
             tracking: false,
             dragging: false,
         }
@@ -110,11 +139,60 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.objc.borrow_mut::<UIScrollViewHostObject>(this).delegate = delegate;
 }
 
-- (())setDelaysContentTouches:(id)_delay_content_touches{
-    // TODO
+- (bool)delaysContentTouches {
+    env.objc.borrow::<UIScrollViewHostObject>(this).delays_content_touches
 }
-- (())setBounces:(id)_bounces {
-    // TODO
+- (())setDelaysContentTouches:(bool)delays {
+    env.objc.borrow_mut::<UIScrollViewHostObject>(this).delays_content_touches = delays;
+}
+
+- (bool)canCancelContentTouches {
+    env.objc.borrow::<UIScrollViewHostObject>(this).can_cancel_content_touches
+}
+- (())setCanCancelContentTouches:(bool)can_cancel {
+    env.objc.borrow_mut::<UIScrollViewHostObject>(this).can_cancel_content_touches = can_cancel;
+}
+
+- (bool)bounces {
+    env.objc.borrow::<UIScrollViewHostObject>(this).bounces
+}
+- (())setBounces:(bool)bounces {
+    env.objc.borrow_mut::<UIScrollViewHostObject>(this).bounces = bounces;
+}
+
+- (bool)alwaysBounceHorizontal {
+    env.objc.borrow::<UIScrollViewHostObject>(this).always_bounce_horizontal
+}
+- (())setAlwaysBounceHorizontal:(bool)always {
+    env.objc.borrow_mut::<UIScrollViewHostObject>(this).always_bounce_horizontal = always;
+}
+
+- (bool)alwaysBounceVertical {
+    env.objc.borrow::<UIScrollViewHostObject>(this).always_bounce_vertical
+}
+- (())setAlwaysBounceVertical:(bool)always {
+    env.objc.borrow_mut::<UIScrollViewHostObject>(this).always_bounce_vertical = always;
+}
+
+- (bool)isPagingEnabled {
+    env.objc.borrow::<UIScrollViewHostObject>(this).paging_enabled
+}
+- (())setPagingEnabled:(bool)paging_enabled {
+    env.objc.borrow_mut::<UIScrollViewHostObject>(this).paging_enabled = paging_enabled;
+}
+
+- (bool)isDirectionalLockEnabled {
+    env.objc.borrow::<UIScrollViewHostObject>(this).directional_lock_enabled
+}
+- (())setDirectionalLockEnabled:(bool)enabled {
+    env.objc.borrow_mut::<UIScrollViewHostObject>(this).directional_lock_enabled = enabled;
+}
+
+- (bool)scrollsToTop {
+    env.objc.borrow::<UIScrollViewHostObject>(this).scrolls_to_top
+}
+- (())setScrollsToTop:(bool)scrolls_to_top {
+    env.objc.borrow_mut::<UIScrollViewHostObject>(this).scrolls_to_top = scrolls_to_top;
 }
 
 - (bool)scrollEnabled {

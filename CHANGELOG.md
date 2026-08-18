@@ -524,6 +524,11 @@
   value they will feed it, and the question did not exist, so the game ended
   at the first one. Organ Trail Director's Cut and Temple Run 2 now start and
   keep running, and Ski Safari gets past it too.
+- Set up a scrolling view the way games actually set one up. Six of the
+  switches a game flips while building one did not exist, and flipping any of
+  them ended the game — one at a time, so fixing one only revealed the next.
+  Doodle Jump and Doodle Jump HD died during start-up on three of them in a
+  row and now reach their main menu, drawn correctly.
 
 ### Known limitations
 
