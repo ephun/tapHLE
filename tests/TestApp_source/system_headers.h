@@ -326,6 +326,7 @@ typedef double NSTimeInterval;
 
 @interface NSMutableData : NSData
 + (instancetype)data;
+- (void)appendBytes:(const void *)bytes length:(NSUInteger)length;
 @end
 
 // Core Foundation's type identity. CFBase.h in the SDK declares CFTypeID but

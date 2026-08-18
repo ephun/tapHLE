@@ -270,6 +270,17 @@ fn deserialize_plist(
     }
 }
 
+/// Whether `class` is `name` or something derived from it.
+///
+/// The collection branches below already ask the question this way. The leaf
+/// types used to ask for exact equality instead, which meant a mutable one was
+/// not recognised as the thing it is a subclass of: `NSMutableData` holding a
+/// saved game was "not implemented: class NSMutableData" rather than data.
+fn is_kind_of(env: &mut Environment, class: Class, name: &str) -> bool {
+    let named = env.objc.get_known_class(name, &mut env.mem);
+    env.objc.class_is_subclass_of(class, named)
+}
+
 fn serialize_plist(env: &mut Environment, plist: id) -> Value {
     let class: Class = msg![env; plist class];
 
@@ -320,7 +331,7 @@ fn serialize_plist(env: &mut Environment, plist: id) -> Value {
 
         let s = ns_string::to_rust_string(env, plist);
         Value::String(s.to_string())
-    } else if class == env.objc.get_known_class("NSNumber", &mut env.mem) {
+    } else if is_kind_of(env, class, "NSNumber") {
         let num = env.objc.borrow::<NSNumberHostObject>(plist);
         // Exhaustive on purpose, with no catch-all arm: a number tapHLE can
         // hold but cannot write is a saved game that ends the app instead of
@@ -339,11 +350,11 @@ fn serialize_plist(env: &mut Environment, plist: id) -> Value {
             NSNumberHostObject::UnsignedShort(us) => Value::from(*us),
             NSNumberHostObject::Char(c) => Value::from(*c),
         }
-    } else if class == env.objc.get_known_class("NSData", &mut env.mem) {
+    } else if is_kind_of(env, class, "NSData") {
         let data = env.objc.borrow::<NSDataHostObject>(plist);
         let buffer_slice = env.mem.bytes_at(data.bytes.cast(), data.length);
         Value::Data(buffer_slice.to_vec())
-    } else if class == env.objc.get_known_class("NSDate", &mut env.mem) {
+    } else if is_kind_of(env, class, "NSDate") {
         let date = env.objc.borrow::<NSDateHostObject>(plist);
         let time = apple_epoch().add(Duration::from_secs_f64(date.time_interval));
         Value::Date(time.into())

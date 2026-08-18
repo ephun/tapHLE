@@ -534,6 +534,10 @@
   for the save and hands it over — which is what a game does when it wants to
   add something of its own alongside — ended at the attempt. Doodle Jump
   v3.1.1 and v3.4 both save this way.
+- Save a file whose contents a game is still building. Three kinds of value
+  were only recognised in their finished form, so a game that saved one it
+  could still change — the ordinary case when the game assembled the save
+  itself — ended at the attempt rather than saving.
 
 ### Known limitations
 
