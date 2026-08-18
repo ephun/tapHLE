@@ -364,6 +364,9 @@ CFTypeID CFArrayGetTypeID(void);
 
 @interface NSKeyedUnarchiver : NSCoder
 + (id)unarchiveObjectWithData:(NSData *)data;
+- (instancetype)initForReadingWithData:(NSData *)data;
+- (id)decodeObjectForKey:(NSString *)key;
+- (void)finishDecoding;
 @end
 
 SEL NSSelectorFromString(NSString *);
