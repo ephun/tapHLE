@@ -1926,7 +1926,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     if did_convert {
         log_dbg!("[{:?} lineRangeForRange]: converted string to UTF-16", this);
     }
-    let (start, end, _) = line_range_helper(orig_string, range, true, true);
+    let (start, end, _) = line_range_helper(orig_string, range, true, true, BreakKind::Line);
     NSRange { location: start, length: end - start }
 }
 
@@ -1942,7 +1942,49 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     let get_start = !start_ptr.is_null();
     let get_end = !end_ptr.is_null() || !contents_end_ptr.is_null();
-    let (start, end, contents_end) = line_range_helper(orig_string, range, get_start, get_end);
+    let (start, end, contents_end) =
+        line_range_helper(orig_string, range, get_start, get_end, BreakKind::Line);
+
+    if !start_ptr.is_null() {
+        env.mem.write(start_ptr, start);
+    }
+
+    if !end_ptr.is_null() {
+        env.mem.write(end_ptr, end);
+    }
+
+    if !contents_end_ptr.is_null() {
+        env.mem.write(contents_end_ptr, contents_end);
+    }
+}
+
+// The paragraph pair. Both Carnivores games ask for a paragraph range while
+// laying out their briefing text, and the missing selector ended them.
+- (NSRange)paragraphRangeForRange:(NSRange)range {
+    let host_object = env.objc.borrow_mut::<StringHostObject>(this);
+    let (orig_string, did_convert) = host_object.convert_to_utf16_inplace();
+    if did_convert {
+        log_dbg!("[{:?} paragraphRangeForRange]: converted string to UTF-16", this);
+    }
+    let (start, end, _) =
+        line_range_helper(orig_string, range, true, true, BreakKind::Paragraph);
+    NSRange { location: start, length: end - start }
+}
+
+- (())getParagraphStart:(MutPtr<NSUInteger>)start_ptr
+                    end:(MutPtr<NSUInteger>)end_ptr
+            contentsEnd:(MutPtr<NSUInteger>)contents_end_ptr
+               forRange:(NSRange)range {
+    let host_object = env.objc.borrow_mut::<StringHostObject>(this);
+    let (orig_string, did_convert) = host_object.convert_to_utf16_inplace();
+    if did_convert {
+        log_dbg!("[{:?} getParagraphStart]: converted string to UTF-16", this);
+    }
+
+    let get_start = !start_ptr.is_null();
+    let get_end = !end_ptr.is_null() || !contents_end_ptr.is_null();
+    let (start, end, contents_end) =
+        line_range_helper(orig_string, range, get_start, get_end, BreakKind::Paragraph);
 
     if !start_ptr.is_null() {
         env.mem.write(start_ptr, start);
@@ -2342,18 +2384,30 @@ fn float_value_common<F: std::str::FromStr + Default>(env: &mut Environment, str
     st[..cutoff].parse().unwrap_or(Default::default())
 }
 
-/// Helper function for lineRangeForRange: and
-/// getLineStart:end:contentsEnd:forRange:.
+/// Which of the two things a range can be extended to.
 ///
-/// The two last arguments (get_[start/end]) correspond to the
-/// start and end/contentsEnd returns. If false is specified for a given
-/// argument, the corresponding return values will not be calculated and
-/// set to 0.
+/// They differ only in the delimiters they stop at. Every paragraph break is
+/// also a line break; LINE SEPARATOR and NEXT LINE break a line without
+/// starting a new paragraph, which is the whole distinction.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum BreakKind {
+    Line,
+    Paragraph,
+}
+
+/// Helper function for lineRangeForRange:,
+/// getLineStart:end:contentsEnd:forRange:, paragraphRangeForRange: and
+/// getParagraphStart:end:contentsEnd:forRange:.
+///
+/// The two `get_[start/end]` arguments correspond to the start and
+/// end/contentsEnd returns. If false is specified for a given argument, the
+/// corresponding return values will not be calculated and set to 0.
 fn line_range_helper(
     string: &Utf16String,
     range: NSRange,
     get_start: bool,
     get_end: bool,
+    kind: BreakKind,
 ) -> (NSUInteger, NSUInteger, NSUInteger) {
     let NSRange {
         location: r_start,
@@ -2376,9 +2430,11 @@ fn line_range_helper(
             // There's some special handling for if we start in the
             // middle of a CRLF.
             match c {
-                // 'LINE FEED (LF)' (\n), 'NEXT LINE (NEL)', 'LINE SEPARATOR',
-                // 'PARAGRAPH SEPARATOR'
-                0x000A | 0x0085 | 0x2028 | 0x2029 => break,
+                // 'LINE FEED (LF)' (\n), 'PARAGRAPH SEPARATOR'
+                0x000A | 0x2029 => break,
+                // 'NEXT LINE (NEL)', 'LINE SEPARATOR'. These end a line but not
+                // a paragraph.
+                0x0085 | 0x2028 if kind == BreakKind::Line => break,
                 // 'CARRIAGE RETURN (CR)' (\r)
                 0x000D => {
                     // If the first character is CR, and it is followed by an
@@ -2413,8 +2469,14 @@ fn line_range_helper(
             // See above about what counts as a line delimiter.
             // There's more understandable handling for CRLF here as well.
             match c {
-                //  'NEXT LINE (NEL)', 'LINE SEPARATOR', 'PARAGRAPH SEPARATOR'
-                0x0085 | 0x2028 | 0x2029 => {
+                // 'PARAGRAPH SEPARATOR'
+                0x2029 => {
+                    end_pos = cend_pos + 1;
+                    break;
+                }
+                // 'NEXT LINE (NEL)', 'LINE SEPARATOR', which end a line but not
+                // a paragraph.
+                0x0085 | 0x2028 if kind == BreakKind::Line => {
                     end_pos = cend_pos + 1;
                     break;
                 }
@@ -2470,27 +2532,72 @@ mod ns_string_tests {
             length: y,
         };
         let str1: Utf16String = "abcd\nab".encode_utf16().collect();
-        assert!(line_range_helper(&str1, range(5, 1), true, true) == (5, 7, 7));
-        assert!(line_range_helper(&str1, range(4, 1), true, true) == (0, 5, 4));
+        assert!(line_range_helper(&str1, range(5, 1), true, true, BreakKind::Line) == (5, 7, 7));
+        assert!(line_range_helper(&str1, range(4, 1), true, true, BreakKind::Line) == (0, 5, 4));
 
         let str2: Utf16String = "abc\r".encode_utf16().collect();
-        assert!(line_range_helper(&str2, range(4, 0), true, true) == (4, 4, 4));
-        assert!(line_range_helper(&str2, range(3, 1), true, true) == (0, 4, 3));
+        assert!(line_range_helper(&str2, range(4, 0), true, true, BreakKind::Line) == (4, 4, 4));
+        assert!(line_range_helper(&str2, range(3, 1), true, true, BreakKind::Line) == (0, 4, 3));
 
         let str3: Utf16String = "abc\r\nab".encode_utf16().collect();
-        assert!(line_range_helper(&str3, range(4, 0), true, true) == (0, 5, 3));
-        assert!(line_range_helper(&str3, range(4, 1), true, true) == (0, 5, 3));
-        assert!(line_range_helper(&str3, range(6, 1), true, true) == (5, 7, 7));
-        assert!(line_range_helper(&str3, range(4, 2), true, true) == (0, 7, 7));
+        assert!(line_range_helper(&str3, range(4, 0), true, true, BreakKind::Line) == (0, 5, 3));
+        assert!(line_range_helper(&str3, range(4, 1), true, true, BreakKind::Line) == (0, 5, 3));
+        assert!(line_range_helper(&str3, range(6, 1), true, true, BreakKind::Line) == (5, 7, 7));
+        assert!(line_range_helper(&str3, range(4, 2), true, true, BreakKind::Line) == (0, 7, 7));
 
         let str4: Utf16String = "\r\n".encode_utf16().collect();
-        assert!(line_range_helper(&str4, range(1, 0), true, true) == (0, 2, 0));
-        assert!(line_range_helper(&str4, range(1, 1), true, true) == (0, 2, 0));
-        assert!(line_range_helper(&str4, range(0, 0), true, true) == (0, 2, 0));
+        assert!(line_range_helper(&str4, range(1, 0), true, true, BreakKind::Line) == (0, 2, 0));
+        assert!(line_range_helper(&str4, range(1, 1), true, true, BreakKind::Line) == (0, 2, 0));
+        assert!(line_range_helper(&str4, range(0, 0), true, true, BreakKind::Line) == (0, 2, 0));
 
         let str5: Utf16String = "abcd\na\n".encode_utf16().collect();
-        assert!(line_range_helper(&str5, range(6, 1), true, true) == (5, 7, 6));
-        assert!(line_range_helper(&str5, range(4, 1), true, true) == (0, 5, 4));
+        assert!(line_range_helper(&str5, range(6, 1), true, true, BreakKind::Line) == (5, 7, 6));
+        assert!(line_range_helper(&str5, range(4, 1), true, true, BreakKind::Line) == (0, 5, 4));
+    }
+
+    /// A paragraph stops where a line does, minus the two characters that end
+    /// a line without ending a paragraph. Each case is checked both ways so
+    /// the difference is the thing being asserted.
+    #[test]
+    fn paragraphrange_tests() {
+        let range = |x, y| NSRange {
+            location: x,
+            length: y,
+        };
+
+        // LINE SEPARATOR: a line break, not a paragraph break, so a paragraph
+        // range reaches straight through it.
+        let sep: Utf16String = "ab\u{2028}cd".encode_utf16().collect();
+        assert!(line_range_helper(&sep, range(0, 1), true, true, BreakKind::Line) == (0, 3, 2));
+        assert!(
+            line_range_helper(&sep, range(0, 1), true, true, BreakKind::Paragraph) == (0, 5, 5)
+        );
+
+        // NEXT LINE behaves the same way.
+        let nel: Utf16String = "ab\u{0085}cd".encode_utf16().collect();
+        assert!(line_range_helper(&nel, range(0, 1), true, true, BreakKind::Line) == (0, 3, 2));
+        assert!(
+            line_range_helper(&nel, range(0, 1), true, true, BreakKind::Paragraph) == (0, 5, 5)
+        );
+
+        // PARAGRAPH SEPARATOR ends both.
+        let par: Utf16String = "ab\u{2029}cd".encode_utf16().collect();
+        assert!(line_range_helper(&par, range(0, 1), true, true, BreakKind::Line) == (0, 3, 2));
+        assert!(
+            line_range_helper(&par, range(0, 1), true, true, BreakKind::Paragraph) == (0, 3, 2)
+        );
+
+        // So do the ordinary ones, including CRLF as a single break.
+        let crlf: Utf16String = "ab\r\ncd".encode_utf16().collect();
+        assert!(
+            line_range_helper(&crlf, range(0, 1), true, true, BreakKind::Paragraph) == (0, 4, 2)
+        );
+        assert!(
+            line_range_helper(&crlf, range(4, 1), true, true, BreakKind::Paragraph) == (4, 6, 6)
+        );
+
+        let lf: Utf16String = "ab\ncd".encode_utf16().collect();
+        assert!(line_range_helper(&lf, range(3, 1), true, true, BreakKind::Paragraph) == (3, 5, 5));
     }
 }
 
