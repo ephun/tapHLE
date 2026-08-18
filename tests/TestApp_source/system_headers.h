@@ -10,9 +10,12 @@
 // This file contains definitions of types etc we don't have in our SDK, which
 // is built from open-source headers.
 
+#include <CoreFoundation/CFArray.h>
 #include <CoreFoundation/CFBundle.h>
 #include <CoreFoundation/CFData.h>
 #include <CoreFoundation/CFDate.h>
+#include <CoreFoundation/CFDictionary.h>
+#include <CoreFoundation/CFNumber.h>
 #include <CoreFoundation/CFURL.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -264,6 +267,15 @@ enum {
 @end
 
 NSString *NSStringFromClass(Class);
+
+// CFNetwork's proxy configuration. The SDK is built from open-source headers
+// and CFNetwork is not open source, so these are declared here.
+extern const CFStringRef kCFNetworkProxiesHTTPEnable;
+extern const CFStringRef kCFProxyTypeKey;
+extern const CFStringRef kCFProxyTypeNone;
+CFDictionaryRef CFNetworkCopySystemProxySettings(void);
+CFArrayRef CFNetworkCopyProxiesForURL(CFURLRef url,
+                                      CFDictionaryRef proxySettings);
 
 typedef double NSTimeInterval;
 

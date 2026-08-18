@@ -6956,6 +6956,49 @@ int test_NSString_encodingConversion() {
   return 0;
 }
 
+// A device with no proxy configured still answers both proxy questions, and
+// answers them with data rather than with NULL. Games ask on start-up through
+// an analytics SDK and dereference what they get back without checking: three
+// versions of Super Hexagon, Don't Look Back and two of Fieldrunners all
+// stopped here, some on the missing function and some on the null constant.
+int test_CFNetworkProxySettings() {
+  CFDictionaryRef settings = CFNetworkCopySystemProxySettings();
+  if (settings == NULL)
+    return -1;
+
+  CFNumberRef enabled =
+      (CFNumberRef)CFDictionaryGetValue(settings, kCFNetworkProxiesHTTPEnable);
+  if (enabled == NULL)
+    return -2;
+  int enabled_value = -1;
+  if (!CFNumberGetValue(enabled, kCFNumberIntType, &enabled_value))
+    return -3;
+  if (enabled_value != 0)
+    return -4;
+
+  CFURLRef url = CFURLCreateWithString(NULL, CFSTR("http://example.com/"), NULL);
+  if (url == NULL)
+    return -5;
+  CFArrayRef proxies = CFNetworkCopyProxiesForURL(url, settings);
+  if (proxies == NULL)
+    return -6;
+  // One entry saying "connect directly", not an empty array: an empty one
+  // means there is no route at all, which is a different answer.
+  if (CFArrayGetCount(proxies) != 1)
+    return -7;
+  CFDictionaryRef first = (CFDictionaryRef)CFArrayGetValueAtIndex(proxies, 0);
+  CFStringRef type = (CFStringRef)CFDictionaryGetValue(first, kCFProxyTypeKey);
+  if (type == NULL)
+    return -8;
+  if (!CFEqual(type, kCFProxyTypeNone))
+    return -9;
+
+  CFRelease(proxies);
+  CFRelease(url);
+  CFRelease(settings);
+  return 0;
+}
+
 // A concrete NSDictionary subclass only needs to supply the primitive
 // dictionary methods. allKeys is inherited from NSDictionary and builds its
 // result through the subclass's keyEnumerator.
@@ -7548,6 +7591,7 @@ struct {
     FUNC_DEF(test_NSString_percentEscapes),
     FUNC_DEF(test_NSString_localizedCaseInsensitiveCompare),
     FUNC_DEF(test_NSString_encodingConversion),
+    FUNC_DEF(test_CFNetworkProxySettings),
     FUNC_DEF(test_NSDictionary_allKeys_forSubclass),
     FUNC_DEF(test_NSObject_setValue_nil),
     FUNC_DEF(test_NSObject_self),

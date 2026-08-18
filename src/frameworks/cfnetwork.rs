@@ -17,13 +17,16 @@
 use crate::abi::GuestFunction;
 use crate::dyld::{export_c_func, ConstantExports, FunctionExports, HostConstant, HostDylib};
 use crate::frameworks::core_foundation::cf_allocator::CFAllocatorRef;
+use crate::frameworks::core_foundation::cf_array::CFArrayRef;
 use crate::frameworks::core_foundation::cf_data::CFDataRef;
+use crate::frameworks::core_foundation::cf_dictionary::CFDictionaryRef;
 use crate::frameworks::core_foundation::cf_run_loop::CFRunLoopRef;
 use crate::frameworks::core_foundation::cf_string::CFStringRef;
 use crate::frameworks::core_foundation::cf_url::CFURLRef;
 use crate::frameworks::core_foundation::{CFIndex, CFOptionFlags, CFTypeRef};
+use crate::frameworks::foundation::{ns_array, ns_dictionary, ns_string};
 use crate::mem::{MutPtr, MutVoidPtr};
-use crate::objc::{nil, objc_classes, ClassExports, TrivialHostObject};
+use crate::objc::{id, msg_class, nil, objc_classes, release, ClassExports, TrivialHostObject};
 use crate::Environment;
 
 pub const DYLIB: HostDylib = HostDylib {
@@ -33,6 +36,22 @@ pub const DYLIB: HostDylib = HostDylib {
     constant_exports: &[CONSTANTS],
     function_exports: &[FUNCTIONS],
 };
+
+/// Keys in the system proxy settings dictionary. These are the names the
+/// configuration itself uses, which is what the `kCFNetworkProxies*` constants
+/// below are exported as.
+const PROXIES_HTTP_ENABLE: &str = "HTTPEnable";
+const PROXIES_HTTP_PROXY: &str = "HTTPProxy";
+const PROXIES_HTTP_PORT: &str = "HTTPPort";
+const PROXIES_HTTPS_ENABLE: &str = "HTTPSEnable";
+const PROXIES_HTTPS_PROXY: &str = "HTTPSProxy";
+const PROXIES_HTTPS_PORT: &str = "HTTPSPort";
+const PROXIES_AUTO_CONFIG_ENABLE: &str = "ProxyAutoConfigEnable";
+
+/// Keys in one entry of the array `CFNetworkCopyProxiesForURL` returns, and the
+/// one proxy type tapHLE ever reports.
+const PROXY_TYPE_KEY: &str = "kCFProxyTypeKey";
+const PROXY_TYPE_NONE: &str = "kCFProxyTypeNone";
 
 /// `CFHTTPMessageRef`, opaque to the app.
 type CFHTTPMessageRef = CFTypeRef;
@@ -174,11 +193,132 @@ fn CFReadStreamCopyError(_env: &mut Environment, _stream: CFReadStreamRef) -> CF
     nil
 }
 
+/// Proxy configuration for the whole system, which here is the configuration
+/// of a device that has no proxy set.
+///
+/// A device with nothing configured still answers with a dictionary; it just
+/// says nothing is enabled. NULL is what it returns when it cannot read the
+/// configuration at all, which is a different claim and one tapHLE has no
+/// reason to make.
+///
+/// The three flags are spelled out rather than left absent. An SDK that reads
+/// one and passes it straight to `CFBooleanGetValue` or `CFNumberGetValue`
+/// without checking for NULL is the common shape of this code, and a dictionary
+/// that answers the question it is asked costs nothing here.
+fn CFNetworkCopySystemProxySettings(env: &mut Environment) -> CFDictionaryRef {
+    let disabled: id = msg_class![env; NSNumber numberWithInt:0i32];
+    let entries: Vec<(id, id)> = [
+        PROXIES_HTTP_ENABLE,
+        PROXIES_HTTPS_ENABLE,
+        PROXIES_AUTO_CONFIG_ENABLE,
+    ]
+    .into_iter()
+    .map(|key| (ns_string::from_rust_string(env, key.to_string()), disabled))
+    .collect();
+
+    let settings = ns_dictionary::dict_from_keys_and_objects(env, &entries);
+    // The dictionary retains its keys, and this function's own references to
+    // them are done with. The returned dictionary is +1, which is what a
+    // "Copy" function owes its caller.
+    for &(key, _) in &entries {
+        release(env, key);
+    }
+    settings
+}
+
+/// Which proxies to use to reach a particular URL, which here is none of them.
+///
+/// The answer is an array of one dictionary, and a dictionary whose type is
+/// `kCFProxyTypeNone` means "connect directly". That is what a device with no
+/// proxy configured returns, and it is a real answer rather than a refusal —
+/// an empty array means "there is no way to reach this at all", which is a
+/// different thing to tell an app that is about to give up.
+///
+/// The `settings` argument is ignored because tapHLE has exactly one
+/// configuration to report and `CFNetworkCopySystemProxySettings` above is
+/// where it is written down.
+fn CFNetworkCopyProxiesForURL(
+    env: &mut Environment,
+    _url: CFURLRef,
+    _proxy_settings: CFDictionaryRef,
+) -> CFArrayRef {
+    let key = ns_string::from_rust_string(env, PROXY_TYPE_KEY.to_string());
+    let none = ns_string::from_rust_string(env, PROXY_TYPE_NONE.to_string());
+    // The app compares this value against its own `kCFProxyTypeNone`, which is
+    // a different string object with the same contents: CFEqual says they are
+    // equal, pointer comparison does not. Apple's own documentation tells
+    // callers to use CFEqual, and no app seen so far does otherwise.
+    let entry = ns_dictionary::dict_from_keys_and_objects(env, &[(key, none)]);
+    release(env, key);
+    release(env, none);
+
+    // `from_vec` takes ownership of the references it is given rather than
+    // retaining them, so the entry is handed over as-is and the array is the
+    // +1 object this function returns.
+    ns_array::from_vec(env, vec![entry])
+}
+
 pub const CONSTANTS: ConstantExports = &[
+    ("_kCFHTTPVersion1_0", HostConstant::NSString("HTTP/1.0")),
     ("_kCFHTTPVersion1_1", HostConstant::NSString("HTTP/1.1")),
+    // The proxy keys. An app that imports one of these and finds it null does
+    // not get a diagnostic, it gets a null dereference: Super Hexagon reads
+    // kCFNetworkProxiesHTTPEnable straight out of the settings dictionary and
+    // dies on the load, which is why these are exported rather than left for
+    // the first app that reads one.
+    (
+        "_kCFNetworkProxiesHTTPEnable",
+        HostConstant::NSString(PROXIES_HTTP_ENABLE),
+    ),
+    (
+        "_kCFNetworkProxiesHTTPProxy",
+        HostConstant::NSString(PROXIES_HTTP_PROXY),
+    ),
+    (
+        "_kCFNetworkProxiesHTTPPort",
+        HostConstant::NSString(PROXIES_HTTP_PORT),
+    ),
+    ("_kCFProxyTypeKey", HostConstant::NSString(PROXY_TYPE_KEY)),
+    ("_kCFProxyTypeNone", HostConstant::NSString(PROXY_TYPE_NONE)),
+    (
+        "_kCFProxyHostNameKey",
+        HostConstant::NSString("kCFProxyHostNameKey"),
+    ),
+    (
+        "_kCFProxyPortNumberKey",
+        HostConstant::NSString("kCFProxyPortNumberKey"),
+    ),
+    (
+        "_kCFProxyAutoConfigurationURLKey",
+        HostConstant::NSString("kCFProxyAutoConfigurationURLKey"),
+    ),
     (
         "_kCFStreamPropertyHTTPResponseHeader",
         HostConstant::NSString("kCFStreamPropertyHTTPResponseHeader"),
+    ),
+    // Setting a proxy on a stream names the host and port with the same keys
+    // the system settings dictionary uses, which is what lets a caller pass
+    // that dictionary straight through. The keys are shared here for the same
+    // reason.
+    (
+        "_kCFStreamPropertyHTTPProxy",
+        HostConstant::NSString("kCFStreamPropertyHTTPProxy"),
+    ),
+    (
+        "_kCFStreamPropertyHTTPProxyHost",
+        HostConstant::NSString(PROXIES_HTTP_PROXY),
+    ),
+    (
+        "_kCFStreamPropertyHTTPProxyPort",
+        HostConstant::NSString(PROXIES_HTTP_PORT),
+    ),
+    (
+        "_kCFStreamPropertyHTTPSProxyHost",
+        HostConstant::NSString(PROXIES_HTTPS_PROXY),
+    ),
+    (
+        "_kCFStreamPropertyHTTPSProxyPort",
+        HostConstant::NSString(PROXIES_HTTPS_PORT),
     ),
     (
         "_kCFStreamPropertySSLSettings",
@@ -229,4 +369,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CFReadStreamRead(_, _, _)),
     export_c_func!(CFReadStreamClose(_)),
     export_c_func!(CFReadStreamCopyError(_)),
+    export_c_func!(CFNetworkCopySystemProxySettings()),
+    export_c_func!(CFNetworkCopyProxiesForURL(_, _)),
 ];
