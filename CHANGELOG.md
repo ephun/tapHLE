@@ -554,6 +554,15 @@
   to wrap one up as the animation wants it, so a game that rotates or scales
   something this way ended at the attempt. Doodle Jump v2.7.1 and v3.4 both do
   during start-up.
+- Run several animations together as one. A game that groups them — to move
+  and fade something at the same time — ended the moment it made the group,
+  and the group is now the animations it holds. Doodle Jump v2.7.1 and v3.4
+  both do this during start-up, and all four versions of Doodle Jump now start
+  and draw their menus.
+- Stop ending a game when it animates something tapHLE cannot animate. There
+  are properties the animation still does not know how to move, and reaching
+  one used to end the game; the property now simply changes without the
+  travel.
 
 ### Known limitations
 

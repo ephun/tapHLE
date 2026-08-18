@@ -16,6 +16,7 @@
 //!   <https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/CoreAnimation_guide/AdvancedAnimationTricks/AdvancedAnimationTricks.html>
 //! - Algorithm for choosing interpolation values
 //!   <https://developer.apple.com/documentation/quartzcore/cabasicanimation?language=objc>
+use std::collections::HashSet;
 use std::ops::Sub;
 
 use crate::frameworks::core_animation::ca_animation::{
@@ -27,6 +28,7 @@ use crate::frameworks::core_animation::{ca_layer::CALayerHostObject, CACurrentMe
 use crate::frameworks::core_foundation::time::CFTimeInterval;
 use crate::frameworks::core_graphics::cg_color::CGColorHostObject;
 use crate::frameworks::foundation::ns_string::{from_rust_string, to_rust_string};
+use crate::frameworks::foundation::NSUInteger;
 use crate::objc::{id, msg, nil, release, retain};
 use crate::Environment;
 
@@ -34,7 +36,48 @@ use crate::Environment;
 pub struct State {
     started_animations: Vec<id>,
     finished_animations: Vec<(id, id, bool, bool, Option<String>)>,
+    /// Key paths already reported as unanimatable, so that saying so does not
+    /// repeat every frame for the whole life of the app.
+    reported_unanimatable: HashSet<String>,
 }
+/// Replace every `CAAnimationGroup` in `animations` with the animations it
+/// holds, keeping the key the group was added under. Groups may contain groups,
+/// so this is applied until none is left.
+///
+/// A sub-animation with no duration of its own is left with none: Apple would
+/// give it the group's, and tapHLE's engine treats a zero duration as already
+/// finished, so such an animation lands on its end value immediately instead of
+/// travelling there. That is the same outcome as the implicit animations
+/// elsewhere in this framework, and it is visible only in the travelling.
+fn expand_groups(
+    env: &mut Environment,
+    animations: Vec<(Option<String>, id)>,
+) -> Vec<(Option<String>, id)> {
+    let group_class = env.objc.get_known_class("CAAnimationGroup", &mut env.mem);
+
+    let mut expanded = Vec::with_capacity(animations.len());
+    let mut pending = animations;
+    while let Some((key, animation)) = pending.pop() {
+        let is_group: bool = msg![env; animation isKindOfClass:group_class];
+        if !is_group {
+            expanded.push((key, animation));
+            continue;
+        }
+
+        let contents: id = msg![env; animation animations];
+        if contents == nil {
+            continue;
+        }
+        let count: NSUInteger = msg![env; contents count];
+        for index in 0..count {
+            let child: id = msg![env; contents objectAtIndex:index];
+            pending.push((key.clone(), child));
+        }
+    }
+    expanded.reverse();
+    expanded
+}
+
 /// Whether `object` implements `selector`.
 ///
 /// Delegate protocol methods in Cocoa are usually optional, so sending one
@@ -71,6 +114,15 @@ impl State {
             .iter()
             .map(|anim| (None, *anim))
             .collect();
+
+        // A group is not something to animate, it is a list of things to
+        // animate, so it is replaced here by what it contains. Doing it at
+        // collection time rather than inside the loop keeps the loop's one job
+        // — turn an animation into presentation values — unchanged, and it is
+        // also what stops a group reaching the key-path match below, where it
+        // has no key path to offer.
+        let named_animations = expand_groups(env, named_animations);
+        let anonymous_animations = expand_groups(env, anonymous_animations);
 
         for (key, animation) in
             Iterator::chain(named_animations.iter(), anonymous_animations.iter())
@@ -264,7 +316,20 @@ impl State {
                     );
                     presentation.position = from_value + by_value * interpolation_amount;
                 }
-                _ => panic!("Attempted to animate on key {}", key_path),
+                // A property tapHLE cannot animate is not a reason to end the
+                // app. The layer keeps the value its model already has, which
+                // is where the animation would have left it anyway once the
+                // app set the property for real — what is lost is the travel,
+                // not the destination. Doodle Jump v2.7.1 and v3.4 animate
+                // `transform`, and the panic here ended both.
+                _ => {
+                    if self.reported_unanimatable.insert(key_path.to_string()) {
+                        log!(
+                            "TODO: animating the {:?} of a layer is unimplemented; it will change without animating",
+                            key_path
+                        );
+                    }
+                }
             }
         }
 
