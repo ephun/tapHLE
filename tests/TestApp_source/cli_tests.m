@@ -6976,7 +6976,8 @@ int test_CFNetworkProxySettings() {
   if (enabled_value != 0)
     return -4;
 
-  CFURLRef url = CFURLCreateWithString(NULL, CFSTR("http://example.com/"), NULL);
+  CFURLRef url =
+      CFURLCreateWithString(NULL, CFSTR("http://example.com/"), NULL);
   if (url == NULL)
     return -5;
   CFArrayRef proxies = CFNetworkCopyProxiesForURL(url, settings);
@@ -6996,6 +6997,41 @@ int test_CFNetworkProxySettings() {
   CFRelease(proxies);
   CFRelease(url);
   CFRelease(settings);
+  return 0;
+}
+
+// Writing a property list has to be able to write every kind of number that
+// can be put in one. Two kinds could not be written and ended the app at the
+// attempt, which for a game means the save it was writing kills it: all four
+// Doodle Jump builds stopped on an unsigned long long during start-up.
+int test_NSPropertyList_unsignedNumbers() {
+  NSArray *keys = [NSArray arrayWithObjects:@"ull", @"ushort", nil];
+  NSArray *values = [NSArray
+      arrayWithObjects:[NSNumber
+                           numberWithUnsignedLongLong:18446744073709551615ULL],
+                       [NSNumber numberWithUnsignedShort:65535], nil];
+  NSDictionary *dict = [NSDictionary dictionaryWithObjects:values forKeys:keys];
+
+  NSString *error = nil;
+  NSData *data = [NSPropertyListSerialization
+      dataFromPropertyList:dict
+                    format:NSPropertyListXMLFormat_v1_0
+          errorDescription:&error];
+  if (data == nil)
+    return -1;
+
+  NSDictionary *back =
+      [NSPropertyListSerialization propertyListFromData:data
+                                       mutabilityOption:NSPropertyListImmutable
+                                                 format:NULL
+                                       errorDescription:&error];
+  if (back == nil)
+    return -2;
+  if ([[back objectForKey:@"ull"] unsignedLongLongValue] !=
+      18446744073709551615ULL)
+    return -3;
+  if ([[back objectForKey:@"ushort"] unsignedShortValue] != 65535)
+    return -4;
   return 0;
 }
 
@@ -7592,6 +7628,7 @@ struct {
     FUNC_DEF(test_NSString_localizedCaseInsensitiveCompare),
     FUNC_DEF(test_NSString_encodingConversion),
     FUNC_DEF(test_CFNetworkProxySettings),
+    FUNC_DEF(test_NSPropertyList_unsignedNumbers),
     FUNC_DEF(test_NSDictionary_allKeys_forSubclass),
     FUNC_DEF(test_NSObject_setValue_nil),
     FUNC_DEF(test_NSObject_self),
