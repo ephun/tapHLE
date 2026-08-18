@@ -19,8 +19,17 @@ prerelease is `0.3.0-alpha.1`, and the first stable tapHLE release will be
 
 ## The first release is on hold
 
-**The first numbered tapHLE release waits for the new GUI.** Until that ships,
-the trigger below does not fire, however full `Unreleased` gets. This is a
+**The first numbered tapHLE release waits for the new GUI on all five
+platforms.** Until that ships, the trigger below does not fire, however full
+`Unreleased` gets.
+
+The desktop GUI exists and is tested on Windows. The bar the maintainer set on
+2026-08-17 is wider than that: Windows, macOS, Linux, Android and iOS, with
+mobile frontends carrying the report options, the applicable settings and the
+help/about sections, and one consistent design across all five. Platforms share
+a version number only where testing has independently shown an app rated three
+stars on one is three stars on the others; otherwise they ship under different
+version numbers. See "Platforms" in `AGENTS.md`. This is a
 maintainer decision recorded here so that the rule is visibly held rather than
 quietly not working, and `dev-scripts/release-readiness.ps1` reports it as a
 blocker for the same reason.

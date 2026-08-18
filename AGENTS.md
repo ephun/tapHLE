@@ -35,8 +35,29 @@ iteration policy as a reason to make unrelated changes.
 
 ### Platforms
 
-The desktop — Windows, Linux and macOS — is the priority. iOS and Android are
-intended eventually and are on the back burner.
+**The first release ships on all five platforms: Windows, macOS, Linux,
+Android and iOS.** The maintainer declared this on 2026-08-17 and it is canon
+about the project's direction, superseding the earlier stance that the desktop
+was the priority and mobile was on the back burner.
+
+Three things follow from it, and they are requirements rather than aspirations:
+
+- **A shared version number has to be earned.** Platforms may carry the same
+  version only where testing has independently established that an app rated
+  three stars on one platform is three stars on the others. Where that has not
+  been established, the platforms get different version numbers. The rule
+  exists so that one version number never implies compatibility nobody
+  measured.
+- **The mobile frontends are in scope, not a later port.** Each needs the
+  report-submission options, whichever settings apply on that platform, and the
+  help/about sections — the same product, not a cut-down viewer.
+- **The design is one design.** Mobile and all three desktops must read as two
+  sides of the same coin, with consistent branding across the five. A frontend
+  that works but looks like a different project does not meet the bar.
+
+None of this lowers the evidence standard; it raises the amount of evidence
+owed. "Builds on a platform" is still not "works on a platform", and a release
+claim for a platform still needs somebody to have run it there.
 
 Intent is not the same as state, and the two must not be confused in anything
 tapHLE writes down. What is true today:
@@ -55,21 +76,22 @@ is useful for compiling, debugging and comparing behaviour against Apple's own
 frameworks. Linux is intended and untried; write portable code, and do not
 claim it works until somebody has run it.
 
-Do not develop, test or refactor the inherited Android source unless the
-maintainer explicitly asks. `dev-docs/packaging.md` records what each platform
-would need.
+The Android source in `android/` is now active work rather than inherited
+material to leave alone: the maintainer's 2026-08-17 declaration is the
+explicit ask that the previous version of this section waited for.
+`dev-docs/packaging.md` records what each platform would need.
 
-A modern iOS host is expected to become a product target eventually, but there
-is not one now. An experimental host was merged on 2026-08-01 and withdrawn
-from `trunk` on 2026-08-04: it was half-finished and broken, and nothing on
-Windows could build or test it, so it sat on `trunk` as untested code claiming
-a capability tapHLE did not have. It is preserved on the `feat/ios-host`
-branch and is where that work resumes.
+The iOS host is a product target as of 2026-08-17. Work resumes on
+`feat/ios-host`, where the experimental host merged on 2026-08-01 and withdrawn
+from `trunk` on 2026-08-04 is preserved.
 
-Until the maintainer asks for it, do not add iOS host code, build scripts, or
-`target_os = "ios"` paths to `trunk`. This is about *where* unfinished work
-lives, not a judgement on iOS: a branch is the right home for a host nobody can
-run yet, and `trunk` is for what works.
+**Read why it was withdrawn before merging it back.** It was half-finished and
+broken, and nothing on Windows could build or test it, so it sat on `trunk` as
+untested code claiming a capability tapHLE did not have. That objection was
+never about iOS being unwanted, and the new direction does not answer it — a
+branch is still the right home for a host nobody can run, and `trunk` is still
+for what works. What changes is that making it runnable is now the job, so the
+route back to `trunk` is to build and run it, not to relax the standard.
 
 ## Agent capability
 
