@@ -98,16 +98,28 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
 }
 
+// The length is a maximum, not a demand. Asking for more bytes than are left
+// and getting what there is — including none, at the end of a file — is how
+// this method is normally used, and it used to be an assertion failure: Mr.Oops
+// asks for four bytes of a save file that is empty and died five seconds into
+// start-up on the zero it got back.
 - (id)readDataOfLength:(NSUInteger)length { // NSData*
     let fd = env.objc.borrow::<NSFileHandleHostObject>(this).fd;
     let buffer = env.mem.alloc(length);
-    match posix_io::read(env, fd, buffer, length) {
-        -1 => panic!("readDataOfLength: failed"),
-        bytes_read => {
-            assert_eq!(length, NSUInteger::try_from(bytes_read).unwrap());
-            msg_class![env; NSData dataWithBytesNoCopy:buffer length:length]
+    let bytes_read = match posix_io::read(env, fd, buffer, length) {
+        // Foundation raises NSFileHandleOperationException here and tapHLE has
+        // nowhere to raise it. Empty data is what the caller of a caught
+        // exception ends up with, and it is a great deal closer to the truth
+        // than ending the app.
+        -1 => {
+            log!("Warning: -[NSFileHandle readDataOfLength:{}] failed; returning empty data", length);
+            0
         }
-    }
+        bytes_read => NSUInteger::try_from(bytes_read).unwrap(),
+    };
+    // The buffer is handed over whole even when it was only partly filled: the
+    // NSData frees it by address, and its length is what the reader sees.
+    msg_class![env; NSData dataWithBytesNoCopy:buffer length:bytes_read]
 }
 
 - (id)readDataToEndOfFile {

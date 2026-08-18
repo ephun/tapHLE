@@ -7035,6 +7035,31 @@ int test_NSPropertyList_unsignedNumbers() {
   return 0;
 }
 
+// The length passed to -[NSFileHandle readDataOfLength:] is a maximum, not a
+// demand: a file with fewer bytes left gives what it has, and an empty one
+// gives nothing. Both used to be assertion failures, and Mr.Oops died five
+// seconds into start-up reading four bytes of an empty save file.
+int test_NSFileHandle_readDataOfLength() {
+  NSFileHandle *empty =
+      [NSFileHandle fileHandleForReadingAtPath:@"test_empty_file"];
+  if (empty == nil)
+    return -1;
+  NSData *nothing = [empty readDataOfLength:4];
+  if (nothing == nil)
+    return -2;
+  if ([nothing length] != 0)
+    return -3;
+
+  // test_ungetc holds three bytes; asking for a thousand gives three.
+  NSFileHandle *three =
+      [NSFileHandle fileHandleForReadingAtPath:@"test_ungetc"];
+  if (three == nil)
+    return -4;
+  if ([[three readDataOfLength:1000] length] != 3)
+    return -5;
+  return 0;
+}
+
 // A concrete NSDictionary subclass only needs to supply the primitive
 // dictionary methods. allKeys is inherited from NSDictionary and builds its
 // result through the subclass's keyEnumerator.
@@ -7629,6 +7654,7 @@ struct {
     FUNC_DEF(test_NSString_encodingConversion),
     FUNC_DEF(test_CFNetworkProxySettings),
     FUNC_DEF(test_NSPropertyList_unsignedNumbers),
+    FUNC_DEF(test_NSFileHandle_readDataOfLength),
     FUNC_DEF(test_NSDictionary_allKeys_forSubclass),
     FUNC_DEF(test_NSObject_setValue_nil),
     FUNC_DEF(test_NSObject_self),

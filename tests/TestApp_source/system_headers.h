@@ -320,6 +320,12 @@ typedef double NSTimeInterval;
 + (id)dataWithContentsOfURL:(NSURL *)url;
 + (id)dataWithBytes:(const void *)bytes length:(NSUInteger)length;
 - (id)description;
+- (NSUInteger)length;
+@end
+
+@interface NSFileHandle : NSObject
++ (instancetype)fileHandleForReadingAtPath:(NSString *)path;
+- (NSData *)readDataOfLength:(NSUInteger)length;
 @end
 
 @interface NSCoder : NSObject
