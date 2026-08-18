@@ -11,7 +11,9 @@ agent's summary before you publish anything.
 
 You need:
 
-1. A supported test environment: a Windows computer.
+1. A supported test environment. A Windows computer is the well-trodden path
+   and what the instructions below assume; macOS, Linux, Android and iOS are
+   release targets but are not yet places you can comfortably test a game.
 2. A fork or clone of tapHLE.
 3. A coding agent that can work in that folder.
 4. Lawful access to the exact game version you want to test.

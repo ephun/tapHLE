@@ -8,10 +8,17 @@ policies.
 
 ## Mission and priorities
 
-tapHLE is a high-level emulator with a broad goal: make as many early iPhone OS
-games as possible work on the desktop. Contributors choose
-concrete games as practical compatibility targets. A target is one step toward
-the broad goal, not a limit on the games tapHLE aims to support.
+tapHLE's mission is to **Make every 32-bit iOS game playable on modern mobile and desktop hardware.**
+
+Read both halves as binding. *Every 32-bit iOS game* is the scope, so an app
+being obscure, late in the 32-bit era, or awkward is not a reason to consider it
+out of scope. *Modern mobile and desktop hardware* is the reach, so a fix that
+works on one platform and not the others is half a fix — see "Platforms" below
+for what that means for releases.
+
+Contributors choose concrete games as practical compatibility targets. A target
+is one step toward the mission, not a limit on the games tapHLE aims to
+support.
 
 Game work is self-service. A contributor may use an agent to work on a game
 they care about. No contributor is required to take someone else's request.

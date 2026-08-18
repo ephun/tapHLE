@@ -17,19 +17,18 @@ repeating runtime or static-analysis work.
 
 ## What the project wants
 
-The product goal is broad compatibility with early iPhone OS games on the
-desktop. The fastest way to move toward it is often to fix a real blocker in
-one game. Contributors may choose games they care about. Nobody is required to
+The mission is to **Make every 32-bit iOS game playable on modern mobile and desktop hardware.** The
+fastest way to move toward it is often to fix a real blocker in one game. Contributors may choose games they care about. Nobody is required to
 take a game request from someone else.
 
-Windows, Linux and macOS are the intended desktop platforms; Windows is where
-tapHLE is developed and where compatibility is judged, and Linux has not been
-tried yet. `AGENTS.md` has the honest per-platform state, and
-`dev-docs/packaging.md` says what each one would need. Portable code is
-welcome; a claim that a platform works is not, until somebody has run it there.
-Android development is not in scope. Broad framework-completeness projects,
-aesthetic rewrites, and speculative abstractions are lower priority than a
-working game.
+Five platforms are targets: Windows, macOS, Linux, Android and iOS. Windows is
+where tapHLE is developed today and where compatibility is judged unless a
+result says otherwise, but that is a description of the current state rather
+than the goal — the first release ships on all five. `AGENTS.md` has the honest
+per-platform state, and `dev-docs/packaging.md` says what each one would need.
+Portable code is welcome; a claim that a platform works is not, until somebody
+has run it there. Broad framework-completeness projects, aesthetic rewrites,
+and speculative abstractions are lower priority than a working game.
 
 Pragmatic fixes are welcome. If a game needs a narrow workaround, keep it
 local, document the evidence behind it, and add a regression check when
