@@ -7146,6 +7146,28 @@ int test_NSKeyedUnarchiver_finishDecoding() {
   return 0;
 }
 
+// A layer's transform is set through an animation whose values are boxed 4x4
+// matrices, and there was no way to box one: Doodle Jump v2.7.1 and v3.4 both
+// stopped on the missing constructor during start-up. Sixteen floats is also
+// exactly as large an argument as tapHLE's ABI layer can read, so a round trip
+// is worth asserting field by field rather than trusting the first one.
+int test_NSValue_CATransform3D() {
+  CATransform3D sent = {1.5f, 2.5f,  3.5f,  4.5f,  5.5f,  6.5f,  7.5f,  8.5f,
+                        9.5f, 10.5f, 11.5f, 12.5f, 13.5f, 14.5f, 15.5f, 16.5f};
+  NSValue *boxed = [NSValue valueWithCATransform3D:sent];
+  if (boxed == nil)
+    return -1;
+
+  CATransform3D got = [boxed CATransform3DValue];
+  const CGFloat *sent_fields = (const CGFloat *)&sent;
+  const CGFloat *got_fields = (const CGFloat *)&got;
+  for (int i = 0; i < 16; i++) {
+    if (sent_fields[i] != got_fields[i])
+      return -(2 + i);
+  }
+  return 0;
+}
+
 // A mutable object is still the thing it is a subclass of. Writing a property
 // list recognised NSData by exact class, so a game whose save held an
 // NSMutableData -- which is what it holds when the game built the archive
@@ -7778,6 +7800,7 @@ struct {
     FUNC_DEF(test_CFGetTypeID),
     FUNC_DEF(test_NSKeyedArchiver_intoMutableData),
     FUNC_DEF(test_NSKeyedUnarchiver_finishDecoding),
+    FUNC_DEF(test_NSValue_CATransform3D),
     FUNC_DEF(test_NSPropertyList_mutableLeaves),
     FUNC_DEF(test_NSDictionary_allKeys_forSubclass),
     FUNC_DEF(test_NSObject_setValue_nil),

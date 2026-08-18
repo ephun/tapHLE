@@ -550,6 +550,10 @@
   positions rather than straight from one to another. The whole kind did not
   exist, so a game that used one ended the moment it made it. Doodle Jump
   v2.7.1 and v3.4 both do, during start-up.
+- Let a game hand a whole 3D transformation to an animation. There was no way
+  to wrap one up as the animation wants it, so a game that rotates or scales
+  something this way ended at the attempt. Doodle Jump v2.7.1 and v3.4 both do
+  during start-up.
 
 ### Known limitations
 

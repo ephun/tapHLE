@@ -9,6 +9,7 @@ use super::ns_string::{from_rust_ordering, from_rust_string};
 use super::{
     _nib_archive_decoder, ns_keyed_unarchiver, NSComparisonResult, NSOrderedSame, NSUInteger,
 };
+use crate::frameworks::core_animation::ca_transform_3d::CATransform3D;
 use crate::frameworks::core_foundation::cf_number::{
     kCFNumberCharType, kCFNumberDoubleType, kCFNumberFloat32Type, kCFNumberFloat64Type,
     kCFNumberFloatType, kCFNumberIntType, kCFNumberLongLongType, kCFNumberSInt16Type,
@@ -36,6 +37,11 @@ pub(super) enum NSValueHostObject {
     CGPoint(CGPoint),
     CGSize(CGSize),
     CGRect(CGRect),
+    /// Core Animation's own boxed type. It lives here for the same reason the
+    /// CoreGraphics ones do: `NSValue` is where Foundation puts a struct that
+    /// has to be an object, and a layer's transform is set through a keyed
+    /// animation whose values are exactly this.
+    CATransform3D(CATransform3D),
     // NSValue deliberately does not retain this object. This mirrors
     // +valueWithNonretainedObject:, which is used for weak-style references.
     NonretainedObject(id),
@@ -180,6 +186,20 @@ pub const CLASSES: ClassExports = objc_classes! {
     let host_object = Box::new(NSValueHostObject::CGRect(value));
     let new = env.objc.alloc_object(this, host_object, &mut env.mem);
     autorelease(env, new)
+}
+
++ (id)valueWithCATransform3D:(CATransform3D)value {
+    let host_object = Box::new(NSValueHostObject::CATransform3D(value));
+    let new = env.objc.alloc_object(this, host_object, &mut env.mem);
+    autorelease(env, new)
+}
+
+- (CATransform3D)CATransform3DValue {
+    let host_object = env.objc.borrow::<NSValueHostObject>(this);
+    match host_object {
+        NSValueHostObject::CATransform3D(transform) => *transform,
+        _ => unimplemented!()
+    }
 }
 
 - (CGPoint)CGPointValue {
