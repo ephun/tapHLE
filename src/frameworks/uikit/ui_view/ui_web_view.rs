@@ -71,6 +71,32 @@ pub const CLASSES: ClassExports = objc_classes! {
     log!("TODO: [(UIWebView*) {:?} loadHTMLString:(NSString* of {} characters) baseURL:_]", this, length);
 }
 
+// The controls an app uses to manage a load it started. There is no engine and
+// nothing was ever loading, so each of these is already true when it is called:
+// nothing to stop, nothing to reload, nowhere to go back or forward to. Saying
+// so is the whole implementation, and it is not the same as ignoring the call —
+// `canGoBack` and `canGoForward` answer, they do not merely accept.
+//
+// Doodle Jump v2.7.1 stops the news web view as the game starts, and the
+// missing selector ended it at the moment gameplay began.
+- (())stopLoading {
+}
+- (())reload {
+}
+- (())goBack {
+}
+- (())goForward {
+}
+- (bool)isLoading {
+    false
+}
+- (bool)canGoBack {
+    false
+}
+- (bool)canGoForward {
+    false
+}
+
 - (id)stringByEvaluatingJavaScriptFromString:(id)_script { // NSString*
     // tapHLE has no JavaScript engine and no loaded document, so evaluation
     // yields the empty string — which is also what UIWebView returns for a
