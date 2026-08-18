@@ -529,6 +529,11 @@
   them ended the game — one at a time, so fixing one only revealed the next.
   Doodle Jump and Doodle Jump HD died during start-up on three of them in a
   row and now reach their main menu, drawn correctly.
+- Let a game save into a container it prepared itself. There are two ways to
+  write a saved game and only one existed, so a game that makes its own space
+  for the save and hands it over — which is what a game does when it wants to
+  add something of its own alongside — ended at the attempt. Doodle Jump
+  v3.1.1 and v3.4 both save this way.
 
 ### Known limitations
 

@@ -28,6 +28,11 @@ use crate::Environment;
 struct NSKeyedArchiverHostObject {
     plist: Dictionary,
     encoded_data: id, // NSData *
+    /// The `NSMutableData` an app handed to `initForWritingWithMutableData:`,
+    /// retained, or nil when the archiver was made the other way. Apple's
+    /// archiver appends the finished archive to it, and the app then owns and
+    /// writes out that object rather than asking the archiver for anything.
+    output_data: id, // NSMutableData *
     current_key: Option<Uid>,
     /// map of id => Uid
     already_archived: HashMap<id, Uid>,
@@ -54,6 +59,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.objc.alloc_object(this, Box::new(NSKeyedArchiverHostObject {
         plist,
         encoded_data: nil,
+        output_data: nil,
         current_key: None,
         already_archived
     }), &mut env.mem)
@@ -74,6 +80,16 @@ pub const CLASSES: ClassExports = objc_classes! {
     log_dbg!("[NSKeyedArchiver archiveRootObject:{:?} toFile:{:?}('{}')]", root_object, file, to_rust_string(env, file));
     let data: id = msg![env; this archivedDataWithRootObject:root_object];
     msg![env; data writeToFile:file atomically:true]
+}
+
+// The other way to make an archiver, and the one an app uses when it wants to
+// decide for itself what happens to the bytes: it supplies the NSMutableData
+// and the archive is appended to it by `finishEncoding`. Doodle Jump v3.1.1 and
+// v3.4 both save this way, and stopped here during start-up.
+- (id)initForWritingWithMutableData:(id)data { // NSMutableData *
+    retain(env, data);
+    env.objc.borrow_mut::<NSKeyedArchiverHostObject>(this).output_data = data;
+    this
 }
 
 - (())encodeObject:(id)object // NSCoding *
@@ -127,6 +143,14 @@ pub const CLASSES: ClassExports = objc_classes! {
     let encoded_data: id = msg_class![env; NSData dataWithBytesNoCopy:guest_buffer length:len];
     env.objc.borrow_mut::<NSKeyedArchiverHostObject>(this).encoded_data = encoded_data;
     retain(env, encoded_data);
+
+    // An archiver made with `initForWritingWithMutableData:` appends to what it
+    // was given. Appended rather than assigned: the app may have put its own
+    // header in front, and Apple appends.
+    let output_data = env.objc.borrow::<NSKeyedArchiverHostObject>(this).output_data;
+    if output_data != nil {
+        () = msg![env; output_data appendData:encoded_data];
+    }
 }
 
 - (id)encodedData {
@@ -137,8 +161,9 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (())dealloc {
-    let NSKeyedArchiverHostObject { encoded_data, .. } = *env.objc.borrow::<NSKeyedArchiverHostObject>(this);
+    let NSKeyedArchiverHostObject { encoded_data, output_data, .. } = *env.objc.borrow::<NSKeyedArchiverHostObject>(this);
     release(env, encoded_data);
+    release(env, output_data);
     env.objc.dealloc_object(this, &mut env.mem);
 }
 

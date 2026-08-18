@@ -321,6 +321,11 @@ typedef double NSTimeInterval;
 + (id)dataWithBytes:(const void *)bytes length:(NSUInteger)length;
 - (id)description;
 - (NSUInteger)length;
+- (const void *)bytes;
+@end
+
+@interface NSMutableData : NSData
++ (instancetype)data;
 @end
 
 // Core Foundation's type identity. CFBase.h in the SDK declares CFTypeID but
@@ -351,6 +356,9 @@ CFTypeID CFArrayGetTypeID(void);
 
 @interface NSKeyedArchiver : NSCoder
 + (NSData *)archivedDataWithRootObject:(id)rootObject;
+- (instancetype)initForWritingWithMutableData:(NSMutableData *)data;
+- (void)encodeObject:(id)object forKey:(NSString *)key;
+- (void)finishEncoding;
 @end
 
 @interface NSKeyedUnarchiver : NSCoder
