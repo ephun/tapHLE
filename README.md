@@ -1,7 +1,7 @@
 # tapHLE
 
 tapHLE is a high-level emulator for 32-bit iOS applications. Its mission is to
-**Make every 32-bit iOS game playable on modern mobile and desktop hardware.**
+**make every 32-bit iOS game playable on modern mobile and desktop hardware.**
 
 Open tapHLE, see your apps, pick one, press Play.
 
