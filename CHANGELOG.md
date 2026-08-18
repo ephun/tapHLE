@@ -574,6 +574,9 @@
   how much memory. Games ask on start-up to decide how much work to do at
   once, and the question ended the game instead of answering. Crossy Road and
   Smashy Road Wanted both stopped there.
+- Let a game find the paragraph a piece of text belongs to. tapHLE could find
+  the line but not the paragraph, and asking for the paragraph ended the game.
+  Both Carnivores games ask while laying out their briefing text.
 
 ### Known limitations
 
