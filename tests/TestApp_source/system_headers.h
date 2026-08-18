@@ -323,6 +323,15 @@ typedef double NSTimeInterval;
 - (NSUInteger)length;
 @end
 
+// Core Foundation's type identity. CFBase.h in the SDK declares CFTypeID but
+// not these, because which types exist is not part of the open-source base.
+CFTypeID CFGetTypeID(CFTypeRef cf);
+CFTypeID CFStringGetTypeID(void);
+CFTypeID CFNumberGetTypeID(void);
+CFTypeID CFBooleanGetTypeID(void);
+CFTypeID CFDictionaryGetTypeID(void);
+CFTypeID CFArrayGetTypeID(void);
+
 @interface NSFileHandle : NSObject
 + (instancetype)fileHandleForReadingAtPath:(NSString *)path;
 - (NSData *)readDataOfLength:(NSUInteger)length;

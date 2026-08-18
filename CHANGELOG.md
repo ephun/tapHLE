@@ -512,6 +512,13 @@
   there — which for a game reading its own settings on start-up is fatal the
   first time it runs, before any settings exist. Mr.Oops!! stopped five seconds
   in, reading four bytes of an empty save, and now runs on.
+- Tell a game what kind of thing it is holding. A game handed a value by the
+  system — out of a settings list, a saved file, or an answer from the phone —
+  asks whether it is text, a number, a yes-or-no, a list or a table before
+  using it, and the question could not be asked at all. Three versions of
+  Super Hexagon and Don't Look Back stopped there during start-up. Comparing
+  two such values now works for every kind as well, where before anything but
+  text ended the game.
 
 ### Known limitations
 

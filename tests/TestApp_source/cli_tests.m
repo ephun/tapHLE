@@ -7060,6 +7060,39 @@ int test_NSFileHandle_readDataOfLength() {
   return 0;
 }
 
+// Apps ask what kind of value they were handed and branch on the answer, and
+// the question had no implementation at all: three versions of Super Hexagon
+// and Don't Look Back stopped on it during start-up. What matters is not the
+// numbers, which are tapHLE's own, but that each type gets its own and that
+// CFGetTypeID agrees with the per-type function.
+int test_CFGetTypeID() {
+  if (CFGetTypeID(CFSTR("x")) != CFStringGetTypeID())
+    return -1;
+  if (CFGetTypeID((CFTypeRef)[NSNumber numberWithInt:7]) != CFNumberGetTypeID())
+    return -2;
+  // A boolean is its own type, even though Foundation spells it NSNumber.
+  if (CFGetTypeID((CFTypeRef)[NSNumber numberWithBool:YES]) !=
+      CFBooleanGetTypeID())
+    return -3;
+  if (CFBooleanGetTypeID() == CFNumberGetTypeID())
+    return -4;
+
+  NSArray *array = [NSArray arrayWithObjects:@"one", nil];
+  if (CFGetTypeID((CFTypeRef)array) != CFArrayGetTypeID())
+    return -5;
+  NSDictionary *dict = [NSDictionary dictionaryWithObjects:array forKeys:array];
+  if (CFGetTypeID((CFTypeRef)dict) != CFDictionaryGetTypeID())
+    return -6;
+
+  // CFEqual used to insist both sides were strings and end the app otherwise.
+  if (!CFEqual((CFTypeRef)[NSNumber numberWithInt:7],
+               (CFTypeRef)[NSNumber numberWithInt:7]))
+    return -7;
+  if (CFEqual((CFTypeRef)[NSNumber numberWithInt:7], (CFTypeRef)CFSTR("7")))
+    return -8;
+  return 0;
+}
+
 // A concrete NSDictionary subclass only needs to supply the primitive
 // dictionary methods. allKeys is inherited from NSDictionary and builds its
 // result through the subclass's keyEnumerator.
@@ -7655,6 +7688,7 @@ struct {
     FUNC_DEF(test_CFNetworkProxySettings),
     FUNC_DEF(test_NSPropertyList_unsignedNumbers),
     FUNC_DEF(test_NSFileHandle_readDataOfLength),
+    FUNC_DEF(test_CFGetTypeID),
     FUNC_DEF(test_NSDictionary_allKeys_forSubclass),
     FUNC_DEF(test_NSObject_setValue_nil),
     FUNC_DEF(test_NSObject_self),

@@ -699,6 +699,20 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 };
 
+/// Whether an `NSNumber` is holding a boolean rather than a number.
+///
+/// Apple's answer to this question is that they are different classes:
+/// `+[NSNumber numberWithBool:]` returns a `__NSCFBoolean`, which is a
+/// `CFBoolean`, while every other constructor returns a `CFNumber`. tapHLE has
+/// one class and a host-object variant, so the distinction lives here, where
+/// Core Foundation can ask for it without reaching into a Foundation type.
+pub fn is_boolean(env: &mut Environment, this: id) -> bool {
+    matches!(
+        env.objc.borrow::<NSNumberHostObject>(this),
+        NSNumberHostObject::Bool(_)
+    )
+}
+
 pub fn is_conversion_lossless(env: &mut Environment, this: id, type_: CFNumberType) -> bool {
     let num = env.objc.borrow::<NSNumberHostObject>(this);
     let num2: id = match type_ {
