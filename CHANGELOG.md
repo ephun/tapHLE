@@ -587,6 +587,10 @@
   own documentation says to — was quietly given tapHLE's storage instead, so
   it answered questions about a container that was always empty while its own
   count said otherwise. Creating one at all ended the game.
+- Two more names games look for are now there: the one that holds an app's own
+  title, and the one that means "nothing" inside a list. A name a game looks
+  for and does not find is not a warning it can see — it is a crash a moment
+  later, somewhere else.
 
 ### Known limitations
 
