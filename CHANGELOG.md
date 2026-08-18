@@ -546,6 +546,10 @@
   frame rate that is zero — and tapHLE tried to honour it and ended the game on
   the first reading. Doodle Jump v3.1.1 and Doodle Jump HD both now start and
   draw their menus.
+- Support the kind of animation that moves something through a series of
+  positions rather than straight from one to another. The whole kind did not
+  exist, so a game that used one ended the moment it made it. Doodle Jump
+  v2.7.1 and v3.4 both do, during start-up.
 
 ### Known limitations
 
@@ -556,6 +560,9 @@
   drawn, so an app relying on the tab bar to change tabs stays on the first tab.
 - Zoom, pattern colours and content gravity are stored and reported back rather
   than applied.
+- An animation through a series of positions travels straight from the first to
+  the last instead of visiting the ones in between, so it ends where the game
+  intended but does not follow the shape the game drew.
 - Audio queues cannot render offline, which is how Unity decodes compressed
   clips, so those sounds are missing. The call now fails the way a device fails
   it when the codec is busy, which apps are written to survive, rather than
