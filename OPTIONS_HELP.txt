@@ -262,6 +262,25 @@ Other options:
         If this option is not specified, the list comes from your operating
         system's language settings.
 
+    --replay=PATH
+        Replays a clickmap: the recorded route through an app to a milestone,
+        as stored in dev-docs/clickmaps/. tapHLE drives the app itself, queuing
+        each tap as though the mouse had been used at that position in its own
+        window.
+
+        Nothing touches the host's cursor or keyboard, so this works the same
+        on every platform, does not need the window to be in front, and cannot
+        stray outside the window and click on something else.
+
+        Coordinates in a clickmap are positions inside tapHLE's window, so they
+        only mean anything alongside the window size and launch options the map
+        records. Pass the same options it was recorded with.
+
+    --replay-quit, --no-replay-quit
+        Quit once the replay's last step has finished settling, instead of
+        leaving the app running. Use it for an unattended run; leave it off
+        when you want to look at the screen afterwards.
+
         Whether and how this preference is respected, and whether any particular
         language is supported, is determined entirely by the app.
 

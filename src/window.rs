@@ -176,6 +176,14 @@ pub enum Event {
     TextInput(TextInputEvent),
 }
 
+/// Which part of a touch [Window::inject_touch] should queue.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TouchPhase {
+    Down,
+    Move,
+    Up,
+}
+
 pub enum BatteryState {
     Unknown,
     OnBattery,
@@ -458,35 +466,6 @@ impl Window {
         }
         self.last_polled = now;
 
-        fn transform_input_coords(
-            window: &Window,
-            (in_x, in_y): (f32, f32),
-            independent_of_viewport: bool,
-        ) -> (f32, f32) {
-            let (vx, vy, vw, vh) = if independent_of_viewport {
-                let (width, height) = size_for_orientation(
-                    window.device_family,
-                    window.device_orientation,
-                    NonZeroU32::new(1).unwrap(),
-                    window.landscape_native,
-                );
-                (0, 0, width, height)
-            } else {
-                window.viewport()
-            };
-            // normalize to unit square centred on origin
-            let x = (in_x - vx as f32) / vw as f32 - 0.5;
-            let y = (in_y - vy as f32) / vh as f32 - 0.5;
-            // rotate
-            let matrix = window.rotation_matrix().inverse().unwrap();
-            let [x, y] = matrix.transform([x, y]);
-            // back to pixels
-            let (out_w, out_h) = window.size_unrotated_unscaled();
-            let out_x = (x + 0.5) * out_w as f32;
-            let out_y = (y + 0.5) * out_h as f32;
-            // Round to match touch precision of official devices.
-            (out_x.round(), out_y.round())
-        }
         fn transform_virt_accel_coords(window: &Window, (in_x, in_y): (i32, i32)) -> (f32, f32) {
             let (_, _, vw, vh) = window.viewport();
             let out_x = ((in_x as f32 / vw as f32) * 2.0 - 1.0).clamp(-1.0, 1.0);
@@ -575,14 +554,14 @@ impl Window {
                     mouse_btn: MouseButton::Left,
                     ..
                 } => {
-                    let coords = transform_input_coords(self, (x as f32, y as f32), false);
+                    let coords = self.transform_input_coords((x as f32, y as f32), false);
                     log_dbg!("MouseButtonDown x {}, y {}, coords {:?}", x, y, coords);
                     Event::TouchesDown(HashMap::from([(FingerId::Mouse, coords)]))
                 }
                 E::MouseMotion {
                     x, y, mousestate, ..
                 } if mousestate.left() => {
-                    let coords = transform_input_coords(self, (x as f32, y as f32), false);
+                    let coords = self.transform_input_coords((x as f32, y as f32), false);
                     log_dbg!("MouseMotion x {}, y {}, coords {:?}", x, y, coords);
                     Event::TouchesMove(HashMap::from([(FingerId::Mouse, coords)]))
                 }
@@ -592,7 +571,7 @@ impl Window {
                     mouse_btn: MouseButton::Left,
                     ..
                 } => {
-                    let coords = transform_input_coords(self, (x as f32, y as f32), false);
+                    let coords = self.transform_input_coords((x as f32, y as f32), false);
                     log_dbg!("MouseButtonUp x {}, y {}, coords {:?}", x, y, coords);
                     Event::TouchesUp(HashMap::from([(FingerId::Mouse, coords)]))
                 }
@@ -654,7 +633,7 @@ impl Window {
                         }
 
                         // Final coords: center + movement
-                        let coords = transform_input_coords(self, (cx + dx, cy + dy), true);
+                        let coords = self.transform_input_coords((cx + dx, cy + dy), true);
 
                         // Send TouchDown if any dpad is held, TouchUp if none
                         let any_held = self.dpad_state.left
@@ -682,14 +661,14 @@ impl Window {
                         };
                         match event {
                             E::ControllerButtonUp { .. } => {
-                                let coords = transform_input_coords(self, (x, y), true);
+                                let coords = self.transform_input_coords((x, y), true);
                                 Event::TouchesUp(HashMap::from([(
                                     FingerId::ButtonToTouch(button),
                                     coords,
                                 )]))
                             }
                             E::ControllerButtonDown { .. } => {
-                                let coords = transform_input_coords(self, (x, y), true);
+                                let coords = self.transform_input_coords((x, y), true);
                                 Event::TouchesDown(HashMap::from([(
                                     FingerId::ButtonToTouch(button),
                                     coords,
@@ -708,8 +687,7 @@ impl Window {
                         || axis == sdl2::controller::Axis::LeftY
                     {
                         let (stick_x, stick_y, _) = self.get_controller_stick(options, true);
-                        let coords = transform_input_coords(
-                            self,
+                        let coords = self.transform_input_coords(
                             (
                                 x + ((stick_x + 1.0) / 2.0) * w,
                                 y + ((stick_y + 1.0) / 2.0) * h,
@@ -784,7 +762,7 @@ impl Window {
                     // TODO: handle out of order touches
                     let curr_timestamp = timestamp;
                     let abs_coords = finger_absolute_coords(self, (x, y));
-                    let coords = transform_input_coords(self, abs_coords, false);
+                    let coords = self.transform_input_coords(abs_coords, false);
                     log_dbg!("Finger event x {}, y {}, coords {:?}", x, y, coords);
                     let mut map = HashMap::from([(FingerId::Touch(finger_id), coords)]);
                     while let Some(next) = self.event_pump.poll_event() {
@@ -815,7 +793,7 @@ impl Window {
                                 ..
                             } if timestamp == curr_timestamp && next.is_same_kind_as(&event) => {
                                 let abs_coords = finger_absolute_coords(self, (x, y));
-                                let coords = transform_input_coords(self, abs_coords, false);
+                                let coords = self.transform_input_coords(abs_coords, false);
                                 map.insert(FingerId::Touch(finger_id), coords);
                             }
                             E::MultiGesture { timestamp, .. } if timestamp == curr_timestamp => {
@@ -877,15 +855,15 @@ impl Window {
             self.event_queue
                 .push_back(match (pressed, pressed_changed, moved) {
                     (true, true, _) => {
-                        let coords = transform_input_coords(self, (new_x, new_y), false);
+                        let coords = self.transform_input_coords((new_x, new_y), false);
                         Event::TouchesDown(HashMap::from([(FingerId::VirtualCursor, coords)]))
                     }
                     (false, true, _) => {
-                        let coords = transform_input_coords(self, (new_x, new_y), false);
+                        let coords = self.transform_input_coords((new_x, new_y), false);
                         Event::TouchesUp(HashMap::from([(FingerId::VirtualCursor, coords)]))
                     }
                     (true, _, true) => {
-                        let coords = transform_input_coords(self, (new_x, new_y), false);
+                        let coords = self.transform_input_coords((new_x, new_y), false);
                         Event::TouchesMove(HashMap::from([(FingerId::VirtualCursor, coords)]))
                     }
                     _ => return,
@@ -1400,6 +1378,79 @@ impl Window {
     ///
     /// The aspect ratio, scale and orientation reflect the guest app's view of
     /// the world.
+    /// Turn a position in the window's client area into the position the guest
+    /// sees, accounting for the viewport, letterboxing, rotation and scaling.
+    ///
+    /// `independent_of_viewport` is for inputs that are already in device
+    /// space, such as a button mapped to a fixed touch position: those must not
+    /// be moved again by the window's current letterboxing.
+    ///
+    /// This used to be a helper nested inside [Window::poll_for_events]. It is
+    /// a method so that synthetic input can reach exactly the same arithmetic —
+    /// a replayed tap and a real click at the same client coordinate have to
+    /// land on the same pixel, or a recorded route means nothing.
+    pub fn transform_input_coords(
+        &self,
+        (in_x, in_y): (f32, f32),
+        independent_of_viewport: bool,
+    ) -> (f32, f32) {
+        let (vx, vy, vw, vh) = if independent_of_viewport {
+            let (width, height) = size_for_orientation(
+                self.device_family,
+                self.device_orientation,
+                NonZeroU32::new(1).unwrap(),
+                self.landscape_native,
+            );
+            (0, 0, width, height)
+        } else {
+            self.viewport()
+        };
+        // normalize to unit square centred on origin
+        let x = (in_x - vx as f32) / vw as f32 - 0.5;
+        let y = (in_y - vy as f32) / vh as f32 - 0.5;
+        // rotate
+        let matrix = self.rotation_matrix().inverse().unwrap();
+        let [x, y] = matrix.transform([x, y]);
+        // back to pixels
+        let (out_w, out_h) = self.size_unrotated_unscaled();
+        let out_x = (x + 0.5) * out_w as f32;
+        let out_y = (y + 0.5) * out_h as f32;
+        // Round to match touch precision of official devices.
+        (out_x.round(), out_y.round())
+    }
+
+    /// Queue a touch at a position in the window's client area, as though the
+    /// mouse had been used there.
+    ///
+    /// This is how a replayed clickmap enters the emulator. It deliberately
+    /// pushes the same [Event] that [Window::poll_for_events] pushes for a real
+    /// mouse button, through the same coordinate transform and with the same
+    /// [FingerId], so nothing downstream can tell the difference — including
+    /// the app's own `hitTest:`. Driving the host's cursor instead is what the
+    /// Windows-only replay harness did, and it is the reason a scaled display
+    /// could make every control look unresponsive.
+    pub fn inject_touch(&mut self, phase: TouchPhase, client_coords: (f32, f32)) {
+        let coords = self.transform_input_coords(client_coords, false);
+        let touches = HashMap::from([(FingerId::Mouse, coords)]);
+        self.event_queue.push_back(match phase {
+            TouchPhase::Down => Event::TouchesDown(touches),
+            TouchPhase::Move => Event::TouchesMove(touches),
+            TouchPhase::Up => Event::TouchesUp(touches),
+        });
+    }
+
+    /// Queue a text-input event, for a replayed `type` or `key` step.
+    pub fn inject_text_input(&mut self, event: TextInputEvent) {
+        self.event_queue.push_back(Event::TextInput(event));
+    }
+
+    /// Queue a quit, as though the window had been closed. Used by a finished
+    /// replay so the app gets its ordinary shutdown rather than being torn
+    /// down from under itself.
+    pub fn inject_quit(&mut self) {
+        self.event_queue.push_back(Event::Quit);
+    }
+
     pub fn size_unrotated_unscaled(&self) -> (u32, u32) {
         size_for_orientation(
             self.device_family,

@@ -432,6 +432,15 @@ pub fn run_run_loop(
                 limit_sleep_time(&mut sleep_until, next_due);
             }
 
+            // A replayed clickmap queues its taps here, immediately after the
+            // window's own events and before anything consumes them, so
+            // replayed and real input reach the app by exactly the same route
+            // in the same part of the frame. Its next deadline joins the sleep
+            // calculation for the same reason a timer's does: without that the
+            // loop would happily sleep straight through a step's timing.
+            let next_due = crate::replay::tick(env);
+            limit_sleep_time(&mut sleep_until, next_due);
+
             // Not inside that condition: laying out a view runs the app's own
             // `layoutSubviews`, which is guest code and is not about the
             // window. It stays before compositing, because a view that asked
