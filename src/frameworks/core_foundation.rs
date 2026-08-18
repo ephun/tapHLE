@@ -104,15 +104,28 @@ pub const kCFCoreFoundationVersionNumber_iPhoneOS_3_2: f64 = 478.61;
 /// so we back it with a real guest allocation and point the symbol at it. This
 /// was previously an unhandled non-lazy symbol left null, which crashed any app
 /// that dereferenced it (a startup version check, typically).
-pub const CONSTANTS: ConstantExports = &[(
-    "_kCFCoreFoundationVersionNumber",
-    HostConstant::Custom(|env| {
-        env.mem
-            .alloc_and_write(kCFCoreFoundationVersionNumber_iPhoneOS_3_2)
-            .cast()
-            .cast_const()
-    }),
-)];
+pub const CONSTANTS: ConstantExports = &[
+    (
+        "_kCFCoreFoundationVersionNumber",
+        HostConstant::Custom(|env| {
+            env.mem
+                .alloc_and_write(kCFCoreFoundationVersionNumber_iPhoneOS_3_2)
+                .cast()
+                .cast_const()
+        }),
+    ),
+    // The singleton that means "no value" inside a collection, which is the
+    // same object Foundation calls `[NSNull null]` — Core Foundation and
+    // Foundation share it on a device and share it here. Twelve of the 124 apps
+    // in the local collection import it.
+    (
+        "_kCFNull",
+        HostConstant::Custom(|env| {
+            let null: crate::objc::id = crate::msg_class![env; NSNull null];
+            env.mem.alloc_and_write(null).cast().cast_const()
+        }),
+    ),
+];
 
 #[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]

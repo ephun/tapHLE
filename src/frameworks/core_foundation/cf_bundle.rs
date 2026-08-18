@@ -21,6 +21,7 @@ use crate::Environment;
 
 const kCFBundleVersionKey: &str = "CFBundleVersion";
 const kCFBundleExecutableKey: &str = "CFBundleExecutable";
+const kCFBundleNameKey: &str = "CFBundleName";
 
 pub const CONSTANTS: ConstantExports = &[
     (
@@ -30,6 +31,14 @@ pub const CONSTANTS: ConstantExports = &[
     (
         "_kCFBundleExecutableKey",
         HostConstant::NSString(kCFBundleExecutableKey),
+    ),
+    // Nineteen of the 124 apps in the local collection import this one, more
+    // than any other Core Foundation constant tapHLE was missing. An app reads
+    // it to put its own name on screen, and an unexported constant is not a
+    // diagnostic — it is a null pointer the app dereferences.
+    (
+        "_kCFBundleNameKey",
+        HostConstant::NSString(kCFBundleNameKey),
     ),
 ];
 
