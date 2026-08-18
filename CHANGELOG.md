@@ -577,6 +577,11 @@
 - Let a game find the paragraph a piece of text belongs to. tapHLE could find
   the line but not the paragraph, and asking for the paragraph ended the game.
   Both Carnivores games ask while laying out their briefing text.
+- Scroll something into view when a game asks for it. The request did not
+  exist, so a game that scrolls to show the item it just selected ended
+  there — and the scroll now actually happens, by the shortest distance that
+  brings the item on screen. Both Carnivores games do this while building
+  their menus.
 
 ### Known limitations
 

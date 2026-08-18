@@ -202,6 +202,42 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.objc.borrow_mut::<UIScrollViewHostObject>(this).scroll_enabled = scroll_enabled;
 }
 
+// Move the content so that `rect` is inside the visible area, which is what an
+// app calls when it has just made something the current item — a selected row,
+// a focused field — and wants it on screen. Both Carnivores games call it while
+// building their menus, and the missing selector ended both.
+//
+// The scroll is not animated even when asked, as with `setContentOffset:
+// animated:` above: the destination is what the caller wants and the travel was
+// decoration.
+- (())scrollRectToVisible:(CGRect)rect animated:(bool)_animated {
+    let bounds: CGRect = msg![env; this bounds];
+    let content_size: CGSize = msg![env; this contentSize];
+    let mut offset: CGPoint = msg![env; this contentOffset];
+
+    // Scroll the least distance that brings each edge inside. A rect already
+    // visible moves nothing; a rect larger than the visible area is aligned to
+    // its top-left corner, which is what a caller means by "show me this".
+    if rect.origin.x < offset.x {
+        offset.x = rect.origin.x;
+    } else if rect.origin.x + rect.size.width > offset.x + bounds.size.width {
+        offset.x = rect.origin.x + rect.size.width - bounds.size.width;
+    }
+    if rect.origin.y < offset.y {
+        offset.y = rect.origin.y;
+    } else if rect.origin.y + rect.size.height > offset.y + bounds.size.height {
+        offset.y = rect.origin.y + rect.size.height - bounds.size.height;
+    }
+
+    // A scroll view does not scroll past its content, and an app that reads the
+    // offset back afterwards is entitled to a value it could have reached by
+    // dragging.
+    offset.x = offset.x.clamp(0.0, (content_size.width - bounds.size.width).max(0.0));
+    offset.y = offset.y.clamp(0.0, (content_size.height - bounds.size.height).max(0.0));
+
+    () = msg![env; this setContentOffset:offset];
+}
+
 - (CGPoint)contentOffset {
     env.objc.borrow::<UIScrollViewHostObject>(this).content_offset
 }
