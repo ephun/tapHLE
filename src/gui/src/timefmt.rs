@@ -95,6 +95,12 @@ pub fn now_seconds() -> u64 {
 /// These are Howard Hinnant's `days_from_civil` and `civil_from_days`, which
 /// are the standard way to do this without a calendar library. They are exact
 /// for every year the frontend will ever see.
+///
+/// Only the Windows clock path converts a date *into* a day count — the others
+/// start from a Unix timestamp and only need the reverse — so outside Windows
+/// this exists for the round-trip test alone. Saying that in a `cfg` rather
+/// than silencing dead-code keeps it true if a caller appears.
+#[cfg(any(windows, test))]
 fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = if year >= 0 { year } else { year - 399 } / 400;
