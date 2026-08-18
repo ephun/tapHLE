@@ -6784,7 +6784,8 @@ int test_NSObject_valueForKeyPath() {
 // nothing to find under it, so the lookup answers nil instead of ending the
 // emulator on the way to reading one.
 int test_NSDictionary_valueForKey_nil() {
-  NSMutableDictionary *dictionary = [NSMutableDictionary dictionaryWithCapacity:1];
+  NSMutableDictionary *dictionary =
+      [NSMutableDictionary dictionaryWithCapacity:1];
   [dictionary setObject:@"value" forKey:@"key"];
 
   if ([dictionary valueForKey:nil] != nil)
