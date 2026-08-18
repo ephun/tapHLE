@@ -9,6 +9,8 @@ use crate::dyld::{ConstantExports, HostConstant};
 use crate::frameworks::core_animation::ca_media_timing_function::kCAMediaTimingFunctionDefault;
 use crate::frameworks::core_foundation::time::CFTimeInterval;
 use crate::frameworks::foundation::ns_string::{get_static_str, to_rust_string};
+use crate::frameworks::foundation::NSUInteger;
+use crate::mem::MutVoidPtr;
 use crate::objc::{
     autorelease, id, msg, nil, objc_classes, release, retain, todo_objc_setter, ClassExports,
     HostObject, NSZonePtr,
@@ -122,6 +124,19 @@ struct CAPropertyAnimationHostObject {
     key_path: id, // NSString*
 }
 impl_HostObject_with_superclass!(CAPropertyAnimationHostObject);
+
+/// A keyframe animation's own state. The list of values is what makes it one;
+/// the rest is stored so that setting it is not fatal and reading it back gives
+/// what the app set.
+#[derive(Default)]
+struct CAKeyframeAnimationHostObject {
+    superclass: CAPropertyAnimationHostObject,
+    values: id,           // NSArray*
+    key_times: id,        // NSArray<NSNumber*>*
+    calculation_mode: id, // NSString*
+    path: MutVoidPtr,     // CGPathRef
+}
+impl_HostObject_with_superclass!(CAKeyframeAnimationHostObject);
 
 #[derive(Default)]
 struct CABasicAnimationHostObject {
@@ -275,6 +290,108 @@ pub const CLASSES: ClassExports = objc_classes! {
     if key_path != nil {
         release(env, key_path);
     }
+
+    msg_super![env; this dealloc]
+}
+
+@end
+
+
+@implementation CAKeyframeAnimation: CAPropertyAnimation
+
++ (id)allocWithZone:(NSZonePtr)_zone {
+    let host_object = Box::<CAKeyframeAnimationHostObject>::default();
+    env.objc.alloc_object(this, host_object, &mut env.mem)
+}
+
+- (())setValues:(id)values { // NSArray*
+    let old = std::mem::replace(
+        &mut env.objc.borrow_mut::<CAKeyframeAnimationHostObject>(this).values,
+        values,
+    );
+    retain(env, values);
+    release(env, old);
+}
+- (id)values {
+    env.objc.borrow::<CAKeyframeAnimationHostObject>(this).values
+}
+
+- (())setKeyTimes:(id)key_times { // NSArray<NSNumber*>*
+    let old = std::mem::replace(
+        &mut env.objc.borrow_mut::<CAKeyframeAnimationHostObject>(this).key_times,
+        key_times,
+    );
+    retain(env, key_times);
+    release(env, old);
+}
+- (id)keyTimes {
+    env.objc.borrow::<CAKeyframeAnimationHostObject>(this).key_times
+}
+
+- (())setCalculationMode:(id)mode { // NSString*
+    let old = std::mem::replace(
+        &mut env.objc.borrow_mut::<CAKeyframeAnimationHostObject>(this).calculation_mode,
+        mode,
+    );
+    retain(env, mode);
+    release(env, old);
+}
+- (id)calculationMode {
+    env.objc.borrow::<CAKeyframeAnimationHostObject>(this).calculation_mode
+}
+
+// A path is the other way to describe where a keyframe animation goes, and it
+// is stored rather than followed. Nothing reads it back out of here yet; what
+// it buys is that an app setting one is not ended by the attempt.
+- (())setPath:(MutVoidPtr)path { // CGPathRef
+    env.objc.borrow_mut::<CAKeyframeAnimationHostObject>(this).path = path;
+}
+- (MutVoidPtr)path {
+    env.objc.borrow::<CAKeyframeAnimationHostObject>(this).path
+}
+
+// The animation engine interpolates from a `fromValue` to a `toValue`, and a
+// keyframe animation answers with the ends of its own list. So the layer starts
+// where the app said it starts and finishes where the app said it finishes; the
+// keyframes in between are not visited, and the route is a straight line
+// instead of the shape the app drew.
+//
+// That is a visible difference in how an animation looks and not in where it
+// leaves the layer, which is what the rest of the app then reads. The
+// alternative on offer was refusing to make the object at all, which ended
+// Doodle Jump v2.7.1 and v3.4 during start-up.
+- (id)fromValue {
+    let values: id = msg![env; this values];
+    if values == nil {
+        return nil;
+    }
+    let count: NSUInteger = msg![env; values count];
+    if count == 0 {
+        return nil;
+    }
+    msg![env; values objectAtIndex:0u32]
+}
+- (id)toValue {
+    let values: id = msg![env; this values];
+    if values == nil {
+        return nil;
+    }
+    let count: NSUInteger = msg![env; values count];
+    if count == 0 {
+        return nil;
+    }
+    msg![env; values objectAtIndex:(count - 1)]
+}
+- (id)byValue {
+    nil
+}
+
+- (())dealloc {
+    let &CAKeyframeAnimationHostObject { values, key_times, calculation_mode, .. } =
+        env.objc.borrow(this);
+    release(env, values);
+    release(env, key_times);
+    release(env, calculation_mode);
 
     msg_super![env; this dealloc]
 }
