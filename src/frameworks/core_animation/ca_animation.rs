@@ -125,6 +125,14 @@ struct CAPropertyAnimationHostObject {
 }
 impl_HostObject_with_superclass!(CAPropertyAnimationHostObject);
 
+/// A group's own state: the animations it runs together.
+#[derive(Default)]
+struct CAAnimationGroupHostObject {
+    superclass: CAAnimationHostObject,
+    animations: id, // NSArray<CAAnimation*>*
+}
+impl_HostObject_with_superclass!(CAAnimationGroupHostObject);
+
 /// A keyframe animation's own state. The list of values is what makes it one;
 /// the rest is stored so that setting it is not fatal and reading it back gives
 /// what the app set.
@@ -290,6 +298,35 @@ pub const CLASSES: ClassExports = objc_classes! {
     if key_path != nil {
         release(env, key_path);
     }
+
+    msg_super![env; this dealloc]
+}
+
+@end
+
+
+@implementation CAAnimationGroup: CAAnimation
+
++ (id)allocWithZone:(NSZonePtr)_zone {
+    let host_object = Box::<CAAnimationGroupHostObject>::default();
+    env.objc.alloc_object(this, host_object, &mut env.mem)
+}
+
+- (())setAnimations:(id)animations { // NSArray<CAAnimation*>*
+    let old = std::mem::replace(
+        &mut env.objc.borrow_mut::<CAAnimationGroupHostObject>(this).animations,
+        animations,
+    );
+    retain(env, animations);
+    release(env, old);
+}
+- (id)animations {
+    env.objc.borrow::<CAAnimationGroupHostObject>(this).animations
+}
+
+- (())dealloc {
+    let &CAAnimationGroupHostObject { animations, .. } = env.objc.borrow(this);
+    release(env, animations);
 
     msg_super![env; this dealloc]
 }
