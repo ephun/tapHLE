@@ -121,6 +121,10 @@ pub struct ReadApp {
     pub icon: Option<AppIcon>,
     /// Things that were wrong but not fatal, such as a missing icon.
     pub warnings: Vec<String>,
+    /// What machine the app is for. An app tapHLE cannot run is still read —
+    /// the library needs its name to say which app it is turning away — and
+    /// it is the library that decides to turn it away.
+    pub architecture: tapHLE::app_bundle::Architecture,
 }
 
 /// Read an app bundle or `.ipa` through the emulator's own reader.
@@ -161,6 +165,7 @@ pub fn read(path: &Path) -> Result<ReadApp, String> {
         },
         icon: contents.icon.map(AppIcon::from),
         warnings: contents.warnings,
+        architecture: contents.architecture,
     })
 }
 

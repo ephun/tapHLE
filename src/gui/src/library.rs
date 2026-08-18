@@ -256,6 +256,16 @@ pub fn read_for_import(path: &Path) -> ScanResult {
     // recognisable as the same file.
     let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     match metadata::read(&canonical) {
+        // Read, and then turned away. A 64-bit app is not a damaged file and
+        // must not be reported as one: it is a whole class of app tapHLE does
+        // not emulate, so it is refused by name and kept out of the library
+        // rather than sitting in the grid as something that will never start.
+        Ok(read) if read.architecture == tapHLE::app_bundle::Architecture::Arm64Only => {
+            ScanResult::Unsupported {
+                path: canonical,
+                reason: tapHLE::app_bundle::SIXTY_FOUR_BIT_MESSAGE.to_string(),
+            }
+        }
         Ok(read) => ScanResult::Read {
             path: canonical,
             read: Box::new(read),
