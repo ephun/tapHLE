@@ -22,7 +22,9 @@
 #include <fnmatch.h>
 #include <glob.h>
 #include <locale.h>
+#include <mach/host_info.h>
 #include <mach/kern_return.h>
+#include <mach/machine.h>
 #include <mach/thread_info.h>
 #include <malloc/malloc.h>
 #include <math.h>
@@ -30,6 +32,13 @@
 // headers, so declare the one function used here rather than requiring an SDK
 // release that does not exist. See tests/README.md for the pinned SDK version.
 unsigned int if_nametoindex(const char *);
+// mach_host.h and mach_init.h are generated from MIG definitions the
+// common-3.0 SDK does not carry either, so the two calls used here are
+// declared the same way. Their structures do come from <mach/host_info.h>.
+mach_port_t mach_host_self(void);
+kern_return_t host_info(mach_port_t host, host_flavor_t flavor,
+                        host_info_t host_info_out,
+                        mach_msg_type_number_t *host_info_outCnt);
 #include <pthread.h>
 #include <semaphore.h>
 #include <setjmp.h>
@@ -7151,6 +7160,31 @@ int test_NSKeyedUnarchiver_finishDecoding() {
 // stopped on the missing constructor during start-up. Sixteen floats is also
 // exactly as large an argument as tapHLE's ABI layer can read, so a round trip
 // is worth asserting field by field rather than trusting the first one.
+// What the machine is. Games ask during start-up to size a thread pool or a
+// cache, and the call had no implementation, so asking ended the app: Crossy
+// Road and Smashy Road Wanted both stopped here.
+int test_host_info_basic() {
+  host_basic_info_data_t info;
+  mach_msg_type_number_t count = HOST_BASIC_INFO_COUNT;
+  kern_return_t kr =
+      host_info(mach_host_self(), HOST_BASIC_INFO, (host_info_t)&info, &count);
+  if (kr != KERN_SUCCESS)
+    return -1;
+  // The reply says how much of it was filled in, and it has to be the shape
+  // that was asked for.
+  if (count != HOST_BASIC_INFO_COUNT)
+    return -2;
+  if (info.max_cpus < 1 || info.avail_cpus < 1)
+    return -3;
+  if (info.physical_cpu < 1 || info.logical_cpu < 1)
+    return -4;
+  if (info.memory_size == 0 || info.max_mem == 0)
+    return -5;
+  if (info.cpu_type != CPU_TYPE_ARM)
+    return -6;
+  return 0;
+}
+
 int test_NSValue_CATransform3D() {
   CATransform3D sent = {1.5f, 2.5f,  3.5f,  4.5f,  5.5f,  6.5f,  7.5f,  8.5f,
                         9.5f, 10.5f, 11.5f, 12.5f, 13.5f, 14.5f, 15.5f, 16.5f};
@@ -7801,6 +7835,7 @@ struct {
     FUNC_DEF(test_NSKeyedArchiver_intoMutableData),
     FUNC_DEF(test_NSKeyedUnarchiver_finishDecoding),
     FUNC_DEF(test_NSValue_CATransform3D),
+    FUNC_DEF(test_host_info_basic),
     FUNC_DEF(test_NSPropertyList_mutableLeaves),
     FUNC_DEF(test_NSDictionary_allKeys_forSubclass),
     FUNC_DEF(test_NSObject_setValue_nil),

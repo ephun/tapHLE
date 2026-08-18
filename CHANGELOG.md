@@ -570,6 +570,10 @@
 - Answer a game asking which way of storing its text is cheapest. The question
   had no answer at all and ended the game; Ski Safari asked it during start-up
   and now reaches its title screen.
+- Answer a game asking what machine it is running on — how many processors and
+  how much memory. Games ask on start-up to decide how much work to do at
+  once, and the question ended the game instead of answering. Crossy Road and
+  Smashy Road Wanted both stopped there.
 
 ### Known limitations
 
