@@ -22,7 +22,10 @@
 
 use crate::bundle::Bundle;
 use crate::fs::BundleData;
+use crate::mach_o::{classify_executable, ExecutableArchitecture};
 use std::path::Path;
+
+pub use crate::mach_o::{ExecutableArchitecture as Architecture, SIXTY_FOUR_BIT_MESSAGE};
 
 /// What an app records about itself in its `Info.plist`.
 ///
@@ -70,6 +73,12 @@ pub struct AppBundleContents {
     /// Problems that did not prevent the app being read, such as a missing
     /// icon.
     pub warnings: Vec<String>,
+    /// What kind of machine the app's executable is for.
+    ///
+    /// Reading is deliberately not refused for an app tapHLE cannot run: a
+    /// frontend still wants the name and the icon so it can say *which* app it
+    /// is turning away. Deciding what to do about it belongs to the caller.
+    pub architecture: Architecture,
 }
 
 /// Keys without which the rest of tapHLE cannot work with an app at all.
@@ -131,6 +140,17 @@ fn read_inner(path: &Path) -> Result<AppBundleContents, String> {
 
     let (bundle, fs) = Bundle::new_bundle_and_fs_from_host_path(bundle_data, true)?;
 
+    // Read from the executable's header, which is a few bytes at the front of
+    // one file inside the bundle — cheap enough to do for every app in a
+    // library, and the only way to know before trying to run one.
+    let architecture = match fs.read(bundle.executable_path()) {
+        Ok(bytes) => classify_executable(&bytes),
+        Err(()) => {
+            warnings.push("Its executable could not be read.".to_string());
+            ExecutableArchitecture::Unsupported
+        }
+    };
+
     let icon = match bundle.load_icon(&fs) {
         Ok(image) => {
             let (width, height) = image.dimensions();
@@ -178,6 +198,7 @@ fn read_inner(path: &Path) -> Result<AppBundleContents, String> {
         icon,
         store_metadata,
         warnings,
+        architecture,
     })
 }
 

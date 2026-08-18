@@ -244,6 +244,120 @@ fn cpu_subtype_to_str(ty: cpu_subtype_t) -> &'static str {
     }
 }
 
+/// What kind of code an executable holds, as far as tapHLE is concerned.
+///
+/// tapHLE emulates a 32-bit ARM CPU. A 64-bit app is not a gap to be filled in
+/// later, it is a different machine, and naming it is the whole point of this
+/// type: what a person is told has to be something they can act on ("this app
+/// is 64-bit") rather than something that sounds like a damaged file ("could
+/// not be parsed").
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ExecutableArchitecture {
+    /// Has a 32-bit ARM slice, which is what tapHLE runs. A fat binary that
+    /// also holds 64-bit code is still this: the 32-bit half is used.
+    Arm32,
+    /// 64-bit ARM only. Out of scope for tapHLE by design.
+    Arm64Only,
+    /// Neither — an Intel binary, something that is not Mach-O at all, or a
+    /// file too short to tell.
+    Unsupported,
+}
+
+/// The sentence shown to a person whose app tapHLE will not run. One place, so
+/// the emulator and the library cannot word it differently.
+pub const SIXTY_FOUR_BIT_MESSAGE: &str =
+    "this is a 64-bit app, and tapHLE emulates 32-bit iOS only";
+
+const MH_MAGIC: u32 = 0xFEED_FACE;
+const MH_CIGAM: u32 = 0xCEFA_EDFE;
+const MH_MAGIC_64: u32 = 0xFEED_FACF;
+const MH_CIGAM_64: u32 = 0xCFFA_EDFE;
+const FAT_MAGIC: u32 = 0xCAFE_BABE;
+const CPU_TYPE_ARM64: u32 = 0x0100_000C;
+
+/// Classify an executable from its header alone.
+///
+/// Hand-rolled rather than routed through the Mach-O parser on purpose: it has
+/// to answer for a file the parser rejects, which is exactly what a
+/// 64-bit-only binary is, and it has to be cheap enough to run over a library
+/// of a thousand apps.
+pub fn classify_executable(bytes: &[u8]) -> ExecutableArchitecture {
+    fn be32(bytes: &[u8], at: usize) -> Option<u32> {
+        Some(u32::from_be_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
+    }
+    fn le32(bytes: &[u8], at: usize) -> Option<u32> {
+        Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
+    }
+
+    let Some(magic_be) = be32(bytes, 0) else {
+        return ExecutableArchitecture::Unsupported;
+    };
+
+    if magic_be == FAT_MAGIC {
+        // A fat header is always big-endian: an eight-byte header, then one
+        // twenty-byte entry per architecture.
+        let Some(count) = be32(bytes, 4) else {
+            return ExecutableArchitecture::Unsupported;
+        };
+        let mut saw_arm64 = false;
+        for index in 0..count as usize {
+            let Some(cpu_type) = be32(bytes, 8 + index * 20) else {
+                break;
+            };
+            if cpu_type == mach_object::CPU_TYPE_ARM as u32 {
+                return ExecutableArchitecture::Arm32;
+            }
+            if cpu_type == CPU_TYPE_ARM64 {
+                saw_arm64 = true;
+            }
+        }
+        return if saw_arm64 {
+            ExecutableArchitecture::Arm64Only
+        } else {
+            ExecutableArchitecture::Unsupported
+        };
+    }
+
+    // A thin file. The magic gives both the word size and the byte order, and
+    // the CPU type is the word after it.
+    //
+    // All four spellings are compared against the *same* little-endian read,
+    // which is the only way that works: the byte-swapped magic of a 64-bit
+    // header is the plain magic of the other byte order, so reading the four
+    // bytes twice and comparing each reading separately cannot tell the two
+    // apart. `MH_CIGAM_64` is what those bytes look like read little-endian
+    // when the file is big-endian, and that is exactly the test.
+    let magic_le = le32(bytes, 0).unwrap_or(0);
+    let (is_64, big_endian) = if magic_le == MH_MAGIC {
+        (false, false)
+    } else if magic_le == MH_MAGIC_64 {
+        (true, false)
+    } else if magic_le == MH_CIGAM {
+        (false, true)
+    } else if magic_le == MH_CIGAM_64 {
+        (true, true)
+    } else {
+        return ExecutableArchitecture::Unsupported;
+    };
+
+    let cpu_type = if big_endian {
+        be32(bytes, 4)
+    } else {
+        le32(bytes, 4)
+    };
+    let Some(cpu_type) = cpu_type else {
+        return ExecutableArchitecture::Unsupported;
+    };
+
+    if !is_64 && cpu_type == mach_object::CPU_TYPE_ARM as u32 {
+        ExecutableArchitecture::Arm32
+    } else if cpu_type == CPU_TYPE_ARM64 {
+        ExecutableArchitecture::Arm64Only
+    } else {
+        ExecutableArchitecture::Unsupported
+    }
+}
+
 impl MachO {
     /// Load the all the sections from a Mach-O binary (provided as `bytes`)
     /// into the guest memory (`into_mem`), and return a struct containing
@@ -257,6 +371,10 @@ impl MachO {
         log_dbg!("Reading {:?}", name);
 
         let mut cursor = Cursor::new(bytes);
+
+        if classify_executable(bytes) == ExecutableArchitecture::Arm64Only {
+            return Err(SIXTY_FOUR_BIT_MESSAGE);
+        }
 
         let file = OFile::parse(&mut cursor).map_err(|_| "Could not parse Mach-O file")?;
 
@@ -283,7 +401,7 @@ impl MachO {
                 return if let Some(subslice) = best_subslice {
                     MachO::load_from_bytes(subslice, into_mem, name, slide_to_address)
                 } else {
-                    Err("No supported architecture in the fat binary")
+                    Err("this binary has no 32-bit ARM code in it")
                 };
             }
             OFile::ArFile { .. } | OFile::SymDef { .. } => {
@@ -720,5 +838,113 @@ impl MachO {
     /// Get a section by its name (`&str`) or type ([SectionType]).
     pub fn get_section<P: SectionPredicate>(&self, by: P) -> Option<&Section> {
         self.sections.iter().find(|section| by.test(section))
+    }
+}
+
+#[cfg(test)]
+mod architecture_tests {
+    use super::{classify_executable, ExecutableArchitecture};
+
+    /// A thin Mach-O header: magic and CPU type are all this has to answer.
+    fn thin(magic: u32, cpu_type: u32, little_endian: bool) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        if little_endian {
+            bytes.extend_from_slice(&magic.to_le_bytes());
+            bytes.extend_from_slice(&cpu_type.to_le_bytes());
+        } else {
+            bytes.extend_from_slice(&magic.to_be_bytes());
+            bytes.extend_from_slice(&cpu_type.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0; 20]);
+        bytes
+    }
+
+    /// A fat header listing the given CPU types, always big-endian.
+    fn fat(cpu_types: &[u32]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0xCAFE_BABEu32.to_be_bytes());
+        bytes.extend_from_slice(&(cpu_types.len() as u32).to_be_bytes());
+        for &cpu_type in cpu_types {
+            bytes.extend_from_slice(&cpu_type.to_be_bytes());
+            bytes.extend_from_slice(&[0; 16]);
+        }
+        bytes
+    }
+
+    const ARM32: u32 = 12;
+    const ARM64: u32 = 0x0100_000C;
+    const X86_64: u32 = 0x0100_0007;
+
+    #[test]
+    fn a_thin_32_bit_arm_binary_is_what_taphle_runs() {
+        assert_eq!(
+            classify_executable(&thin(0xFEED_FACE, ARM32, true)),
+            ExecutableArchitecture::Arm32
+        );
+    }
+
+    #[test]
+    fn a_thin_64_bit_arm_binary_is_named_as_such() {
+        assert_eq!(
+            classify_executable(&thin(0xFEED_FACF, ARM64, true)),
+            ExecutableArchitecture::Arm64Only
+        );
+    }
+
+    /// The case this exists for. A big-endian 64-bit header stores the same
+    /// magic in the other byte order, and read little-endian those bytes are
+    /// `MH_CIGAM_64` — which is why the classifier compares every spelling
+    /// against one little-endian read.
+    #[test]
+    fn a_big_endian_64_bit_header_is_recognised_too() {
+        assert_eq!(
+            classify_executable(&thin(0xFEED_FACF, ARM64, false)),
+            ExecutableArchitecture::Arm64Only
+        );
+    }
+
+    #[test]
+    fn a_fat_binary_holding_both_is_run_as_32_bit() {
+        assert_eq!(
+            classify_executable(&fat(&[ARM32, ARM64])),
+            ExecutableArchitecture::Arm32
+        );
+        assert_eq!(
+            classify_executable(&fat(&[ARM64, ARM32])),
+            ExecutableArchitecture::Arm32
+        );
+    }
+
+    #[test]
+    fn a_fat_binary_holding_only_64_bit_code_is_refused() {
+        assert_eq!(
+            classify_executable(&fat(&[ARM64])),
+            ExecutableArchitecture::Arm64Only
+        );
+    }
+
+    #[test]
+    fn anything_else_is_unsupported_rather_than_64_bit() {
+        assert_eq!(
+            classify_executable(&thin(0xFEED_FACF, X86_64, true)),
+            ExecutableArchitecture::Unsupported
+        );
+        assert_eq!(
+            classify_executable(&fat(&[X86_64])),
+            ExecutableArchitecture::Unsupported
+        );
+        assert_eq!(
+            classify_executable(b"not a mach-o file at all"),
+            ExecutableArchitecture::Unsupported
+        );
+        // Short enough that reading the CPU type would run off the end.
+        assert_eq!(
+            classify_executable(&[0xCE, 0xFA, 0xED, 0xFE]),
+            ExecutableArchitecture::Unsupported
+        );
+        assert_eq!(
+            classify_executable(&[]),
+            ExecutableArchitecture::Unsupported
+        );
     }
 }

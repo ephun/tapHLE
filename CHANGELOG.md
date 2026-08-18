@@ -591,6 +591,12 @@
   title, and the one that means "nothing" inside a list. A name a game looks
   for and does not find is not a warning it can see — it is a crash a moment
   later, somewhere else.
+- 64-bit apps are turned away by name, and kept out of the library. tapHLE
+  emulates a 32-bit machine, so a 64-bit app was never going to run; it used
+  to be reported as a file that could not be read, which reads like a damaged
+  download. It is now refused with the actual reason, whether it is dropped on
+  the window, added from the menu, or found while scanning a folder — and it
+  does not take a place in the grid as an app that will never start.
 
 ### Known limitations
 
