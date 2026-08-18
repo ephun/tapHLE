@@ -790,19 +790,52 @@ impl ObjC {
     /// class the compiler laid the subclass out against. If that ever stops
     /// being true, the subclass's ivar offsets would need shifting and this
     /// would silently corrupt them, so it is checked rather than assumed.
+    ///
+    /// **A subclass that brings its own storage is left alone.** Apple
+    /// documents a second, entirely different way to subclass a cluster:
+    /// implement the class's primitive methods — for a dictionary, `count`,
+    /// `objectForKey:` and `keyEnumerator` — and inherit everything derived
+    /// from them. Such a class does not want tapHLE's storage, and giving it
+    /// any is worse than useless: it inherits `_tapHLE_NSDictionary`'s
+    /// `allKeys`, which reads that storage, finds it empty, and returns no
+    /// keys while the subclass's own `count` says there are two. So the
+    /// primitives are what decide. A subclass that implements them keeps the
+    /// abstract parent, whose derived methods are written in terms of exactly
+    /// those primitives.
     fn reparent_onto_concrete_classes(&mut self, registered: &[Class], mem: &mut Mem) {
-        /// Abstract class an app may subclass, and the concrete class that
-        /// actually implements it.
-        const SUBSTITUTIONS: &[(&str, &str)] = &[
-            ("NSArray", "_tapHLE_NSArray"),
-            ("NSMutableArray", "_tapHLE_NSMutableArray"),
-            ("NSString", "_tapHLE_NSString"),
-            ("NSMutableString", "_tapHLE_NSMutableString"),
-            ("NSDictionary", "_tapHLE_NSDictionary"),
-            ("NSMutableDictionary", "_tapHLE_NSMutableDictionary"),
+        /// Abstract class an app may subclass, the concrete class that actually
+        /// implements it, and the primitive methods a subclass must implement
+        /// to be a concrete subclass in its own right.
+        const SUBSTITUTIONS: &[(&str, &str, &[&str])] = &[
+            ("NSArray", "_tapHLE_NSArray", &["count", "objectAtIndex:"]),
+            (
+                "NSMutableArray",
+                "_tapHLE_NSMutableArray",
+                &["count", "objectAtIndex:"],
+            ),
+            (
+                "NSString",
+                "_tapHLE_NSString",
+                &["length", "characterAtIndex:"],
+            ),
+            (
+                "NSMutableString",
+                "_tapHLE_NSMutableString",
+                &["length", "characterAtIndex:"],
+            ),
+            (
+                "NSDictionary",
+                "_tapHLE_NSDictionary",
+                &["count", "objectForKey:", "keyEnumerator"],
+            ),
+            (
+                "NSMutableDictionary",
+                "_tapHLE_NSMutableDictionary",
+                &["count", "objectForKey:", "keyEnumerator"],
+            ),
         ];
 
-        for &(abstract_name, concrete_name) in SUBSTITUTIONS {
+        for &(abstract_name, concrete_name, primitives) in SUBSTITUTIONS {
             // Only look at apps that actually reference the abstract class;
             // asking for it here would otherwise create every one of these.
             let Some(abstract_class) = self.get_class(abstract_name, false, mem) else {
@@ -818,6 +851,26 @@ impl ObjC {
                     continue;
                 };
                 if superclass != abstract_class {
+                    continue;
+                }
+
+                // The subclass's own methods decide this, not anything it
+                // inherited: a class that implements the primitives is a
+                // concrete subclass and supplies its own storage.
+                let implements_primitives = primitives.iter().all(|&name| {
+                    self.lookup_selector(name)
+                        .is_some_and(|sel| self.class_has_uninherited_method(class, sel))
+                });
+                if implements_primitives {
+                    let name = {
+                        let host_object: &ClassHostObject = self.borrow(class);
+                        host_object.name.clone()
+                    };
+                    log_dbg!(
+                        "Leaving guest class {:?} parented on {}: it implements the primitive methods itself",
+                        name,
+                        abstract_name
+                    );
                     continue;
                 }
 
