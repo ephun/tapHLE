@@ -32,10 +32,36 @@ pointing at the map rather than duplicating the steps, so they cannot drift.
 
 ## Replaying
 
+The emulator replays a map itself:
+
+```sh
+tapHLE "tapHLE_apps/J & F HD (v1.1) [Cracked].ipa"     --replay=dev-docs/clickmaps/jim-and-frank-hd.json --replay-quit
+```
+
+**Prefer this.** It queues each tap as the same event a real mouse click
+produces, through the same coordinate transform, so the app cannot tell the
+difference — and because no host cursor is involved it behaves identically on
+Windows, macOS and Linux, does not need the window in front, does not need an
+interactive session it owns, and cannot stray outside the window and click on
+something else. A clickmap is only infrastructure if it replays everywhere;
+one that runs on a single platform is a script for that platform.
+
+It also removes a whole class of wrong answers. Driving the host cursor on a
+display with scaling puts it somewhere other than where it aimed, which is how
+four apps were recorded as having unresponsive controls in one session when
+nothing was wrong with any of them.
+
+### The PowerShell runner
+
 ```powershell
 .\dev-scripts\clickmap.ps1 -Map dev-docs\clickmaps\jim-and-frank-hd.json `
                            -App "tapHLE_apps\J & F HD (v1.1) [Cracked].ipa"
 ```
+
+Windows only, and it drives the real cursor. What it still does that `--replay`
+does not is capture a frame after every step, so reach for it when you want
+that per-step evidence and are on Windows. Everything else should use
+`--replay`.
 
 The runner launches the app, executes each step, captures a frame after every
 step into `-OutDir`, and prints one line per step. It exits non-zero if the app

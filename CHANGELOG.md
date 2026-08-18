@@ -483,6 +483,11 @@
 - Give games the evenly-spread random numbers they ask for. The call had no
   implementation at all, so a game using it ended at the first one it
   needed — all four versions of Spaceteam stopped during start-up.
+- tapHLE can play back a recorded route through a game by itself, with
+  `--replay`. It presses the buttons internally rather than moving your
+  mouse, so it works the same on every system tapHLE runs on, it does not
+  need its window in front, and it cannot wander off and click something
+  else on your desktop while it runs.
 
 ### Known limitations
 

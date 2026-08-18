@@ -16,6 +16,7 @@ use crate::audio::openal::OpenALManager;
 use crate::cpu::Cpu;
 use crate::libc::semaphore::sem_t;
 use crate::mem::{GuestUSize, MutPtr, MutVoidPtr};
+use crate::replay;
 use crate::{
     abi, bundle, cpu, dyld, frameworks, fs, gdb, image, libc, mach_o, mem, objc, options, stack,
     window,
@@ -109,6 +110,10 @@ pub struct Environment {
     pub framework_state: NullableBox<frameworks::State>,
     pub mutex_state: NullableBox<mutex::MutexState>,
     pub options: NullableBox<options::Options>,
+    /// A clickmap being replayed, if `--replay` was given. Driving the app from
+    /// in here rather than from a host-level script is what makes a recorded
+    /// route replayable on every platform; see [crate::replay].
+    pub replay: Option<replay::Replay>,
     gdb_server: Option<Box<gdb::GdbServer>>,
     pub env_vars: HashMap<Vec<u8>, MutPtr<u8>>,
     pub dump_file: Option<std::fs::File>,
@@ -672,6 +677,7 @@ impl Environment {
             mutex_state: Default::default(),
             framework_state: Default::default(),
             options: NullableBox::new(options),
+            replay: None,
             gdb_server: None,
             env_vars: Default::default(),
             dump_file: None,
@@ -680,6 +686,15 @@ impl Environment {
             remaining_ticks: None,
             panic_cell: Rc::new(Cell::new(None)),
         };
+
+        // A bad clickmap is the caller's mistake and is reported as one, before
+        // the app starts doing anything, rather than surfacing halfway through
+        // a run as a step that mysteriously does nothing.
+        if let Some(map_path) = env.options.replay.clone() {
+            let loaded = replay::Replay::load(&map_path, env.options.replay_quit)?;
+            echo!("Replaying clickmap {}", map_path.display());
+            env.replay = Some(loaded);
+        }
 
         if env.options.dumping_options.any() {
             env.dump_file =
@@ -753,6 +768,7 @@ impl Environment {
             framework_state: NullableBox::null(),
             mutex_state: NullableBox::null(),
             options: NullableBox::null(),
+            replay: None,
             gdb_server: None,
             env_vars: HashMap::new(),
             dump_file: None,
