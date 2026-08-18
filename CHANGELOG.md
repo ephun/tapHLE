@@ -563,6 +563,10 @@
   are properties the animation still does not know how to move, and reaching
   one used to end the game; the property now simply changes without the
   travel.
+- Let a game put away a web page it was showing. A game that opens one — for
+  news or an offer — and then closes it as play begins was ended by the
+  closing. Doodle Jump does this at the moment a round starts, so the game
+  could not be reached at all; a round now plays.
 
 ### Known limitations
 
