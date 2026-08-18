@@ -1,0 +1,118 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "greyhoundgames.warlordshdapp",
+    "display_name": "WarlordsHD",
+    "version": "3.065",
+    "sha256": "13646ccf0b14cf7c9c697a64eb132e80e481cd4568969ce4667bdddcd3692e73"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": ["--landscape-native"],
+  "window": {
+    "width": 1024,
+    "height": 768,
+    "orientation": "landscape-left"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "A real-time battle is under way: a unit has been selected and spawned onto a lane, and the battle renders and keeps running."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 8000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 22000,
+      "expect": "The main menu. The note allows about 15 s."
+    },
+    {
+      "id": "play",
+      "from": "main menu",
+      "action": "tap",
+      "at": [95, 418],
+      "expect": "The mode menu, with Campaign on it."
+    },
+    {
+      "id": "campaign",
+      "from": "mode menu",
+      "action": "tap",
+      "at": [95, 415],
+      "expect": "Choose Your Race."
+    },
+    {
+      "id": "new-campaign",
+      "from": "the Continue Campaign / New Campaign / Back menu, which only appears when a campaign save exists",
+      "action": "tap",
+      "at": [200, 549],
+      "requires_save_state": "present",
+      "optional": true,
+      "expect": "Choose Your Race. On a fresh profile this screen never appears and Campaign goes straight there."
+    },
+    {
+      "id": "start-campaign",
+      "from": "Choose Your Race",
+      "action": "tap",
+      "at": [870, 745],
+      "expect": "Upgrade Army."
+    },
+    {
+      "id": "continue",
+      "from": "Upgrade Army",
+      "action": "tap",
+      "at": [910, 745],
+      "settle_ms": 10000,
+      "expect": "The strategic campaign map: Risk-style territories with armies on them."
+    },
+    {
+      "id": "territory",
+      "from": "campaign map",
+      "action": "tap",
+      "at": [700, 370],
+      "expect": "The panel for the territory \"Vorth\", with Attack on it."
+    },
+    {
+      "id": "attack",
+      "from": "territory panel",
+      "action": "tap",
+      "at": [88, 358],
+      "settle_ms": 12000,
+      "expect": "The battle screen, with a tutorial overlay over it."
+    },
+    {
+      "id": "play-now",
+      "from": "battle screen tutorial overlay",
+      "action": "tap",
+      "at": [380, 602],
+      "expect": "The overlay is dismissed and the battlefield is visible."
+    },
+    {
+      "id": "select-spear",
+      "from": "battle screen",
+      "action": "tap",
+      "at": [58, 75],
+      "expect": "The spear unit is selected in the unit bar."
+    },
+    {
+      "id": "spawn",
+      "from": "battle screen",
+      "action": "tap",
+      "at": [450, 400],
+      "settle_ms": 15000,
+      "expect": "The unit spawns onto that lane and joins the combat. The battle renders and persists, which is the milestone."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 1024x768 landscape-native window.",
+    "`--landscape-native` is required and is already set for this bundle in tapHLE_default_options.txt. It is not a presentation flag: this app is a landscape-native renderer, so with a portrait-shaped emulated screen it draws rotated and clipped. `--landscape-left`, `--landscape-right` and `--force-composition` do not fix that — they keep the portrait framebuffer.",
+    "Play and Campaign sit three pixels apart vertically on two different screens. That is not a typo: they are separate menus that happen to place their first entry in almost the same place.",
+    "**The save-state divergence is real and this map hit it.** The route was first recorded on a fresh profile, where Campaign leads straight to Choose Your Race. Replayed on 2026-08-17 against a profile with a campaign save, Campaign instead offered Continue Campaign / New Campaign / Back, every later coordinate landed on that menu, and the replay sat there to the end. The `new-campaign` step exists for that case; Continue Campaign is at (200, 453) if you would rather resume than start over.",
+    "`--replay` inside tapHLE does not act on `requires_save_state` — it runs every step, so on a fresh profile it will tap (200, 549) on the Choose Your Race screen. `dev-scripts/clickmap.ps1` does honour the field, via -HasSaveState."
+  ]
+}

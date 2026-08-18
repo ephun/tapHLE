@@ -1,0 +1,118 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.glu.thief3d",
+    "display_name": "Cop&Robber",
+    "version": "1.3",
+    "sha256": "73d30a59a8d636e7c1cc33fd29e1a720a1f10badae40570c2f12aa5649e538a9"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "A run is under way: the character runs down a 3D city street past obstacles and collectibles, with a counting-down timer, a rising score, a PAUSE button and the skyline HUD."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 5000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 20000,
+      "expect": "The language select screen, with SELECT in the bottom left."
+    },
+    {
+      "id": "language",
+      "from": "language select",
+      "action": "tap",
+      "at": [42, 446],
+      "expect": "The sound question — accepting the default language, English."
+    },
+    {
+      "id": "sound",
+      "from": "sound question",
+      "action": "tap",
+      "at": [42, 446],
+      "settle_ms": 8000,
+      "expect": "The title card, then the 3D intro cutscene with dialogue."
+    },
+    {
+      "id": "skip-1",
+      "from": "intro cutscene",
+      "action": "tap",
+      "at": [282, 451],
+      "expect": "SKIP advances past the first cutscene scene."
+    },
+    {
+      "id": "skip-2",
+      "from": "intro cutscene",
+      "action": "tap",
+      "at": [282, 451],
+      "expect": "The next scene is skipped."
+    },
+    {
+      "id": "skip-3",
+      "from": "intro cutscene",
+      "action": "tap",
+      "at": [282, 451],
+      "expect": "The next scene is skipped."
+    },
+    {
+      "id": "skip-4",
+      "from": "intro cutscene",
+      "action": "tap",
+      "at": [282, 451],
+      "settle_ms": 8000,
+      "expect": "The main menu: PLAY / EXTRAS / HIDEOUT / OPTIONS / HELP."
+    },
+    {
+      "id": "play",
+      "from": "main menu",
+      "action": "tap",
+      "at": [42, 446],
+      "settle_ms": 8000,
+      "expect": "The 3D character customisation screen."
+    },
+    {
+      "id": "done",
+      "from": "character customisation",
+      "action": "tap",
+      "at": [42, 446],
+      "settle_ms": 6000,
+      "expect": "Back at the main menu."
+    },
+    {
+      "id": "play-again",
+      "from": "main menu",
+      "action": "tap",
+      "at": [42, 446],
+      "settle_ms": 8000,
+      "expect": "The tilt-controls tutorial screen."
+    },
+    {
+      "id": "start-run",
+      "from": "tilt-controls tutorial",
+      "action": "tap",
+      "at": [160, 264],
+      "settle_ms": 20000,
+      "expect": "The tutorial is dismissed and the run starts: the street scrolls, the timer counts down and the score rises. Left alone the round ends and a TAP THE SCREEN TO START prompt appears, which starts another — the loop closes."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 320x480 portrait window. They come from the fractions recorded in the app note: SELECT/DONE at 0.13,0.93; SKIP at 0.88,0.94; the tutorial dismissal at 0.50,0.55.",
+    "Do NOT tap SKIP on the tutorial screen. There it means 'back' and returns to the main menu; tap the middle of the play area instead. That cost several runs to notice.",
+    "The four SKIP taps are spaced a few seconds apart on purpose — the cutscene is several scenes and one tap skips one scene.",
+    "Steering is by simulated tilt (hold the right mouse button and move the cursor). It is not part of this route: the run starts and persists without it, which is what the milestone needs."
+  ]
+}

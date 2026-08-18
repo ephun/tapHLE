@@ -1,0 +1,66 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.FDGMobileGamesGbR.ParachutePanic",
+    "display_name": "ParaPanicHD",
+    "version": "1.9.1",
+    "sha256": "6834b6c15a2b57f8ba51aa0599c0eadcf8deb531468de3911fae04f387613a31"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "An Easy round is running: the plane crosses the top of the screen, a parachutist falls, the boat sits on the water and the score and lives HUD is drawn."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 12000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 36000,
+      "expect": "The title screen with the \"What's New?\" dialog over it. Allow about 32 s — this app is slow to reach it."
+    },
+    {
+      "id": "whats-new-ok",
+      "from": "title with the What's New? dialog",
+      "action": "tap",
+      "at": [160, 350],
+      "settle_ms": 14000,
+      "expect": "The main menu: New Game, Challenges, High Scores, Themes, Extras, How To Play, News."
+    },
+    {
+      "id": "new-game",
+      "from": "main menu",
+      "action": "tap",
+      "at": [160, 165],
+      "settle_ms": 18000,
+      "expect": "The theme / difficulty screen."
+    },
+    {
+      "id": "easy",
+      "from": "theme / difficulty",
+      "action": "tap",
+      "at": [75, 395],
+      "settle_ms": 26000,
+      "expect": "The round starts after about 18 s: plane, falling parachutist, boat on the water, score and lives HUD."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 320x480 portrait window.",
+    "Every wait here is long and each one matters — 32 s to the title, 12 s after OK, 16 s after New Game, and about 18 s before the round actually starts. A replay that cuts them short taps an earlier screen and looks like broken input.",
+    "The \"What's New?\" dialog is a first-run screen. If a save exists it may not appear, in which case the OK tap lands on the title harmlessly and the main menu is already up.",
+    "This was verified by three captures six seconds apart being three distinct images, compared by SHA-256 rather than by eye."
+  ]
+}
