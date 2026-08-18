@@ -1,0 +1,69 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.nabilchatbi.Ricky",
+    "display_name": "Ricky",
+    "version": "2.1",
+    "sha256": "74380d6f009a43d430fe3bceeccbb1c9d2b20f40a02088688b500b71eb937a5f"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": {
+    "width": 480,
+    "height": 320,
+    "orientation": "landscape-left"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "A Story Mode level is being played: the level renders, Ricky responds to the on-screen movement control, and the game stays alive."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 6000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 24000,
+      "expect": "The main menu with Story Mode on it."
+    },
+    {
+      "id": "story-mode",
+      "from": "main menu",
+      "action": "tap",
+      "at": [75, 295],
+      "expect": "The Ricky title screen with Back along the top and Map / Continue / New Game along the bottom."
+    },
+    {
+      "id": "continue",
+      "from": "the Map / Continue / New Game screen",
+      "action": "tap",
+      "at": [236, 295],
+      "requires_save_state": "present",
+      "settle_ms": 16000,
+      "expect": "The saved level loads and is playable. On a fresh profile there is nothing to continue — take the New Game route in the notes instead."
+    },
+    {
+      "id": "move-right",
+      "from": "a level",
+      "action": "tap",
+      "at": [130, 285],
+      "press_ms": 2000,
+      "settle_ms": 10000,
+      "expect": "Holding the right movement control moves Ricky rightward and the scene scrolls. The level stays alive afterwards, which is the milestone."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 480x320 landscape-left window, and are valid only at that client size.",
+    "**This map resumes a save on purpose.** New Game is at (397, 295), and on a profile that already has progress it raises `If you start a new game, your previous game will be erased. Are you sure?` with NO at (125, 270) and Yes at (355, 270). Replaying the New Game route therefore destroys whatever save is on the machine, which is not something a re-verification run should do to get a screenshot. Continue reaches a playable level and costs nothing.",
+    "**The fresh-profile route**, which is how the milestone was first recorded and the one to use when there is no save: New Game (397, 295) -> PLAY (236, 203) -> then tap (240, 295) exactly twice to page the story. That story screen advances only on a touch beginning in its bottom 50-pixel strip and has three textures, so tapping the middle of the screen and waiting does not work — that was tried and ruled out.",
+    "The first level's other controls, established at this client size: left movement (40, 285); B/action (355, 285); A/jump (444, 285); pause (16, 16). Holding A moves Ricky about 90 pixels upward. Holding B highlights the target but no projectile was seen, so what B does is not established.",
+    "Do not add an unconditional second tap to the Story Mode step. An earlier run appeared to need one only because its first click was spent activating the window — with `--replay` no activation happens and one tap is one tap.",
+    "Capturing this window is awkward: it presents through OpenGL and a desktop `Graphics.CopyFromScreen` was recorded as unreliable for it. If a capture comes back black, suspect the capture before the app."
+  ]
+}

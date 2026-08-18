@@ -1,0 +1,78 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.disney.jellyCar2foriPad",
+    "display_name": "JellyCar 2",
+    "version": "1.1",
+    "sha256": "ea95c55c9ded365dcc18f8d498ce0b0b1660bf7766fd8b65a082ba0752c269de"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": {
+    "width": 1024,
+    "height": 768,
+    "orientation": "landscape-left"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "A Classic level is being played: the blue terrain and the orange jelly car render with the drive arrows, pump and pause button, and the level timer runs."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 8000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 26000,
+      "expect": "The first screen — which is the help section, not the menu. The note allows about 22 s."
+    },
+    {
+      "id": "back-to-menu",
+      "from": "the help section the app opens on",
+      "action": "tap",
+      "at": [62, 705],
+      "expect": "The real main menu: a spiral notebook with mode icons down the left margin."
+    },
+    {
+      "id": "classic",
+      "from": "notebook main menu",
+      "action": "tap",
+      "at": [62, 622],
+      "expect": "The difficulty select screen."
+    },
+    {
+      "id": "easy",
+      "from": "difficulty select",
+      "action": "tap",
+      "at": [528, 628],
+      "expect": "The level thumbnails."
+    },
+    {
+      "id": "first-level",
+      "from": "level thumbnails",
+      "action": "tap",
+      "at": [447, 480],
+      "expect": "A confirm dialog naming the level."
+    },
+    {
+      "id": "ok",
+      "from": "level confirm dialog",
+      "action": "tap",
+      "at": [583, 440],
+      "settle_ms": 20000,
+      "expect": "Gameplay. Level \"Lance\" renders with blue terrain, the orange jelly car, drive arrows, a pump and a pause button, and the timer runs."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 1024x768 landscape window.",
+    "**The app opens on its help section, not its menu.** That screen says \"Touch an icon below for instructions\", it does not animate, and paging through it only reaches more instruction cards — so it looks like a stuck app when it is not. The bottom-left back arrow is what reveals the real menu, and that is why step 1 exists.",
+    "**Converting a position off a capture needs care here.** The difficulty screen captures 768x1024 portrait while the client stays 1024x768 landscape, so on that screen client X comes from capture Y. The screens either side capture 1024x768 and map 1:1. Read the capture's dimensions before converting anything.",
+    "Whether a synthetic drive input actually steers the car is not established. It is not needed for this milestone — the level runs and the timer advances without it."
+  ]
+}

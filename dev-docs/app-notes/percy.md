@@ -49,6 +49,12 @@ broader validation.
 
 ## Reproduction route
 
+The route is recorded as `dev-docs/clickmaps/percy.json` and was replayed end to end
+on `e4e0d528` on 2026-08-17. Replay the map rather than retyping the steps
+below; the prose is kept for the reasoning behind the coordinates, and the map
+is what should be kept correct.
+
+
 From the repository root, run the release executable with no path to use the
 picker, or pass the exact verified IPA path directly. For the current route:
 

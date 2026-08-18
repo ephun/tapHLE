@@ -1,0 +1,85 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.deluxe.Pipes",
+    "display_name": "Percy",
+    "version": "1.0",
+    "sha256": "67a4981113d76f796fd706be321db92d2ca376e3ec83c333478cc8fc63f680ca"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": {
+    "width": 480,
+    "height": 320,
+    "orientation": "landscape-left"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "The Level 1 pipe board is up and being played: tapping a pipe tile rotates it while the rest of the board stays put."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 8000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 24000,
+      "expect": "The main menu."
+    },
+    {
+      "id": "play",
+      "from": "main menu",
+      "action": "tap",
+      "at": [
+        35,
+        300
+      ],
+      "expect": "The level select screen."
+    },
+    {
+      "id": "level-1",
+      "from": "level select",
+      "action": "tap",
+      "at": [
+        58,
+        135
+      ],
+      "expect": "The level-intro screen."
+    },
+    {
+      "id": "play-level",
+      "from": "level intro",
+      "action": "tap",
+      "at": [
+        420,
+        120
+      ],
+      "settle_ms": 14000,
+      "expect": "The Level 1 pipe board."
+    },
+    {
+      "id": "rotate-tile",
+      "from": "the pipe board, which is drawn in a 320x480 portrait window",
+      "action": "tap",
+      "at": [
+        148,
+        172
+      ],
+      "settle_ms": 10000,
+      "expect": "The tapped tile rotates — a vertical segment becomes a horizontal one — while the rest of the randomized board stays fixed. That is the loop responding, which is the milestone."
+    }
+  ],
+  "notes": [
+    "**This app changes its window shape part way through the route, so one `window` size cannot describe all of it.** The menus are 480x320 landscape and the first three coordinates are in that space; when the board loads the window turns 320x480 portrait, and the `rotate-tile` coordinate is in *that* space. This is why the app note's coordinates look inconsistent — (420, 120) is off the right edge of a 320-wide window, and it is fine because that screen is 480 wide. Check the client size before converting anything.",
+    "The main menu's Instructions button is near (150, 299), and Main Menu on that screen is near (240, 289). Neither is on this route.",
+    "The board is randomized per run, so which tile sits at (148, 172) and what it turns into differ between runs. The evidence is that the tapped tile changes and its neighbours do not: measured on 2026-08-17, the tile region changed in two thirds of its pixels across the tap while a corner of the same board was byte-identical and the board as a whole changed 2%.",
+    "Do not judge this board by whether the frame changed. It animates on its own — the valve and the water do — so two captures differ whether or not a tap landed. Compare the tapped tile against an untouched region instead.",
+    "Capturing this window is awkward: a desktop screenshot can come back black for its OpenGL path. Use a capture that matches the active rendering path, or check the window is really in front before trusting an empty frame."
+  ]
+}

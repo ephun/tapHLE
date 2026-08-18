@@ -1,0 +1,85 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.Pickl.Crafted",
+    "display_name": "Crafted",
+    "version": "1.0.1",
+    "sha256": "940c90748b520cd6bf7dbfbf8da33d15b0e6b151a71875ed6358e344a9e82352"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [
+    "--landscape-left"
+  ],
+  "window": {
+    "width": 480,
+    "height": 320,
+    "orientation": "landscape-left"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "A world has been generated and is being played: the player stands on terrain with trees and animals, the health bar and hotbar are drawn, the touch controls are on screen, and the scene stays live for as long as it is watched."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 8000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 40000,
+      "expect": "The main menu: the CRAFTED logo over Singleplayer / Options... / How to play..."
+    },
+    {
+      "id": "singleplayer",
+      "from": "main menu",
+      "action": "tap",
+      "at": [
+        240,
+        154
+      ],
+      "expect": "The Select World screen. On a fresh profile the world list is empty and Play Selected World, Rename and Delete are all greyed out."
+    },
+    {
+      "id": "create",
+      "from": "Select World",
+      "action": "tap",
+      "at": [
+        366,
+        247
+      ],
+      "expect": "The world creation form: World Name prefilled with \"New World\", an empty seed box, and its own Create New World button."
+    },
+    {
+      "id": "confirm",
+      "from": "the world creation form",
+      "action": "tap",
+      "at": [
+        240,
+        247
+      ],
+      "settle_ms": 40000,
+      "expect": "The world generates and gameplay starts: the player on grass and dirt with trees, pigs wandering, ten hearts along the top, the hotbar along the bottom and the four touch controls."
+    },
+    {
+      "id": "persist",
+      "from": "gameplay",
+      "action": "wait",
+      "settle_ms": 30000,
+      "expect": "The world is still there and still animating half a minute later - the pigs wander, the health bar and hotbar stay drawn, and nothing panics. That persistence is the second half of the milestone."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 480x320 landscape window.",
+    "**`--landscape-left` is part of the route**, and it is already set for this bundle in tapHLE_default_options.txt. The app declares no orientation at all in its Info.plist, and tapHLE only consults `shouldAutorotateToInterfaceOrientation:` when the window is already non-portrait — so nothing ever asks this app which way up it wants to be. Launched portrait it draws its 480-wide layout into a 320-wide screen and the splash is visibly cut off. That gap is general, not specific to this app, and fixing it is separate work.",
+    "There are two buttons labelled Create New World, one after the other: (366, 247) on the Select World screen opens the form, and (240, 247) on the form actually creates it. Missing the second one leaves the replay sitting on a form that looks like it should have worked.",
+    "The world name and seed are left at their defaults — \"New World\" and a random seed — so no typing is needed. The world is written to `Documents/saves/New World/`.",
+    "**This map only replays on a fresh profile, and the reason is a tapHLE bug, not the app.** Once a world exists, the Singleplayer tap panics tapHLE at `src/fs.rs:875` with `not implemented`: the Select World screen asks NSFileManager for the saved world's attributes, that asks `Fs::size()` for the size of a *directory*, and `size()` implements only the file cases and calls `unimplemented!()` for everything else. So the app is three stars on first run and cannot get past its own menu on the second. Delete `tapHLE_sandbox/com.Pickl.Crafted/Documents/saves/<world>` to replay this map again, and see the app note.",
+    "The scene animates on its own: the pigs wander whether or not any input arrived. So two frames differing is not evidence a control worked — compare the region the player is in against a region nothing should have touched.",
+    "**Movement is not on this route, and that is a property of the game rather than a gap in the map.** The two controls down the left are build controls - place a block below, place a block ahead - and with an empty hotbar they correctly do nothing: holding the lower one for 2.5 s moved the view no more than the pigs move it on their own (measured, 1.2 against an ambient 1.2-1.7 mean absolute difference). This app declares `accelerometer` as a required capability and steers by tilt, which in tapHLE is the right mouse button held while the cursor moves, and a clickmap has no way to express that. So the milestone here rests on the world generating and staying live, not on driving the player around."
+  ]
+}

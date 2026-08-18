@@ -1,0 +1,73 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.tapulous.taptaprevengeII",
+    "display_name": "Tap Tap",
+    "version": "2.6.4",
+    "sha256": "1de81bcc507a333468df1d2884142654d5591f9f32b1b7f205322c00e0f22186"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "A track is playing: the theme loads, the note chart scrolls and the audio runs."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 12000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 44000,
+      "expect": "The title screen with Play. Allow 40 s — startup got slower once views started receiving a real layout pass."
+    },
+    {
+      "id": "play",
+      "from": "title",
+      "action": "tap",
+      "at": [160, 313],
+      "settle_ms": 12000,
+      "expect": "The Play menu."
+    },
+    {
+      "id": "one-player",
+      "from": "Play menu",
+      "action": "tap",
+      "at": [82, 200],
+      "settle_ms": 12000,
+      "expect": "Difficulty select."
+    },
+    {
+      "id": "easy",
+      "from": "difficulty select",
+      "action": "tap",
+      "at": [238, 190],
+      "settle_ms": 18000,
+      "expect": "The track list."
+    },
+    {
+      "id": "first-track",
+      "from": "track list",
+      "action": "tap",
+      "at": [170, 128],
+      "settle_ms": 40000,
+      "expect": "The track loads — about 30 s of it — and then plays: the theme is up, the note chart scrolls and the audio runs."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 320x480 portrait window.",
+    "The waits here are the route, not padding: 40 s to the title and about 30 s of loading after the track is picked. A replay that hurries taps a loading screen and looks like dead input.",
+    "This is a rhythm game, so the evidence for the milestone is the chart scrolling and the audio running, not a single frame."
+  ]
+}

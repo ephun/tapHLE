@@ -11,7 +11,7 @@
     "by": "Claude Code (Opus 5)"
   },
   "options": [],
-  "window": { "width": 480, "height": 320, "orientation": "landscape" },
+  "window": { "width": 480, "height": 320 },
   "milestone": {
     "rating": 3,
     "describes": "A level plays: the character with his gun, zombies walking in, ammo and health, and the street scrolling as he walks."

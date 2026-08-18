@@ -32,6 +32,12 @@ four and five require human testing in any case.
 
 ### Click map
 
+The route is recorded as `dev-docs/clickmaps/parachute-panic-hd.json` and was replayed end to end
+on `e4e0d528` on 2026-08-17. Replay the map rather than retyping the steps
+below; the prose is kept for the reasoning behind the coordinates, and the map
+is what should be kept correct.
+
+
 Window 320x480. Allow ~32 s for the title screen.
 
 1. Title, with the "What's New?" dialog -> `(160, 350)` OK. Allow 12 s.

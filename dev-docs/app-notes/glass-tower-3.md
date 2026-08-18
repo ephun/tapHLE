@@ -27,6 +27,12 @@ game keeps running behind it.
 
 ### Click map
 
+The route is recorded as `dev-docs/clickmaps/glass-tower-3.json` and was replayed end to end
+on `e4e0d528` on 2026-08-17. Replay the map rather than retyping the steps
+below; the prose is kept for the reasoning behind the coordinates, and the map
+is what should be kept correct.
+
+
 No launch options; window 320x480 portrait; wait ~18 s for the title menu.
 
 1. Title menu -> `(160, 130)` PLAY -> SELECT LEVEL.

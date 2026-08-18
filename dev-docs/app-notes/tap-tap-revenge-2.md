@@ -42,6 +42,12 @@ Nothing is logged at the moment it happens. That is the next thing to attack.
 
 ### Click map
 
+The route is recorded as `dev-docs/clickmaps/tap-tap-revenge-2.json` and was replayed end to end
+on `e4e0d528` on 2026-08-17. Replay the map rather than retyping the steps
+below; the prose is kept for the reasoning behind the coordinates, and the map
+is what should be kept correct.
+
+
 No launch options; window 320x480 portrait. Startup got slower once views
 started receiving a real layout pass, so allow **40 s** for the title screen.
 
