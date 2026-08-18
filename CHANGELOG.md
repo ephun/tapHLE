@@ -503,6 +503,10 @@
   the true one for a machine with no proxy set — nothing in the way, connect
   directly — and it is a real answer rather than a blank, which matters because
   a game handed a blank reads it as an address and stops on the spot.
+- Save a game whose saved numbers are large or unsigned. Two kinds of number
+  could be held but not written, and a game that put one in its save file was
+  ended by the attempt to save — all four versions of Doodle Jump stopped this
+  way during start-up, before drawing anything.
 
 ### Known limitations
 

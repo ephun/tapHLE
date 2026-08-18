@@ -322,6 +322,11 @@ fn serialize_plist(env: &mut Environment, plist: id) -> Value {
         Value::String(s.to_string())
     } else if class == env.objc.get_known_class("NSNumber", &mut env.mem) {
         let num = env.objc.borrow::<NSNumberHostObject>(plist);
+        // Exhaustive on purpose, with no catch-all arm: a number tapHLE can
+        // hold but cannot write is a saved game that ends the app instead of
+        // being saved, and all four Doodle Jump builds did exactly that on an
+        // unsigned long long. A new variant should stop the build here rather
+        // than reaching an app.
         match num {
             NSNumberHostObject::Bool(b) => Value::Boolean(*b),
             NSNumberHostObject::Int(i) => Value::from(*i),
@@ -329,9 +334,10 @@ fn serialize_plist(env: &mut Environment, plist: id) -> Value {
             NSNumberHostObject::Float(f) => Value::from(*f),
             NSNumberHostObject::Double(d) => Value::from(*d),
             NSNumberHostObject::LongLong(ll) => Value::from(*ll),
+            NSNumberHostObject::UnsignedLongLong(ull) => Value::from(*ull),
             NSNumberHostObject::Short(s) => Value::from(*s),
+            NSNumberHostObject::UnsignedShort(us) => Value::from(*us),
             NSNumberHostObject::Char(c) => Value::from(*c),
-            _ => todo!("num {:?}", num),
         }
     } else if class == env.objc.get_known_class("NSData", &mut env.mem) {
         let data = env.objc.borrow::<NSDataHostObject>(plist);

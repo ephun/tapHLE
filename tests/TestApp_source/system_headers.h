@@ -268,6 +268,21 @@ enum {
 
 NSString *NSStringFromClass(Class);
 
+typedef NSUInteger NSPropertyListFormat;
+enum { NSPropertyListXMLFormat_v1_0 = 100 };
+typedef NSUInteger NSPropertyListMutabilityOptions;
+enum { NSPropertyListImmutable = 0 };
+
+@interface NSPropertyListSerialization : NSObject
++ (NSData *)dataFromPropertyList:(id)plist
+                          format:(NSPropertyListFormat)format
+                errorDescription:(NSString **)errorString;
++ (id)propertyListFromData:(NSData *)data
+          mutabilityOption:(NSPropertyListMutabilityOptions)opt
+                    format:(NSPropertyListFormat *)format
+          errorDescription:(NSString **)errorString;
+@end
+
 // CFNetwork's proxy configuration. The SDK is built from open-source headers
 // and CFNetwork is not open source, so these are declared here.
 extern const CFStringRef kCFNetworkProxiesHTTPEnable;
