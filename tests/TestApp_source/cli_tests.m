@@ -7093,6 +7093,32 @@ int test_CFGetTypeID() {
   return 0;
 }
 
+// An app that wants to decide for itself what happens to an archive makes the
+// archiver around its own NSMutableData, and the archive is appended to that
+// object rather than fetched from the archiver. Doodle Jump v3.1.1 and v3.4
+// save this way and stopped on the missing initialiser during start-up.
+int test_NSKeyedArchiver_intoMutableData() {
+  NSMutableData *data = [NSMutableData data];
+  NSKeyedArchiver *archiver =
+      [[NSKeyedArchiver alloc] initForWritingWithMutableData:data];
+  if (archiver == nil)
+    return -1;
+  if ([data length] != 0)
+    return -2;
+
+  [archiver encodeObject:@"hello" forKey:@"greeting"];
+  [archiver finishEncoding];
+
+  // A binary property list, which is what an archive is, and it landed in the
+  // app's own object rather than only in the archiver's.
+  if ([data length] < 8)
+    return -3;
+  if (memcmp([data bytes], "bplist00", 8) != 0)
+    return -4;
+  [archiver release];
+  return 0;
+}
+
 // A concrete NSDictionary subclass only needs to supply the primitive
 // dictionary methods. allKeys is inherited from NSDictionary and builds its
 // result through the subclass's keyEnumerator.
@@ -7689,6 +7715,7 @@ struct {
     FUNC_DEF(test_NSPropertyList_unsignedNumbers),
     FUNC_DEF(test_NSFileHandle_readDataOfLength),
     FUNC_DEF(test_CFGetTypeID),
+    FUNC_DEF(test_NSKeyedArchiver_intoMutableData),
     FUNC_DEF(test_NSDictionary_allKeys_forSubclass),
     FUNC_DEF(test_NSObject_setValue_nil),
     FUNC_DEF(test_NSObject_self),
