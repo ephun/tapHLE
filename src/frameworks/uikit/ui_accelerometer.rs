@@ -29,6 +29,9 @@ pub struct State {
 type UIAccelerationValue = f64;
 
 const DEFAULT_UPDATE_INTERVAL: f64 = 1.0 / 60.0;
+/// An hour between accelerometer updates is already far outside anything a
+/// game means by "slow"; beyond it the value is not a request, it is garbage.
+const MAX_UPDATE_INTERVAL: f64 = 60.0 * 60.0;
 
 struct UIAccelerationHostObject {
     x: UIAccelerationValue,
@@ -85,8 +88,22 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (())setUpdateInterval:(NSTimeInterval)interval {
     // The system can limit this value, and must (some apps pass 0 and this can
     // cause a division-by-zero. 60Hz has been chosen here to match 60fps.
-    let interval = interval.max(1.0 / 60.0);
-    env.framework_state.uikit.ui_accelerometer.update_interval = Some(interval);
+    //
+    // The upper bound is here for the same reason as the lower one, and was
+    // added for the same kind of app: a value too large to be a Duration at all
+    // reached `Duration::from_secs_f64` in the run loop and ended the app on
+    // the first accelerometer tick. Doodle Jump v3.1.1 and Doodle Jump HD both
+    // pass one during start-up. A device clamps such a request to what its
+    // hardware can do; tapHLE cannot guess what was meant, so it uses its
+    // default and says which value it declined.
+    let usable = usable_update_interval(interval);
+    if usable != interval {
+        log!(
+            "Warning: -[UIAccelerometer setUpdateInterval:{}] is not an interval this device would produce; using {}s",
+            interval, usable
+        );
+    }
+    env.framework_state.uikit.ui_accelerometer.update_interval = Some(usable);
 }
 
 @end
@@ -119,6 +136,21 @@ pub const CLASSES: ClassExports = objc_classes! {
 @end
 
 };
+
+/// The interval an accelerometer will actually be run at, given what an app
+/// asked for.
+///
+/// Anything outside the range tapHLE can act on becomes the default rather
+/// than being clamped to an edge, because a value like infinity is not a
+/// request that was rounded off — it is one that says nothing about what the
+/// app wanted.
+fn usable_update_interval(interval: NSTimeInterval) -> NSTimeInterval {
+    if interval.is_finite() && interval <= MAX_UPDATE_INTERVAL {
+        interval.max(DEFAULT_UPDATE_INTERVAL)
+    } else {
+        DEFAULT_UPDATE_INTERVAL
+    }
+}
 
 /// For use by `NSRunLoop` via [super::handle_events]: check if an accelerometer
 /// update is due and send one if appropriate.
@@ -201,4 +233,45 @@ pub(super) fn handle_accelerometer(env: &mut Environment) -> Option<Instant> {
     release(env, pool);
 
     env.framework_state.uikit.ui_accelerometer.due_by
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{usable_update_interval, DEFAULT_UPDATE_INTERVAL, MAX_UPDATE_INTERVAL};
+
+    #[test]
+    fn an_ordinary_interval_is_left_alone() {
+        assert_eq!(usable_update_interval(1.0 / 30.0), 1.0 / 30.0);
+        assert_eq!(usable_update_interval(1.0), 1.0);
+    }
+
+    #[test]
+    fn a_faster_interval_than_the_screen_is_slowed_to_it() {
+        assert_eq!(usable_update_interval(0.0), DEFAULT_UPDATE_INTERVAL);
+        assert_eq!(usable_update_interval(-1.0), DEFAULT_UPDATE_INTERVAL);
+        assert_eq!(
+            usable_update_interval(1.0 / 1000.0),
+            DEFAULT_UPDATE_INTERVAL
+        );
+    }
+
+    /// The one that ended two apps: `Duration::from_secs_f64` panics on any of
+    /// these, and the run loop reaches it on the first accelerometer tick.
+    #[test]
+    fn an_interval_that_is_not_a_duration_becomes_the_default() {
+        assert_eq!(
+            usable_update_interval(f64::INFINITY),
+            DEFAULT_UPDATE_INTERVAL
+        );
+        assert_eq!(
+            usable_update_interval(f64::NEG_INFINITY),
+            DEFAULT_UPDATE_INTERVAL
+        );
+        assert_eq!(usable_update_interval(f64::NAN), DEFAULT_UPDATE_INTERVAL);
+        assert_eq!(usable_update_interval(f64::MAX), DEFAULT_UPDATE_INTERVAL);
+        assert_eq!(
+            usable_update_interval(MAX_UPDATE_INTERVAL + 1.0),
+            DEFAULT_UPDATE_INTERVAL
+        );
+    }
 }

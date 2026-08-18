@@ -541,6 +541,11 @@
 - Let a game say it has finished reading a saved file. Saying so was not
   possible, so a game that loaded its save successfully was ended by the line
   that closes the file. Doodle Jump v3.1.1 and v3.4 both stopped there.
+- Survive a game asking for tilt readings at an impossible rate. Two games ask
+  for them infinitely far apart during start-up — the result of dividing by a
+  frame rate that is zero — and tapHLE tried to honour it and ended the game on
+  the first reading. Doodle Jump v3.1.1 and Doodle Jump HD both now start and
+  draw their menus.
 
 ### Known limitations
 
