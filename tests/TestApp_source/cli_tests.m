@@ -6907,6 +6907,55 @@ int test_NSString_localizedCaseInsensitiveCompare() {
   return 0;
 }
 
+// Converting a string to bytes used to assert on any encoding tapHLE had not
+// implemented, and on any character outside ASCII in the ones it had. Four apps
+// died in start-up on that: three versions of Super Hexagon and Don't Look
+// Back. What is asserted here is the contract that replaced it — a conversion
+// that cannot be done is *reported*, with the NO, nil or zero that Foundation
+// reports it with, and one that can be done is done exactly.
+int test_NSString_encodingConversion() {
+  NSString *ascii = @"abc";
+  // "café", as UTF-8 octal escapes to match the file's convention.
+  NSString *accented = @"caf\303\251";
+  char buffer[16];
+
+  if (![accented getCString:buffer
+                  maxLength:sizeof(buffer)
+                   encoding:NSUTF8StringEncoding])
+    return -1;
+  if (strcmp(buffer, "caf\303\251") != 0)
+    return -2;
+  if ([accented lengthOfBytesUsingEncoding:NSUTF8StringEncoding] != 5)
+    return -3;
+
+  // Latin-1 says é in one byte. ASCII cannot say it at all, and says so.
+  if ([accented lengthOfBytesUsingEncoding:NSISOLatin1StringEncoding] != 4)
+    return -4;
+  if ([accented lengthOfBytesUsingEncoding:NSASCIIStringEncoding] != 0)
+    return -5;
+  if ([accented getCString:buffer
+                 maxLength:sizeof(buffer)
+                  encoding:NSASCIIStringEncoding])
+    return -6;
+  if ([accented dataUsingEncoding:NSASCIIStringEncoding] != nil)
+    return -7;
+
+  // Two bytes per UTF-16 code unit, terminator not counted. Only the length is
+  // asserted for UTF-16: `getCString:` is defined for C-string encodings, and
+  // what a device does when handed a UTF-16 one is not a contract to copy.
+  if ([ascii lengthOfBytesUsingEncoding:NSUTF16StringEncoding] != 6)
+    return -8;
+
+  // A buffer one byte short of the terminator is a refusal, not a truncation.
+  char small[4];
+  if ([ascii getCString:small maxLength:3 encoding:NSUTF8StringEncoding])
+    return -9;
+
+  if ([accented dataUsingEncoding:NSUTF8StringEncoding] == nil)
+    return -10;
+  return 0;
+}
+
 // A concrete NSDictionary subclass only needs to supply the primitive
 // dictionary methods. allKeys is inherited from NSDictionary and builds its
 // result through the subclass's keyEnumerator.
@@ -7498,6 +7547,7 @@ struct {
     FUNC_DEF(test_NSData_description),
     FUNC_DEF(test_NSString_percentEscapes),
     FUNC_DEF(test_NSString_localizedCaseInsensitiveCompare),
+    FUNC_DEF(test_NSString_encodingConversion),
     FUNC_DEF(test_NSDictionary_allKeys_forSubclass),
     FUNC_DEF(test_NSObject_setValue_nil),
     FUNC_DEF(test_NSObject_self),

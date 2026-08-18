@@ -488,6 +488,14 @@
   mouse, so it works the same on every system tapHLE runs on, it does not
   need its window in front, and it cannot wander off and click something
   else on your desktop while it runs.
+- Stop games quitting when they turn their text into bytes. tapHLE knew a few
+  ways of writing text out and ended the game on any other, and on any letter
+  outside plain English even in the ways it did know — so a name with an accent
+  in it was fatal. Three versions of Super Hexagon and Don't Look Back all
+  stopped during start-up on this, and now get as far as asking for the network
+  instead. A conversion tapHLE cannot make is simply reported as not made, which
+  is the answer games are written to expect, and the ones it can make it now
+  makes exactly, including the two-byte way of writing text used worldwide.
 
 ### Known limitations
 

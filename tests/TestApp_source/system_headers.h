@@ -200,7 +200,15 @@ typedef enum {
 } NSStringCompareOptions;
 
 typedef NSUInteger NSStringEncoding;
-enum { NSASCIIStringEncoding = 1, NSUTF8StringEncoding = 4 };
+enum {
+  NSASCIIStringEncoding = 1,
+  NSUTF8StringEncoding = 4,
+  NSISOLatin1StringEncoding = 5,
+  NSUnicodeStringEncoding = 10,
+  NSUTF16StringEncoding = NSUnicodeStringEncoding,
+};
+
+@class NSData;
 
 @interface NSString : NSObject
 + (instancetype)stringWithFormat:(NSString *)format, ...;
@@ -218,6 +226,11 @@ enum { NSASCIIStringEncoding = 1, NSUTF8StringEncoding = 4 };
 - (NSInteger)localizedCompare:(NSString *)other;
 - (NSInteger)localizedCaseInsensitiveCompare:(NSString *)other;
 - (NSString *)stringByAddingPercentEscapesUsingEncoding:(NSStringEncoding)encoding;
+- (NSUInteger)lengthOfBytesUsingEncoding:(NSStringEncoding)encoding;
+- (BOOL)getCString:(char *)buffer
+         maxLength:(NSUInteger)maxLength
+          encoding:(NSStringEncoding)encoding;
+- (NSData *)dataUsingEncoding:(NSStringEncoding)encoding;
 @end
 @interface NSMutableString : NSString
 - (void)deleteCharactersInRange:(NSRange)range;
