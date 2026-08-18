@@ -446,6 +446,22 @@ typedef struct {
   CGPoint origin;
   CGSize size;
 } CGRect;
+
+// Core Animation's 4x4 transform. Sixteen floats is the largest argument
+// tapHLE's ABI layer can read, so passing one is worth testing on its own.
+// The NSValue methods that box it are a category here because NSValue is
+// declared above, before there is a CGFloat to build this out of.
+typedef struct CATransform3D {
+  CGFloat m11, m12, m13, m14;
+  CGFloat m21, m22, m23, m24;
+  CGFloat m31, m32, m33, m34;
+  CGFloat m41, m42, m43, m44;
+} CATransform3D;
+
+@interface NSValue (CATransform3DAdditions)
++ (NSValue *)valueWithCATransform3D:(CATransform3D)transform;
+- (CATransform3D)CATransform3DValue;
+@end
 bool CGRectEqualToRect(CGRect, CGRect);
 static inline CGRect CGRectMake(CGFloat x, CGFloat y, CGFloat width,
                                 CGFloat height) {
