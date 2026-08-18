@@ -110,6 +110,18 @@ pub const CLASSES: ClassExports = objc_classes! {
     this
 }
 
+// The counterpart of the archiver's `finishEncoding`, and the call an app makes
+// when it has decoded everything it wanted. There is nothing to flush: what an
+// unarchiver holds is the parsed archive and the objects it has handed out, and
+// both are released in `dealloc` below, where they have to be released anyway
+// for the app that never calls this. Apple also notifies the delegate here, and
+// tapHLE does not implement the delegate at all yet.
+//
+// Doodle Jump v3.1.1 and v3.4 both call it after loading their save, and the
+// missing selector ended them during start-up.
+- (())finishDecoding {
+}
+
 - (())dealloc {
     let host_obj = borrow_host_obj(env, this);
     let already_unarchived = std::mem::take(&mut host_obj.already_unarchived);

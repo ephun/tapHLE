@@ -7119,6 +7119,33 @@ int test_NSKeyedArchiver_intoMutableData() {
   return 0;
 }
 
+// The reading half of the same story: an app that decodes key by key says so
+// when it is done, and the missing selector ended Doodle Jump v3.1.1 and v3.4
+// during start-up, right after they had loaded their save successfully.
+int test_NSKeyedUnarchiver_finishDecoding() {
+  NSMutableData *data = [NSMutableData data];
+  NSKeyedArchiver *archiver =
+      [[NSKeyedArchiver alloc] initForWritingWithMutableData:data];
+  [archiver encodeObject:@"hello" forKey:@"greeting"];
+  [archiver finishEncoding];
+  [archiver release];
+
+  NSKeyedUnarchiver *unarchiver =
+      [[NSKeyedUnarchiver alloc] initForReadingWithData:data];
+  if (unarchiver == nil)
+    return -1;
+  NSString *greeting = [unarchiver decodeObjectForKey:@"greeting"];
+  if (![greeting isEqual:@"hello"])
+    return -2;
+  // Ending the session must not end the app, and what was decoded before it
+  // has to survive it.
+  [unarchiver finishDecoding];
+  if (![greeting isEqual:@"hello"])
+    return -3;
+  [unarchiver release];
+  return 0;
+}
+
 // A mutable object is still the thing it is a subclass of. Writing a property
 // list recognised NSData by exact class, so a game whose save held an
 // NSMutableData -- which is what it holds when the game built the archive
@@ -7750,6 +7777,7 @@ struct {
     FUNC_DEF(test_NSFileHandle_readDataOfLength),
     FUNC_DEF(test_CFGetTypeID),
     FUNC_DEF(test_NSKeyedArchiver_intoMutableData),
+    FUNC_DEF(test_NSKeyedUnarchiver_finishDecoding),
     FUNC_DEF(test_NSPropertyList_mutableLeaves),
     FUNC_DEF(test_NSDictionary_allKeys_forSubclass),
     FUNC_DEF(test_NSObject_setValue_nil),

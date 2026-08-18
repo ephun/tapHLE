@@ -538,6 +538,9 @@
   were only recognised in their finished form, so a game that saved one it
   could still change — the ordinary case when the game assembled the save
   itself — ended at the attempt rather than saving.
+- Let a game say it has finished reading a saved file. Saying so was not
+  possible, so a game that loaded its save successfully was ended by the line
+  that closes the file. Doodle Jump v3.1.1 and v3.4 both stopped there.
 
 ### Known limitations
 
