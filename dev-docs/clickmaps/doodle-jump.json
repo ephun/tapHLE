@@ -1,0 +1,50 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.yourcompany.DoodleJump",
+    "display_name": "DoodleJump",
+    "version": "2.7.1",
+    "sha256": "80ca1e812164631f6015b8c5887402671f063adbb714e64cfba3839a343addb0"
+  },
+  "recorded": {
+    "date": "2026-08-18",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "A round is under way: the doodler bouncing on a platform, platforms above and below, a monster across the top bar, the score, the pause control and the three tutorial captions."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 6000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 14000,
+      "expect": "The main menu: the doodle jump title, play, challenge, scores & achievements, options, and the theme strip along the bottom."
+    },
+    {
+      "id": "play",
+      "from": "main menu",
+      "action": "tap",
+      "at": [105, 148],
+      "settle_ms": 10000,
+      "expect": "The menu fades to black and a round begins. The round is on screen about four seconds after the tap; capturing two seconds after it catches the fade instead."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 320x480 portrait window.",
+    "The window's client rectangle is 560x840 on a 175% display, and a PrintWindow capture of it comes back in logical pixels with the app's 320x480 content at (8, 31). Measure a button from the capture and subtract that offset; taking the client rectangle for the app's coordinate space puts every tap 75% too far down and right.",
+    "The doodler does not climb. It is steered by tilt, tapHLE reports no accelerometer movement, and so it bounces on the platform it started on and the score stays where it is. The round is alive rather than frozen, and two captures a few seconds apart prove it: the doodler is at a different height in each and the monster across the top bar has moved.",
+    "The score is 18 before the player has done anything, which is the game's own starting score on a fresh profile and not a sign that anything has happened yet."
+  ]
+}
