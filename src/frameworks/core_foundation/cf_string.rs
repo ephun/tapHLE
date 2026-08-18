@@ -97,6 +97,20 @@ fn CFStringConvertNSStringEncodingToEncoding(
     }
 }
 
+/// Which encoding this string is cheapest to convert to, and which it is
+/// smallest in. Apps ask before choosing a conversion path — typically to pass
+/// the answer straight to `CFStringGetCStringPtr` — so the two answers have to
+/// be encodings the rest of Core Foundation will accept back.
+fn CFStringGetFastestEncoding(env: &mut Environment, the_string: CFStringRef) -> CFStringEncoding {
+    let encoding = ns_string::fastest_encoding(env, the_string);
+    CFStringConvertNSStringEncodingToEncoding(env, encoding)
+}
+
+fn CFStringGetSmallestEncoding(env: &mut Environment, the_string: CFStringRef) -> CFStringEncoding {
+    let encoding = ns_string::smallest_encoding(env, the_string);
+    CFStringConvertNSStringEncodingToEncoding(env, encoding)
+}
+
 fn CFStringCreateCopy(
     env: &mut Environment,
     allocator: CFAllocatorRef,
@@ -564,6 +578,8 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CFStringConvertEncodingToNSStringEncoding(_)),
     export_c_func!(CFStringConvertNSStringEncodingToEncoding(_)),
     export_c_func!(CFStringCreateCopy(_, _)),
+    export_c_func!(CFStringGetFastestEncoding(_)),
+    export_c_func!(CFStringGetSmallestEncoding(_)),
     export_c_func!(CFStringCreateMutable(_, _)),
     export_c_func!(CFStringCreateMutableCopy(_, _, _)),
     export_c_func!(CFStringCreateWithBytes(_, _, _, _, _)),
