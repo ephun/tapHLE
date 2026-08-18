@@ -1823,6 +1823,110 @@ fn glGetShaderInfoLog(
         }
     });
 }
+/// The shared body of `glGetActiveUniform` and `glGetActiveAttrib`, which
+/// differ only in which list they walk.
+///
+/// Every out-parameter is optional and an app routinely passes NULL for the
+/// ones it does not want — asking only for the name, or only for the type.
+#[allow(clippy::too_many_arguments)]
+fn get_active_variable(
+    env: &mut Environment,
+    program: GLuint,
+    index: GLuint,
+    buf_size: GLsizei,
+    length: MutPtr<GLsizei>,
+    size: MutPtr<GLint>,
+    type_: MutPtr<GLenum>,
+    name: MutPtr<GLubyte>,
+    uniform: bool,
+) {
+    with_ctx_and_mem(env, |gles, mem| unsafe {
+        let capacity = buf_size.max(0) as usize;
+        let mut buf: Vec<u8> = vec![0u8; capacity];
+        // A zero-length buffer is the "I only want the size and type" call, and
+        // the driver must not be handed a pointer into an empty Vec for it.
+        let buf_ptr = if capacity == 0 {
+            std::ptr::null_mut()
+        } else {
+            buf.as_mut_ptr().cast()
+        };
+
+        let mut written: GLsizei = 0;
+        let mut out_size: GLint = 0;
+        let mut out_type: GLenum = 0;
+        if uniform {
+            gles.GetActiveUniform(
+                program,
+                index,
+                buf_size,
+                &mut written,
+                &mut out_size,
+                &mut out_type,
+                buf_ptr,
+            );
+        } else {
+            gles.GetActiveAttrib(
+                program,
+                index,
+                buf_size,
+                &mut written,
+                &mut out_size,
+                &mut out_type,
+                buf_ptr,
+            );
+        }
+
+        if !length.is_null() {
+            mem.write(length, written);
+        }
+        if !size.is_null() {
+            mem.write(size, out_size);
+        }
+        if !type_.is_null() {
+            mem.write(type_, out_type);
+        }
+        if !name.is_null() && written >= 0 && capacity > 0 {
+            // `written` excludes the terminator, which the driver did write, so
+            // one more byte is copied — clamped to what was actually asked for.
+            let count = (written as usize + 1).min(capacity);
+            let dst = mem.ptr_at_mut(name, count.try_into().unwrap_or(0));
+            std::ptr::copy_nonoverlapping(buf.as_ptr(), dst, count);
+        }
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn glGetActiveUniform(
+    env: &mut Environment,
+    program: GLuint,
+    index: GLuint,
+    bufSize: GLsizei,
+    length: MutPtr<GLsizei>,
+    size: MutPtr<GLint>,
+    type_: MutPtr<GLenum>,
+    name: MutPtr<GLubyte>,
+) {
+    get_active_variable(
+        env, program, index, bufSize, length, size, type_, name, true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn glGetActiveAttrib(
+    env: &mut Environment,
+    program: GLuint,
+    index: GLuint,
+    bufSize: GLsizei,
+    length: MutPtr<GLsizei>,
+    size: MutPtr<GLint>,
+    type_: MutPtr<GLenum>,
+    name: MutPtr<GLubyte>,
+) {
+    get_active_variable(
+        env, program, index, bufSize, length, size, type_, name, false,
+    )
+}
+
 fn glGetProgramiv(env: &mut Environment, program: GLuint, pname: GLenum, params: MutPtr<GLint>) {
     with_ctx_and_mem(env, |gles, mem| unsafe {
         let mut val: GLint = 0;
@@ -2361,6 +2465,8 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(glGetShaderiv(_, _, _)),
     export_c_func!(glGetShaderInfoLog(_, _, _, _)),
     export_c_func!(glGetProgramiv(_, _, _)),
+    export_c_func!(glGetActiveUniform(_, _, _, _, _, _, _)),
+    export_c_func!(glGetActiveAttrib(_, _, _, _, _, _, _)),
     export_c_func!(glGetProgramInfoLog(_, _, _, _)),
     export_c_func!(glShaderSource(_, _, _, _)),
     export_c_func!(glEnableVertexAttribArray(_)),
