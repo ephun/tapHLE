@@ -1,0 +1,77 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.idevua.glasstower3",
+    "display_name": "GlassTower3",
+    "version": "2.0.1",
+    "sha256": "123514a494fa81448264b56f128b8dd18eaf2e61594cf73a966b484c9a99e645"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "Level 1 is being played: the tower stands over the Lives/Score HUD, and each tapped block shatters with particles and a score popup while the rest topples."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 6000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 26000,
+      "expect": "The title menu, with PLAY on it. This app is slow to reach it; the note allows about 18 s."
+    },
+    {
+      "id": "play",
+      "from": "title menu",
+      "action": "tap",
+      "at": [160, 130],
+      "expect": "SELECT LEVEL: a 20-tile grid under a header showing total score and stars."
+    },
+    {
+      "id": "level-1",
+      "from": "SELECT LEVEL",
+      "action": "tap",
+      "at": [58, 118],
+      "settle_ms": 10000,
+      "expect": "Level 1: a tower of blocks over the Lives/Score HUD."
+    },
+    {
+      "id": "block-1",
+      "from": "level 1",
+      "action": "tap",
+      "at": [118, 155],
+      "expect": "The block shatters into particles, a score popup (+20 or -20) rises, and the blocks above fall."
+    },
+    {
+      "id": "block-2",
+      "from": "level 1",
+      "action": "tap",
+      "at": [110, 240],
+      "expect": "A second block removed, more physics."
+    },
+    {
+      "id": "block-3",
+      "from": "level 1",
+      "action": "tap",
+      "at": [160, 300],
+      "expect": "A third block removed. The loop is running and persisting, which is the milestone."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 320x480 portrait window.",
+    "Levels are randomly generated, so the tower differs between runs. The three block coordinates are places a block was standing when this was recorded, not fixed targets: a tap on empty space simply does nothing. Judge the milestone by whether tapping removes blocks at all, not by these exact points.",
+    "The rising-bonus tutorial overlay can appear over the level. The game keeps running behind it and it does not block the route."
+  ]
+}

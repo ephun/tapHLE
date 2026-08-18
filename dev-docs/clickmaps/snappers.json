@@ -1,0 +1,80 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "ru.emergingmobile.snappers",
+    "display_name": "Snappers",
+    "version": "1.08",
+    "sha256": "69ade8efac1958a2259ff8cebc5e79e2953606409a1787307ca62bb4dafeafc6"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "Level 1-1 is played and solved: tapping the snapper takes Taps left from 1 to 0 and the board shows Completed! / Score: 50."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 6000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 34000,
+      "expect": "The title screen with the round Play button. This app is slow to launch; the note allows about 30 s."
+    },
+    {
+      "id": "play",
+      "from": "title",
+      "action": "tap",
+      "at": [160, 240],
+      "expect": "The level pack screen — a carousel of photo tiles."
+    },
+    {
+      "id": "pack",
+      "from": "level pack carousel",
+      "action": "tap",
+      "at": [160, 190],
+      "expect": "Still on the pack screen, with the pack selected."
+    },
+    {
+      "id": "grid",
+      "from": "level pack carousel",
+      "action": "tap",
+      "at": [160, 250],
+      "expect": "The 5x5 level grid. Only Level 1 is unlocked on a fresh profile."
+    },
+    {
+      "id": "level-1",
+      "from": "level grid",
+      "action": "tap",
+      "at": [50, 68],
+      "settle_ms": 8000,
+      "expect": "Level 1-1: the board with the snapper on it, `Level: 1-1` and `Taps left: 1`."
+    },
+    {
+      "id": "snap",
+      "from": "level 1-1",
+      "action": "tap",
+      "at": [160, 210],
+      "settle_ms": 8000,
+      "expect": "The snapper fires, Taps left goes 1 -> 0, and the screen shows `Completed!` and `Score: 50`."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 320x480 portrait window.",
+    "A static screen is not a failure here. Snappers is a puzzle game, so an unsolved board does not animate and a hash comparison of two captures reports 'static' for a perfectly healthy run. Judge this by reaching `Completed!`, not by whether the picture changed.",
+    "The level grid is save-dependent: on a fresh profile only Level 1 is unlocked and it sits at (50, 68). With progress saved, more tiles are unlocked but Level 1 stays in the same place, so the route survives both.",
+    "`Score: 50` is the fresh-profile score. Replaying over a save that already has 1-1 completed scored 10 instead. The number is not the evidence; `Completed!` with `Taps left: 0` is.",
+    "The `Completed!` screen persists — it was still up five seconds after the last step. An all-white capture of this app is a capture fault, not the app: a desktop screen-grab copies whatever is on top at those coordinates, so anything covering the tapHLE window is what lands in the file. Check the window is really in front, or capture with PrintWindow."
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.idevua.glasstower2",
+    "display_name": "GlassTower2",
+    "version": "1.7",
+    "sha256": "5383f5eab7a54f6984bbb0797e1b295952371a7981f3132d54699e2e5a9df421"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "Level 1 of the free pack is being played: the glass tower stands over the Score/Lives HUD, and tapping blocks removes them so the tower settles and the HUD counts."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 6000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 20000,
+      "expect": "The title menu, with GLASS TOWER GAME as the first entry."
+    },
+    {
+      "id": "glass-tower-game",
+      "from": "title menu",
+      "action": "tap",
+      "at": [160, 128],
+      "expect": "The game submenu, with NEW GAME on it."
+    },
+    {
+      "id": "new-game",
+      "from": "game submenu",
+      "action": "tap",
+      "at": [160, 150],
+      "expect": "SELECT LEVEL PACK."
+    },
+    {
+      "id": "free-pack",
+      "from": "SELECT LEVEL PACK",
+      "action": "tap",
+      "at": [160, 128],
+      "settle_ms": 10000,
+      "expect": "Level 1: the tower of blocks drawn over the Score/Lives HUD."
+    },
+    {
+      "id": "block-1",
+      "from": "level 1",
+      "action": "tap",
+      "at": [122, 320],
+      "expect": "The tapped block disappears, the blocks above it topple and settle, and the HUD changes — Score up for a plain block, Lives down with a red -10 popup for a red one."
+    },
+    {
+      "id": "block-2",
+      "from": "level 1",
+      "action": "tap",
+      "at": [197, 320],
+      "expect": "A second block removed and more physics: the loop is running, which is the milestone."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 320x480 portrait window.",
+    "The tower layout is fixed for a given pack level, but blocks move as earlier ones are removed, so the two block taps aim at the lower course where something is still standing. If a block tap lands on empty space nothing happens and nothing breaks — tap where a block is instead of expecting these exact points to stay occupied.",
+    "An earlier account in the app note reaches SELECT LEVEL PACK by a different path and picks the free pack at (160, 165). The route here is the one recorded with the 3-star milestone; try (160, 165) if the free-pack tap stops working."
+  ]
+}

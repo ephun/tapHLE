@@ -11,7 +11,7 @@
     "by": "Claude Code (Opus 5)"
   },
   "options": [],
-  "window": { "width": 480, "height": 320, "orientation": "landscape" },
+  "window": { "width": 480, "height": 320 },
   "milestone": {
     "rating": 3,
     "describes": "A campaign battle is fought and resolved: the territory map, an attack, the battlefield, and the map afterwards with the player's territory expanded."

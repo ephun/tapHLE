@@ -27,6 +27,12 @@ a red block.
 
 ### Click map
 
+The route is recorded as `dev-docs/clickmaps/glass-tower-2.json` and was replayed end to end
+on `e4e0d528` on 2026-08-17. Replay the map rather than retyping the steps
+below; the prose is kept for the reasoning behind the coordinates, and the map
+is what should be kept correct.
+
+
 No launch options; window 320x480 portrait; wait ~12 s for the title menu.
 
 1. Title menu -> `(160, 128)` GLASS TOWER GAME -> game submenu.

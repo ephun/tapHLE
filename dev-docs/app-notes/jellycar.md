@@ -103,6 +103,13 @@ Backing out of the help section with the bottom-left arrow reveals the **real
 main menu**: a spiral notebook with mode icons down the left margin. Play
 starts from there.
 
+The route is recorded as `dev-docs/clickmaps/jellycar-2.json` — named for the app
+rather than for this note, because this note covers three JellyCar builds and only
+JellyCar 2 has a route — and was replayed end to end
+on `e4e0d528` on 2026-08-17. Replay the map rather than retyping the steps
+below; the prose is kept for the reasoning behind the coordinates, and the map
+is what should be kept correct.
+
 Click map, 1024x768 client, ~22 s launch wait:
 
 1. First screen -> `(62, 705)` back arrow -> notebook main menu.

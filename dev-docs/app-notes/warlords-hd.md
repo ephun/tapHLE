@@ -30,6 +30,11 @@ Two general fixes were needed past the 2-star menu (both graduate to trunk):
 `+[NSPropertyListSerialization dataFromPropertyList:format:errorDescription:]`
 accepting a non-null error out-parameter.
 
+The route is recorded as `dev-docs/clickmaps/warlords-hd.json` and was replayed end to end
+on `e4e0d528` on 2026-08-17. Replay the map rather than retyping the steps
+below; the prose is kept for the reasoning behind the coordinates, and the map
+is what should be kept correct.
+
 Proven input recipe (client coords, 1024x768 landscape-native window; ~15 s
 menu wait, then real foreground mouse taps): Play (95,418); Campaign (95,415);
 Start Campaign (870,745); Continue (910,745); territory "Vorth" (700,370);

@@ -1,0 +1,64 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.ponos.mraahh",
+    "display_name": "Mr.AahH!!",
+    "version": "1.2.0",
+    "sha256": "04e28cf42c25027ca196f3fdcff477152ba78d8ba6f8fa9aed0f11de03788c31"
+  },
+  "recorded": {
+    "date": "2026-08-17",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "options": [],
+  "window": {
+    "width": 480,
+    "height": 320,
+    "orientation": "landscape-left"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "The game is being played: the stick figure hangs from a rope over the pillars, tapping drops him, the level counter advances (A-1 onward) and lives are lost on a miss."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 6000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 24000,
+      "expect": "The title screen with three unlabelled menu bars down the right."
+    },
+    {
+      "id": "start",
+      "from": "title",
+      "action": "tap",
+      "at": [378, 148],
+      "settle_ms": 8000,
+      "expect": "Level A-1: the stick figure hanging from a rope over the pillars, with the level counter and three hearts."
+    },
+    {
+      "id": "drop-1",
+      "from": "gameplay",
+      "action": "tap",
+      "at": [240, 160],
+      "expect": "The character drops and swings. Either he lands and the level advances, or he misses and a heart is lost."
+    },
+    {
+      "id": "drop-2",
+      "from": "gameplay",
+      "action": "tap",
+      "at": [240, 160],
+      "settle_ms": 10000,
+      "expect": "A second drop. Across these two taps the level counter moved A-1 -> A-4 and the hearts fell from three to one when this was recorded — levels advance and failure is scored, which is the milestone."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 480x320 landscape window.",
+    "The menu buttons draw with no labels on them, so step 1 is 'the topmost of the three bars' rather than a named button. Do not go looking for text that is not there.",
+    "How far the level counter moves depends on whether each drop lands, so the exact A-1 -> A-4 in the recording is not something to expect again. What must happen is that taps make the character drop and the counters change."
+  ]
+}

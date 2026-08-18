@@ -38,6 +38,12 @@ The result matches the original `169bf157` evidence exactly: `Level: 1-1`,
 
 ### Click map, recorded because it was missing
 
+The route is recorded as `dev-docs/clickmaps/snappers.json` and was replayed end to end
+on `e4e0d528` on 2026-08-17. Replay the map rather than retyping the steps
+below; the prose is kept for the reasoning behind the coordinates, and the map
+is what should be kept correct.
+
+
 The original note described the route in prose but gave no coordinates, which
 cost a re-verification run rediscovering them. 320x480 client, ~30 s launch:
 

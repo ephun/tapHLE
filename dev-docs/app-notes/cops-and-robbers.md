@@ -56,6 +56,12 @@ process stayed alive and animating throughout.
 
 ### Proven input recipe
 
+The route is recorded as `dev-docs/clickmaps/cops-and-robbers.json` and was replayed end to end
+on `e4e0d528` on 2026-08-17. Replay the map rather than retyping the steps
+below; the prose is kept for the reasoning behind the coordinates, and the map
+is what should be kept correct.
+
+
 Client coordinates as fractions of a 320x480 client area, with a title-bar focus
 click first (see the playbook). Each tap is a real foreground mouse event.
 

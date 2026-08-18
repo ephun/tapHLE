@@ -28,6 +28,12 @@ scored.
 
 ### Click map
 
+The route is recorded as `dev-docs/clickmaps/mr-aahh.json` and was replayed end to end
+on `e4e0d528` on 2026-08-17. Replay the map rather than retyping the steps
+below; the prose is kept for the reasoning behind the coordinates, and the map
+is what should be kept correct.
+
+
 No launch options; window 480x320 landscape; ~20 s title-screen wait.
 
 1. Title -> `(378, 148)` first (topmost) menu button -> level A-1.

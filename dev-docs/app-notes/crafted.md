@@ -31,6 +31,38 @@ moment a fix works is exactly the moment the tree is dirty. The remedy is in
 `AGENTS.md`: stop at a boundary, commit, rebuild clean, re-verify, publish, and
 only then start the next blocker.
 
+## 2026-08-17: the route is a clickmap, and a saved world breaks the app
+
+The route is recorded as `dev-docs/clickmaps/crafted.json` and was replayed end
+to end on `e4e0d528`: main menu -> Singleplayer `(240, 154)` -> Create New World
+`(366, 247)` -> the creation form's own Create New World `(240, 247)` -> a
+generated world, still live and animating thirty seconds later. Replay the map
+rather than retyping the steps.
+
+**Recording it turned up a tapHLE bug that the original run could not have
+seen.** The 2026-08-05 session created its world and stopped. Replaying the
+route a second time does not get past the first tap: Singleplayer panics tapHLE
+with
+
+```text
+thread 'main' panicked at src/fs.rs:875:18:
+not implemented
+```
+
+The Select World screen asks `NSFileManager` for the saved world's attributes,
+that asks `Fs::size()` for the size of a **directory**, and `size()` handles
+only the two file cases and falls through to `unimplemented!()` for everything
+else. Reproduced three times, and it goes away exactly when
+`tapHLE_sandbox/com.Pickl.Crafted/Documents/saves/<world>` is deleted.
+
+So this app is three stars on a fresh profile and cannot reach its own world
+list on the second launch — which is worse than the rating suggests, because
+saving a world is the normal thing a player does. The fix is general and
+belongs to `Fs::size()`, not to this app: a directory has a size on every host
+tapHLE runs on, and any app that stats one hits this. It is not fixed here
+because it is emulator behaviour a user hits, so it wants its own `fix/` branch
+rather than riding along with a documentation change.
+
 ## 2026-08-05: three stars on `10075dc6`
 
 Reaches a gameplay loop that starts and persists. Verified with OS-level
