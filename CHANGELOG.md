@@ -507,6 +507,11 @@
   could be held but not written, and a game that put one in its save file was
   ended by the attempt to save — all four versions of Doodle Jump stopped this
   way during start-up, before drawing anything.
+- Let a game read the end of a file. Asking for more bytes than are left, or
+  reading an empty file at all, ended the game instead of giving it what was
+  there — which for a game reading its own settings on start-up is fatal the
+  first time it runs, before any settings exist. Mr.Oops!! stopped five seconds
+  in, reading four bytes of an empty save, and now runs on.
 
 ### Known limitations
 
