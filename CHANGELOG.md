@@ -519,6 +519,11 @@
   Super Hexagon and Don't Look Back stopped there during start-up. Comparing
   two such values now works for every kind as well, where before anything but
   text ended the game.
+- Let a game ask its own graphics program what settings it has. Modern-style
+  games look through the list when they start, to connect each setting to the
+  value they will feed it, and the question did not exist, so the game ended
+  at the first one. Organ Trail Director's Cut and Temple Run 2 now start and
+  keep running, and Ski Safari gets past it too.
 
 ### Known limitations
 
