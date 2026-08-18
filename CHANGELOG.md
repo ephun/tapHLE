@@ -496,6 +496,13 @@
   instead. A conversion tapHLE cannot make is simply reported as not made, which
   is the answer games are written to expect, and the ones it can make it now
   makes exactly, including the two-byte way of writing text used worldwide.
+- Answer a game that asks how this device reaches the internet. Games ask on
+  start-up, usually through an advertising or analytics kit, and the question
+  had no answer at all: three versions of Super Hexagon, Don't Look Back and
+  two of Fieldrunners all stopped there before showing anything. The answer is
+  the true one for a machine with no proxy set — nothing in the way, connect
+  directly — and it is a real answer rather than a blank, which matters because
+  a game handed a blank reads it as an address and stops on the spot.
 
 ### Known limitations
 
