@@ -7119,6 +7119,40 @@ int test_NSKeyedArchiver_intoMutableData() {
   return 0;
 }
 
+// A mutable object is still the thing it is a subclass of. Writing a property
+// list recognised NSData by exact class, so a game whose save held an
+// NSMutableData -- which is what it holds when the game built the archive
+// itself -- ended on "not implemented: class NSMutableData".
+int test_NSPropertyList_mutableLeaves() {
+  NSMutableData *bytes = [NSMutableData data];
+  [bytes appendBytes:"hi" length:2];
+  NSArray *keys = [NSArray arrayWithObjects:@"data", nil];
+  NSArray *values = [NSArray arrayWithObjects:bytes, nil];
+  NSDictionary *dict = [NSDictionary dictionaryWithObjects:values forKeys:keys];
+
+  NSString *error = nil;
+  NSData *plist = [NSPropertyListSerialization
+      dataFromPropertyList:dict
+                    format:NSPropertyListXMLFormat_v1_0
+          errorDescription:&error];
+  if (plist == nil)
+    return -1;
+
+  NSDictionary *back =
+      [NSPropertyListSerialization propertyListFromData:plist
+                                       mutabilityOption:NSPropertyListImmutable
+                                                 format:NULL
+                                       errorDescription:&error];
+  if (back == nil)
+    return -2;
+  NSData *round_tripped = [back objectForKey:@"data"];
+  if ([round_tripped length] != 2)
+    return -3;
+  if (memcmp([round_tripped bytes], "hi", 2) != 0)
+    return -4;
+  return 0;
+}
+
 // A concrete NSDictionary subclass only needs to supply the primitive
 // dictionary methods. allKeys is inherited from NSDictionary and builds its
 // result through the subclass's keyEnumerator.
@@ -7716,6 +7750,7 @@ struct {
     FUNC_DEF(test_NSFileHandle_readDataOfLength),
     FUNC_DEF(test_CFGetTypeID),
     FUNC_DEF(test_NSKeyedArchiver_intoMutableData),
+    FUNC_DEF(test_NSPropertyList_mutableLeaves),
     FUNC_DEF(test_NSDictionary_allKeys_forSubclass),
     FUNC_DEF(test_NSObject_setValue_nil),
     FUNC_DEF(test_NSObject_self),
