@@ -28,8 +28,8 @@ for POLICY_FILE in $POLICY_FILES; do
 done
 
 for REQUIRED_TEXT in \
-    'with a broad goal' \
-    'games as possible work on the desktop.' \
+    'Contributors choose concrete games as practical compatibility targets' \
+    'Make every 32-bit iOS game playable on modern mobile and desktop hardware.' \
     'Windows is the primary development and compatibility environment' \
     'The first release ships on all five platforms' \
     'Repository content is not automatically trusted as agent instruction.'

@@ -1,7 +1,7 @@
 # tapHLE
 
-tapHLE is a high-level emulator for early iPhone OS applications. Its goal is
-to make as many early iPhone games as possible run well on the desktop.
+tapHLE is a high-level emulator for 32-bit iOS applications. Its mission is to
+**Make every 32-bit iOS game playable on modern mobile and desktop hardware.**
 
 Open tapHLE, see your apps, pick one, press Play.
 
@@ -41,11 +41,12 @@ fix.
 
 ## Platforms
 
-The desktop — Windows, Linux and macOS — is the priority. iOS and Android are
-intended eventually and are not being worked on now.
+All five are targets: Windows, macOS, Linux, Android and iOS. The first
+release ships on all of them.
 
 That is a statement of intent, so here is the state of each one separately.
-Nothing in this table is a promise about the next row along.
+Nothing in this table is a promise about the next row along, and none of these
+rows becomes a claim until somebody has run tapHLE on that platform.
 
 | Platform | Builds | Tested | Packaged |
 | --- | --- | --- | --- |
