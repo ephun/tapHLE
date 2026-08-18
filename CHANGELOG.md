@@ -567,6 +567,9 @@
   news or an offer — and then closes it as play begins was ended by the
   closing. Doodle Jump does this at the moment a round starts, so the game
   could not be reached at all; a round now plays.
+- Answer a game asking which way of storing its text is cheapest. The question
+  had no answer at all and ended the game; Ski Safari asked it during start-up
+  and now reaches its title screen.
 
 ### Known limitations
 

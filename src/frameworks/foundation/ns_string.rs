@@ -2494,6 +2494,31 @@ mod ns_string_tests {
     }
 }
 
+/// The encoding a string is already held in, which is the one it converts to
+/// most cheaply.
+///
+/// tapHLE keeps a string as either UTF-8 or UTF-16 and converts on demand, so
+/// this is not a guess: it is what the host object is holding right now.
+pub fn fastest_encoding(env: &mut Environment, string: id) -> NSStringEncoding {
+    match env.objc.borrow::<StringHostObject>(string) {
+        StringHostObject::Utf8(_) => NSUTF8StringEncoding,
+        StringHostObject::Utf16(_) => NSUTF16StringEncoding,
+    }
+}
+
+/// The encoding a string takes the least room in.
+///
+/// ASCII when every character fits in it, which is the case this question is
+/// asked about, and UTF-8 otherwise — never UTF-16, which is larger than UTF-8
+/// for everything an early iPhone app is likely to be holding.
+pub fn smallest_encoding(env: &mut Environment, string: id) -> NSStringEncoding {
+    if to_rust_string(env, string).is_ascii() {
+        NSASCIIStringEncoding
+    } else {
+        NSUTF8StringEncoding
+    }
+}
+
 /// Encode a string's characters as bytes in `encoding`: the mirror of
 /// [StringHostObject::decode], and it answers the same way.
 ///
