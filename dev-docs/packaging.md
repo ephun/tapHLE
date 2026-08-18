@@ -14,7 +14,10 @@ a build into something somebody can install.
 | Android | inherited source only | no | no |
 | iOS | on `feat/ios-host` | no | no |
 
-Nothing below claims a package works before somebody has produced one.
+Nothing below claims a package works before somebody has produced one. All five
+rows have to reach "yes" in every column before the first release, which is the
+bar recorded under "Platforms" in `AGENTS.md`; this table is the honest measure
+of the distance left.
 
 ## Windows
 
@@ -106,7 +109,17 @@ need `paths::user_data_base_path` to learn about XDG directories first.
 
 ## Android and iOS
 
-Neither is a current target. The inherited Android source is in `android/`.
-The iOS host lives on `feat/ios-host`. Neither has a frontend story, and the
-frontend as written assumes a desktop window and a child process, so a mobile
-port would share the library and settings model but not the window.
+**Both are release targets as of 2026-08-17**; see "Platforms" in `AGENTS.md`.
+The Android source is in `android/`, the iOS host on `feat/ios-host`.
+
+Neither has a frontend yet, and that is the substantial piece of work. The
+desktop frontend assumes a window it owns and an emulator it launches as a
+child process (`dev-docs/gui-architecture.md`), and neither assumption holds on
+a phone: there is no second process to spawn, and the OS owns the window. A
+mobile frontend therefore shares the library model, the settings model and the
+compatibility-database client, but not the process model or the window.
+
+What each mobile frontend owes, per the maintainer's release bar: the
+report-submission options, whichever settings apply on that platform, and the
+help/about sections — and a design consistent with the desktop, so the five
+frontends read as one product.
