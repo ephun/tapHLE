@@ -262,9 +262,8 @@ distinction is the reason the field exists.
 
 **Submit it yourself, without asking.** A report is ordinary finished work, in
 exactly the way an ordinary `git push` is: the maintainer set the goal, the
-result is the deliverable, and every submission lands unapproved for review
-anyway, so asking permission adds a round trip and buys no safety. Stopping to
-ask is the error, not the caution. The narrow exceptions elsewhere in this guide
+result is the deliverable, and asking permission adds a round trip that buys no
+safety. Stopping to ask is the error, not the caution. The narrow exceptions elsewhere in this guide
 — force-pushing, rewriting published history, release tags — do not extend to
 this.
 
@@ -272,8 +271,15 @@ Submit a report when the rating changes — in either direction, because a
 regression is a result worth publishing. Do not submit when a rerun merely
 reproduces a rating already recorded for that tapHLE revision: the endpoint
 deliberately does not deduplicate reports, so a repeat submission is pure
-moderation noise. Every submission lands unapproved and becomes public only when
-the maintainer approves it.
+moderation noise.
+
+**A submission may go public immediately, so check what the response says.**
+Most tokens land a report unapproved for the maintainer to review, but the
+maintainer's own agent token is configured to publish on arrival; the response
+says `"status": "approved"` rather than `"pending_moderation"` when it did. That
+does not change what to submit or when — it changes what a careless submission
+costs, because there may be no review between you and a reader. Get the identity
+and the rating right the first time.
 
 **Every star boundary gets its own report, at the time it is crossed.** An app
 that goes one star to two to three earns three reports, not one. Do not save
