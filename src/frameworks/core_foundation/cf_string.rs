@@ -422,7 +422,20 @@ fn CFStringGetBytes(
         let buffer_size: NSUInteger = max_buf_len.try_into().unwrap();
         let success: bool =
             ns_string::get_bytes_buffer_inner(env, substring, buffer, buffer_size, encoding, false);
-        assert!(success); // TODO
+        if !success {
+            // Zero characters converted is how CFStringGetBytes reports that it
+            // wrote nothing, whether the buffer was too small or the encoding
+            // cannot represent the string. The caller reads `used_buf_len` to
+            // find out how much was written, so it has to agree.
+            log!(
+                "Warning: CFStringGetBytes could not write {:?} in encoding {} to a {} byte buffer; converting nothing",
+                substring, encoding, buffer_size
+            );
+            if !used_buf_len.is_null() {
+                env.mem.write(used_buf_len, 0);
+            }
+            return 0;
+        }
     }
     let length: NSUInteger = msg![env; substring length];
     assert_eq!(length, NSUInteger::try_from(range_len).unwrap());

@@ -32,7 +32,7 @@ use crate::objc::{
     HostObject, NSZonePtr, ObjC,
 };
 use crate::{fs, Environment};
-use encoding_rs::{SHIFT_JIS, WINDOWS_1252};
+use encoding_rs::{MACINTOSH, SHIFT_JIS, WINDOWS_1252};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Write;
@@ -638,12 +638,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (NSUInteger)lengthOfBytesUsingEncoding:(NSStringEncoding)encoding {
-    if C_STRING_FRIENDLY_ENCODINGS.contains(&encoding) {
-        let string = to_rust_string(env, this);
-        assert!(string.as_bytes().iter().all(|byte| byte.is_ascii())); // TODO
-        string.len().try_into().unwrap()
-    } else {
-        unimplemented!("lengthOfBytesUsingEncoding: {}", encoding)
+    // Zero is Foundation's answer for a string that cannot be represented in
+    // the encoding, deliberately the same answer as for an empty string: the
+    // caller allocates nothing and converts nothing.
+    match encode_string(env, this, encoding) {
+        Some(bytes) => bytes.len().try_into().unwrap(),
+        None => 0,
     }
 }
 
@@ -2165,18 +2165,17 @@ fn data_using_encoding_lossy_inner(
             to_rust_string(env, this)
         );
     }
-    assert!(
-        encoding == NSUTF8StringEncoding
-            || encoding == NSASCIIStringEncoding
-            || encoding == NSISOLatin1StringEncoding
-    );
-
-    let string = to_rust_string(env, this);
-    if encoding == NSASCIIStringEncoding || encoding == NSISOLatin1StringEncoding {
-        assert!(string.as_bytes().iter().all(|byte| byte.is_ascii()));
-    }
-    let c_string = env.mem.alloc_and_write_cstr(string.as_bytes());
-    let length: NSUInteger = (string.len() + 1).try_into().unwrap();
+    let Some(bytes) = encode_string(env, this, encoding) else {
+        // `dataUsingEncoding:` returns nil for a string it cannot convert,
+        // and that is the branch the app already has written for it.
+        // `encode_string` has already said why in the log.
+        return nil;
+    };
+    // TODO: this includes the terminator in the NSData and Foundation does
+    // not. Left as it was: it is a different defect from the assertion
+    // replaced here, and apps have been measured against the behaviour.
+    let c_string = env.mem.alloc_and_write_cstr(&bytes);
+    let length: NSUInteger = (bytes.len() + 1).try_into().unwrap();
 
     msg_class![env; NSData dataWithBytesNoCopy:(c_string.cast_void()) length:length]
 }
@@ -2495,6 +2494,82 @@ mod ns_string_tests {
     }
 }
 
+/// Encode a string's characters as bytes in `encoding`: the mirror of
+/// [StringHostObject::decode], and it answers the same way.
+///
+/// `None` means the string cannot be represented in that encoding, which is an
+/// ordinary answer rather than an error. Foundation says so with `NO`, `nil` or
+/// zero depending on the call, and every caller here has one of those to
+/// return. It used to be an assertion instead, on the theory that an app asking
+/// for an encoding tapHLE had not implemented was a bug to surface loudly. What
+/// it actually surfaced was four apps dying during start-up — three versions of
+/// Super Hexagon and Don't Look Back — over a string conversion whose failure
+/// they were already written to handle.
+pub fn encode_string(
+    env: &mut Environment,
+    string: id,
+    encoding: NSStringEncoding,
+) -> Option<Vec<u8>> {
+    let string = to_rust_string(env, string);
+
+    fn with_encoding_rs(encoding: &'static encoding_rs::Encoding, string: &str) -> Option<Vec<u8>> {
+        // encoding_rs substitutes a numeric character reference for anything it
+        // cannot map and reports that as an error. Substituting "&#1234;" into
+        // what the app believes is its own text is worse than saying no, so the
+        // error is passed on rather than absorbed.
+        let (bytes, encoding_used, had_errors) = encoding.encode(string);
+        (!had_errors && encoding_used == encoding).then(|| bytes.into_owned())
+    }
+
+    match encoding {
+        NSUTF8StringEncoding => Some(string.into_owned().into_bytes()),
+        NSASCIIStringEncoding => string.is_ascii().then(|| string.into_owned().into_bytes()),
+        // Latin-1 is exactly the first 256 Unicode code points, one byte each,
+        // so this needs no table: a character outside that range is the whole
+        // of what the encoding cannot say.
+        NSISOLatin1StringEncoding => string
+            .chars()
+            .map(|c| u8::try_from(u32::from(c)).ok())
+            .collect(),
+        NSMacOSRomanStringEncoding => with_encoding_rs(MACINTOSH, &string),
+        NSWindowsCP1252StringEncoding => with_encoding_rs(WINDOWS_1252, &string),
+        NSShiftJISStringEncoding => with_encoding_rs(SHIFT_JIS, &string),
+        NSUTF16StringEncoding
+        | NSUTF16BigEndianStringEncoding
+        | NSUTF16LittleEndianStringEncoding => {
+            // NSUnicodeStringEncoding is host-endian, and every host tapHLE
+            // targets is little-endian, so it and the explicit little-endian
+            // spelling produce the same bytes. No BOM is written: this is the
+            // raw-bytes path, where the caller has told us the byte order.
+            let big_endian = encoding == NSUTF16BigEndianStringEncoding;
+            let mut bytes = Vec::with_capacity(string.len() * 2);
+            for unit in string.encode_utf16() {
+                bytes.extend_from_slice(&if big_endian {
+                    unit.to_be_bytes()
+                } else {
+                    unit.to_le_bytes()
+                });
+            }
+            Some(bytes)
+        }
+        _ => {
+            log!(
+                "TODO: encoding a string as NSStringEncoding {} is unimplemented; reporting the conversion as failed",
+                encoding
+            );
+            None
+        }
+    }
+}
+
+/// Whether a NUL terminator in `encoding` is two bytes wide rather than one.
+fn encoding_is_utf16(encoding: NSStringEncoding) -> bool {
+    matches!(
+        encoding,
+        NSUTF16StringEncoding | NSUTF16BigEndianStringEncoding | NSUTF16LittleEndianStringEncoding
+    )
+}
+
 /// Helper function to get bytes of a string in the specified NSStringEncoding.
 ///
 /// `include_null_terminator` flag controls if NULL-terminator should be
@@ -2513,41 +2588,21 @@ pub fn get_bytes_buffer_inner(
     encoding: NSStringEncoding,
     include_null_terminator: bool,
 ) -> bool {
-    // TODO: other encodings
-    assert!(
-        encoding == NSUTF8StringEncoding
-            || encoding == NSASCIIStringEncoding
-            || encoding == NSMacOSRomanStringEncoding
-            || encoding == NSISOLatin1StringEncoding
-    );
-
-    let src = to_rust_string(env, str);
-    if encoding == NSASCIIStringEncoding
-        || encoding == NSMacOSRomanStringEncoding
-        || encoding == NSISOLatin1StringEncoding
-    {
-        // TODO: properly support Mac OS Roman and ISO Latin 1 encoding.
-        // The first 128 characters are identical to the ASCII
-        assert!(src.as_bytes().iter().all(|byte| byte.is_ascii()));
-    }
-    let dest = env.mem.bytes_at_mut(buffer, buffer_size);
-    let src_len = if include_null_terminator {
-        src.len() + 1
-    } else {
-        src.len()
+    let Some(mut src) = encode_string(env, str, encoding) else {
+        // The same answer as a buffer that is too small: the caller is told the
+        // bytes are not there, which is a case it already has to handle.
+        return false;
     };
-    if dest.len() < src_len {
+    if include_null_terminator {
+        let nul_width = if encoding_is_utf16(encoding) { 2 } else { 1 };
+        src.extend(std::iter::repeat_n(0u8, nul_width));
+    }
+
+    let dest = env.mem.bytes_at_mut(buffer, buffer_size);
+    if dest.len() < src.len() {
         return false;
     }
-
-    let iter: Box<dyn Iterator<Item = &u8>> = if include_null_terminator {
-        Box::new(src.as_bytes().iter().chain(b"\0".iter()))
-    } else {
-        Box::new(src.as_bytes().iter())
-    };
-    for (i, &byte) in iter.enumerate() {
-        dest[i] = byte;
-    }
+    dest[..src.len()].copy_from_slice(&src);
 
     true
 }
