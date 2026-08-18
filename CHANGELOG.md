@@ -582,6 +582,11 @@
   there — and the scroll now actually happens, by the shortest distance that
   brings the item on screen. Both Carnivores games do this while building
   their menus.
+- Support the documented way of building your own kind of list, text or
+  lookup table. A game that supplies its own storage for one — the way Apple's
+  own documentation says to — was quietly given tapHLE's storage instead, so
+  it answered questions about a container that was always empty while its own
+  count said otherwise. Creating one at all ended the game.
 
 ### Known limitations
 

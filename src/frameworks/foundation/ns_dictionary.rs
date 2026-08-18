@@ -495,8 +495,14 @@ pub const CLASSES: ClassExports = objc_classes! {
     autorelease(env, new_dict)
 }
 
+// Reached only by a guest subclass calling `[super init]`, because
+// `+[NSDictionary alloc]` hands back a concrete instance whose own `init` runs
+// instead. Such a subclass brings its own storage — that is what makes it a
+// concrete subclass — so there is nothing here to initialise and the object is
+// simply returned. It used to be a `todo!()`, which ended any app that
+// subclassed NSDictionary the way Apple documents.
 - (id)init {
-    todo!("TODO: Implement [dictionary init] for custom subclasses")
+    this
 }
 
 // These probably comes from some category related to plists.
