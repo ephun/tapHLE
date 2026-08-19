@@ -129,6 +129,13 @@
   no answer at all, and a game that then uses the answer without checking stops
   on the spot — a long way from anything to do with files.
 
+- Answer when a game asks a folder about itself. A game that keeps saved games
+  in a folder asks the folder for its details before it reads a single save,
+  and tapHLE had no answer for how big a folder is — it stopped the game
+  instead. So a game could be saved once and then never opened again: the first
+  session played fine and the second died on the screen that lists what you
+  saved.
+
 - Let a game get past the sliding menu of choices that comes up from the bottom
   of the screen — the one for "share", "restart", "delete" and the like. tapHLE
   cannot draw it, and it did not exist at all, so a game that offered one ended

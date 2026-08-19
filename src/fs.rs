@@ -33,7 +33,7 @@ use crate::paths;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -870,9 +870,31 @@ impl Fs {
                 FileLocation::Path(path) => {
                     fs::metadata(path).map(|meta| meta.len()).map_err(|_| ())
                 }
-                _ => unimplemented!(),
+                // A file tapHLE ships with itself is an ordinary host file on
+                // most platforms, but on Android it lives inside the APK and is
+                // only reachable through SDL's asset wrapper, so its length is
+                // measured by seeking to the end rather than by asking the host
+                // filesystem about a path that isn't one.
+                FileLocation::ResourceFilePath(name) => {
+                    let mut resource_file = paths::ResourceFile::open(name).map_err(|_| ())?;
+                    resource_file.get().seek(SeekFrom::End(0)).map_err(|_| ())
+                }
             },
-            _ => unimplemented!(),
+            // Directories have a size too, and apps ask for it: a game showing
+            // its save folder asks the folder for its attributes before it
+            // reads any save inside it, and a directory that answered with an
+            // error would stop the app dead where a device answered fine.
+            // The host's own directory record is the closest thing to what the
+            // app would have read on a device.
+            FsNode::Directory { writeable, .. } => match writeable {
+                Some(host_path) => fs::metadata(host_path)
+                    .map(|meta| meta.len())
+                    .map_err(|_| ()),
+                // A directory tapHLE synthesised — inside an app bundle, say —
+                // has no host record to measure, and it holds no bytes of its
+                // own, so zero is the honest answer rather than a guess.
+                None => Ok(0),
+            },
         }
     }
 
@@ -1304,5 +1326,77 @@ impl Fs {
             },
         );
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two directories of the kinds the guest filesystem actually holds: one
+    /// backed by a host directory, as an app's own `Documents` is, and one that
+    /// exists only in the guest, as the folders inside a bundle read from an
+    /// `.ipa` do. Also one ordinary file, so a change to the directory answer
+    /// cannot quietly change the file answer.
+    fn fs_with_a_directory_of_each_kind(host_dir: &Path) -> Fs {
+        let mut host_backed_children = HashMap::new();
+        host_backed_children.insert(
+            "save".to_string(),
+            FsNode::File {
+                location: FileLocation::Path(host_dir.join("save")),
+                writeable: true,
+            },
+        );
+
+        let mut children = HashMap::new();
+        children.insert(
+            "saves".to_string(),
+            FsNode::Directory {
+                children: host_backed_children,
+                writeable: Some(host_dir.to_path_buf()),
+            },
+        );
+        children.insert(
+            "bundled".to_string(),
+            FsNode::Directory {
+                children: HashMap::new(),
+                writeable: None,
+            },
+        );
+
+        Fs {
+            root: FsNode::Directory {
+                children,
+                writeable: None,
+            },
+            working_directory: GuestPathBuf::from("/".to_string()),
+            home_directory: GuestPathBuf::from("/".to_string()),
+        }
+    }
+
+    /// Asking a directory for its size used to be unimplemented, so an app that
+    /// asked its save folder for attributes before reading any save inside it
+    /// died on the spot. Both kinds of directory have to answer, because the
+    /// caller has no way to tell them apart and nothing to say if they refuse.
+    #[test]
+    fn a_directory_has_a_size() {
+        let host_dir = std::env::temp_dir().join("tapHLE-fs-test-directory-size");
+        let _ = std::fs::remove_dir_all(&host_dir);
+        std::fs::create_dir_all(&host_dir).unwrap();
+        std::fs::write(host_dir.join("save"), b"a saved game").unwrap();
+
+        let fs = fs_with_a_directory_of_each_kind(&host_dir);
+
+        assert!(fs.size(GuestPath::new("/saves")).is_ok());
+        // A directory synthesised by tapHLE holds no bytes of its own and has
+        // no host record to measure.
+        assert_eq!(fs.size(GuestPath::new("/bundled")), Ok(0));
+        // The file answer is unchanged: a real length, not the directory's.
+        assert_eq!(
+            fs.size(GuestPath::new("/saves/save")),
+            Ok("a saved game".len() as u64)
+        );
+
+        std::fs::remove_dir_all(&host_dir).unwrap();
     }
 }
