@@ -80,6 +80,29 @@ impl ResourceFile {
     pub fn get(&mut self) -> &mut (impl Read + Seek) {
         &mut self.file
     }
+
+    /// When the resource was last modified, in seconds since the Unix epoch,
+    /// where the platform can say. On Android the resource is an asset inside
+    /// the APK rather than a file on disk, and there is nothing to ask.
+    pub fn modified(path: &str) -> Option<i64> {
+        #[cfg(target_os = "android")]
+        {
+            let _ = path;
+            None
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let base_path = get_macos_bundled_resources_path();
+            let path = base_path.as_deref().unwrap_or(Path::new(".")).join(path);
+            let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+            modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_secs()
+                .try_into()
+                .ok()
+        }
+    }
 }
 impl std::fmt::Debug for ResourceFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {

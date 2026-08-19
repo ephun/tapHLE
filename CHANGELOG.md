@@ -139,7 +139,8 @@
   and tapHLE had no answer for how big a folder is — it stopped the game
   instead. So a game could be saved once and then never opened again: the first
   session played fine and the second died on the screen that lists what you
-  saved.
+  saved. Folders now answer for when they last changed, too, which a game that
+  keeps its artwork in folders asks about every time it starts.
 
 - Let a game get past the sliding menu of choices that comes up from the bottom
   of the screen — the one for "share", "restart", "delete" and the like. tapHLE
