@@ -95,6 +95,7 @@ struct UITableViewCellHostObject {
     text_label: id,
     /// `UIView*`, retained.
     content_view: id,
+    image_view: id,
     /// `NSString*`, retained.
     reuse_identifier: id,
 }
@@ -252,6 +253,53 @@ fn index_path_at_point(env: &mut Environment, table: id, point: CGPoint) -> id {
     nil
 }
 
+/// Put the image well and the label where the default cell style puts them: the
+/// image square down the left, the text filling what is left. Called whenever
+/// one of them is created, because either can be asked for first and the answer
+/// has to be the same layout either way.
+fn layout_standard_views(env: &mut Environment, cell: id) {
+    let UITableViewCellHostObject {
+        text_label,
+        image_view,
+        ..
+    } = *env.objc.borrow::<UITableViewCellHostObject>(cell);
+
+    let content_view: id = msg![env; cell contentView];
+    let bounds: CGRect = msg![env; content_view bounds];
+
+    // With no image there is nothing to make room for, and the label keeps the
+    // whole cell — which is what it was given when it was created.
+    let image_width = if image_view != nil {
+        bounds.size.height
+    } else {
+        0.0
+    };
+
+    if image_view != nil {
+        let frame = CGRect {
+            origin: bounds.origin,
+            size: CGSize {
+                width: image_width,
+                height: bounds.size.height,
+            },
+        };
+        () = msg![env; image_view setFrame:frame];
+    }
+    if text_label != nil {
+        let frame = CGRect {
+            origin: CGPoint {
+                x: bounds.origin.x + image_width,
+                y: bounds.origin.y,
+            },
+            size: CGSize {
+                width: (bounds.size.width - image_width).max(0.0),
+                height: bounds.size.height,
+            },
+        };
+        () = msg![env; text_label setFrame:frame];
+    }
+}
+
 pub const CLASSES: ClassExports = objc_classes! {
 
 (env, this, _cmd);
@@ -311,7 +359,37 @@ pub const CLASSES: ClassExports = objc_classes! {
     let label: id = msg![env; label initWithFrame:bounds];
     () = msg![env; content_view addSubview:label];
     env.objc.borrow_mut::<UITableViewCellHostObject>(this).text_label = label;
+    layout_standard_views(env, this);
     label
+}
+
+// The image well down the left of a cell. Lazily created for the same reason
+// the label is, and it has to be a real view rather than nothing: an app sets
+// its image, its content mode, sometimes its frame, and a cell that answered
+// with nil would fail at the first of those instead of at the point where it
+// matters. A list that shows an icon beside each row asks for this while it is
+// filling the row in, so an app which does it stops there.
+- (id)imageView {
+    let existing = env.objc.borrow::<UITableViewCellHostObject>(this).image_view;
+    if existing != nil {
+        return existing;
+    }
+    let content_view: id = msg![env; this contentView];
+    let bounds: CGRect = msg![env; content_view bounds];
+    let view: id = msg_class![env; UIImageView alloc];
+    let view: id = msg![env; view initWithFrame:bounds];
+    () = msg![env; content_view addSubview:view];
+    env.objc.borrow_mut::<UITableViewCellHostObject>(this).image_view = view;
+    layout_standard_views(env, this);
+    view
+}
+
+// A cell built the pre-3.0 way is the default style, and UIKit's default style
+// has no detail label — it answers nil there too. So this is the device's
+// answer rather than a gap, and it is written down because "returns nil" and
+// "not implemented" look identical from the app and are not the same thing.
+- (id)detailTextLabel {
+    nil
 }
 
 // -text on the cell itself is the pre-3.0 spelling of -textLabel.text.
