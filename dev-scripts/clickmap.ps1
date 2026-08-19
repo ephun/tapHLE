@@ -79,6 +79,7 @@ if ($Validate) {
         $detail = switch ($step.action) {
             'tap'     { "at ($($step.at[0]), $($step.at[1]))" }
             'swipe'   { "($($step.from_xy[0]), $($step.from_xy[1])) -> ($($step.to_xy[0]), $($step.to_xy[1]))" }
+            'tilt'    { "held at ($($step.at[0]), $($step.at[1])) for $(if ($step.hold_ms) { $step.hold_ms } else { 400 }) ms" }
             'type'    { "`"$($step.text)`"" }
             'key'     { "scancode $($step.scancode)" }
             'wait'    { "$(if ($step.settle_ms) { $step.settle_ms } else { $settleDefault }) ms" }
@@ -140,6 +141,11 @@ Add-Type -Namespace ClickMap -Name Native -MemberDefinition @'
 
 $MOUSE_LEFTDOWN = 0x0002
 $MOUSE_LEFTUP   = 0x0004
+# Tilting is the right button held while the cursor moves: that is what tapHLE
+# turns into accelerometer readings (see src/window.rs), and it is the only way
+# to steer the many games of this era that are played by tipping the device.
+$MOUSE_RIGHTDOWN = 0x0008
+$MOUSE_RIGHTUP   = 0x0010
 $KEY_KEYUP      = 0x0002
 $KEY_SCANCODE   = 0x0008
 $VK_MENU        = 0x12
@@ -272,6 +278,36 @@ foreach ($step in $cm.steps) {
                 Start-Sleep -Milliseconds 16
             }
             [ClickMap.Native]::mouse_event($MOUSE_LEFTUP, 0, 0, 0, [IntPtr]::Zero)
+        }
+        'tilt' {
+            # A tilt is a position, not a movement. tapHLE turns where the
+            # cursor is while the right button is down into how far the device
+            # is tipped -- the middle of the window is level and the edges are
+            # full tilt -- so steering means holding the button at a point, and
+            # `hold_ms` is how long the game is given to move under that tilt.
+            # Letting go levels the device again.
+            if (-not (Set-WindowForeground $hwnd)) {
+                $failed = $name
+                Write-Output ("{0,-24} FAILED   the app never came to the front" -f $name)
+                break
+            }
+            $p = Client-ToScreen $hwnd ([int]$step.at[0]) ([int]$step.at[1])
+            $hold = if ($step.hold_ms) { [int]$step.hold_ms } else { 400 }
+            [ClickMap.Native]::SetCursorPos($p.X, $p.Y) | Out-Null
+            Start-Sleep -Milliseconds 60
+            if (-not (Test-PointOverWindow $hwnd $p)) {
+                $failed = $name
+                Write-Output ("{0,-24} FAILED   another window is at ({1}, {2}); not tilting" -f $name, $p.X, $p.Y)
+                break
+            }
+            [ClickMap.Native]::mouse_event($MOUSE_RIGHTDOWN, 0, 0, 0, [IntPtr]::Zero)
+            # Nudged once inside the hold: the tilt arrives as an event, and a
+            # press with no motion after it is one event at the start rather
+            # than a device being held over.
+            Start-Sleep -Milliseconds ([Math]::Max(1, [int]($hold / 2)))
+            [ClickMap.Native]::SetCursorPos($p.X, $p.Y) | Out-Null
+            Start-Sleep -Milliseconds ([Math]::Max(1, [int]($hold / 2)))
+            [ClickMap.Native]::mouse_event($MOUSE_RIGHTUP, 0, 0, 0, [IntPtr]::Zero)
         }
         'type' {
             if (-not (Set-WindowForeground $hwnd)) {

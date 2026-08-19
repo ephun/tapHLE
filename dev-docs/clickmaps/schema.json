@@ -101,13 +101,14 @@
         "id": { "type": "string", "description": "Stable name, so a report can say which step failed without counting." },
         "from": { "type": "string", "description": "The screen this step starts on, in the words a human would use." },
         "action": {
-          "enum": ["wait", "tap", "swipe", "type", "key", "capture"],
-          "description": "tap takes at/press_ms; swipe takes from_xy/to_xy/duration_ms; type takes text; key takes scancode; wait takes only settle_ms; capture takes only expect."
+          "enum": ["wait", "tap", "swipe", "tilt", "type", "key", "capture"],
+          "description": "tap takes at/press_ms; swipe takes from_xy/to_xy/duration_ms; tilt takes at/hold_ms; type takes text; key takes scancode; wait takes only settle_ms; capture takes only expect. tilt holds the right mouse button at a point, which is how tapHLE receives a device being tipped: the middle of the window is level and the edges are full tilt."
         },
         "at": { "$ref": "#/$defs/point", "description": "Client coordinates, origin top-left." },
         "from_xy": { "$ref": "#/$defs/point" },
         "to_xy": { "$ref": "#/$defs/point" },
         "duration_ms": { "type": "integer", "minimum": 1 },
+        "hold_ms": { "type": "integer", "minimum": 1, "description": "tilt only: how long the tilt is held before the device levels again." },
         "text": { "type": "string" },
         "scancode": {
           "type": "integer",

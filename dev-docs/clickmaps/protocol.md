@@ -108,6 +108,25 @@ screen that keeps animating for seconds after a missed tap, so a frame
 comparison shows change either way; a press shorter than about 300 ms that one
 app does not see at all.
 
+## Tilting
+
+A great many games of this era are steered by tipping the device, and a route
+that only taps cannot show one of them being played: the game runs, nothing
+steers, and the round ends the way it would if the player had put the phone
+down. That is why `tilt` exists.
+
+A tilt is the right mouse button held, because that is what tapHLE reads as the
+accelerometer. It is a **position, not a movement**: where the cursor is while
+the button is down is how far the device is tipped, with the middle of the
+window level and the edges full tilt. So a step takes `at` and `hold_ms` — hold
+this tilt, for this long — and letting go levels the device again.
+
+That also means a tilt has to be held *while the game is running*, not applied
+once and released. A game that is steered every frame will have hit something
+by the time a route that tilts once gets round to the next step, which is the
+usual reason a tilt-steered game still ends in seconds with a route that looks
+like it should have played it.
+
 ## Saved state is why a replay diverges
 
 The most common reason a good map stops working is that the app now has a save.
