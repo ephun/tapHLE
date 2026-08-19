@@ -134,6 +134,12 @@
   changing text is built from, and it was the one that was missing, so a game
   that rewrote a line rather than building a new one stopped there.
 
+- Let a game move a folder. Moving a file worked and moving a folder was not
+  implemented at all, so a game that keeps a set of files together and puts the
+  whole folder into place — the ordinary way to save without risking a
+  half-written save — stopped dead. Everything inside the folder moves with it.
+  Fieldrunners could not get past its own start-up, and now reaches its menu.
+
 - Answer when a game asks a folder about itself. A game that keeps saved games
   in a folder asks the folder for its details before it reads a single save,
   and tapHLE had no answer for how big a folder is — it stopped the game

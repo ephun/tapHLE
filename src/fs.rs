@@ -154,6 +154,37 @@ impl FsNode {
         }
     }
 
+    /// Point this node, and everything under it, at a new host location after
+    /// the host directory holding it has been moved. A node whose host path is
+    /// somewhere else entirely — a file inside an `.ipa`, a resource tapHLE
+    /// ships — is left alone, because nothing about it moved.
+    fn rebase_host_paths(&mut self, old_prefix: &Path, new_prefix: &Path) {
+        fn rebase(host_path: &mut PathBuf, old_prefix: &Path, new_prefix: &Path) {
+            if let Ok(relative) = host_path.strip_prefix(old_prefix) {
+                *host_path = new_prefix.join(relative);
+            }
+        }
+
+        match self {
+            FsNode::File {
+                location: FileLocation::Path(host_path),
+                ..
+            } => rebase(host_path, old_prefix, new_prefix),
+            FsNode::File { .. } => (),
+            FsNode::Directory {
+                children,
+                writeable,
+            } => {
+                if let Some(host_path) = writeable {
+                    rebase(host_path, old_prefix, new_prefix);
+                }
+                for child in children.values_mut() {
+                    child.rebase_host_paths(old_prefix, new_prefix);
+                }
+            }
+        }
+    }
+
     /// When this file or directory was last modified, in seconds since the Unix
     /// epoch.
     ///
@@ -1035,7 +1066,12 @@ impl Fs {
                                          // TODO: avoid copy?
                 from_host_path.clone()
             }
-            _ => unimplemented!(),
+            // Renaming a directory is an ordinary thing to do — an app that
+            // writes a folder of files and then moves it into place does it
+            // every time it saves — and it moves everything inside the
+            // directory with it, so it is not the file case with a different
+            // node type.
+            FsNode::Directory { .. } => return self.rename_directory(from, to),
         };
 
         if self.lookup_node(to.as_ref()).is_none() {
@@ -1067,6 +1103,81 @@ impl Fs {
             children.remove(&component).unwrap();
         }
         res.map_err(FsError::IoError)
+    }
+
+    /// Move a directory, and everything under it, to another path.
+    ///
+    /// The host does the actual move in one step, so nothing is copied and the
+    /// contents cannot be left half-moved. What the guest filesystem then has
+    /// to do is point the moved subtree at where its files now live: every node
+    /// under a writeable directory remembers an absolute host path, and all of
+    /// those paths just changed.
+    fn rename_directory<P: AsRef<GuestPath> + Copy>(
+        &mut self,
+        from: P,
+        to: P,
+    ) -> Result<(), FsError> {
+        let Some(FsNode::Directory {
+            writeable: Some(from_host_path),
+            ..
+        }) = self.lookup_node(from.as_ref())
+        else {
+            // A directory tapHLE synthesised — inside an app bundle, say — has
+            // no host directory to move, and the bundle is read-only anyway.
+            return Err(FsError::AccessDenied);
+        };
+        let from_host_path = from_host_path.clone();
+
+        // POSIX replaces an existing empty directory here and fails with
+        // ENOTEMPTY otherwise, and Windows refuses either way. Rather than
+        // behave differently depending on the host, refuse the whole case:
+        // an app that means to replace a directory can remove it first.
+        if self.exists(to.as_ref()) {
+            return Err(FsError::AlreadyExist);
+        }
+
+        let (to_parent, to_name) = self
+            .lookup_parent_node(to.as_ref())
+            .ok_or(FsError::NonexistentParentDir)?;
+        let FsNode::Directory {
+            writeable: to_parent_host_path,
+            ..
+        } = to_parent
+        else {
+            return Err(FsError::InvalidParentDir);
+        };
+        let Some(to_parent_host_path) = to_parent_host_path else {
+            return Err(FsError::ReadonlyParentDir);
+        };
+        let to_host_path = to_parent_host_path.join(&to_name);
+
+        fs::rename(&from_host_path, &to_host_path).map_err(FsError::IoError)?;
+
+        // Detach the subtree from where it was...
+        let (from_parent, from_name) = self.lookup_parent_node(from.as_ref()).unwrap();
+        let FsNode::Directory { children, .. } = from_parent else {
+            panic!()
+        };
+        let mut node = children.remove(&from_name).unwrap();
+
+        // ...tell it and everything under it where its files are now...
+        node.rebase_host_paths(&from_host_path, &to_host_path);
+
+        // ...and attach it where it now belongs.
+        let (to_parent, to_name) = self.lookup_parent_node(to.as_ref()).unwrap();
+        let FsNode::Directory { children, .. } = to_parent else {
+            panic!()
+        };
+        children.insert(to_name, node);
+
+        log_dbg!(
+            "Renamed directory {:?} to {:?} (host path: {:?} to {:?})",
+            from.as_ref(),
+            to.as_ref(),
+            from_host_path,
+            to_host_path
+        );
+        Ok(())
     }
 
     /// Like [File::options] but for the guest filesystem.
@@ -1412,6 +1523,83 @@ mod tests {
             fs.size(GuestPath::new("/saves/save")),
             Ok("a saved game".len() as u64)
         );
+
+        std::fs::remove_dir_all(&host_dir).unwrap();
+    }
+
+    /// Renaming a directory moves everything under it, and the guest
+    /// filesystem remembers an absolute host path for every one of those
+    /// nodes. If they are not pointed at the new location, the directory looks
+    /// renamed and every file inside it stops opening — which is worse than
+    /// the refusal this replaced, because it fails later and somewhere else.
+    #[test]
+    fn renaming_a_directory_moves_what_is_inside_it() {
+        let host_dir = std::env::temp_dir().join("tapHLE-fs-test-directory-rename");
+        let _ = std::fs::remove_dir_all(&host_dir);
+        std::fs::create_dir_all(host_dir.join("from")).unwrap();
+        std::fs::write(host_dir.join("from").join("save"), b"a saved game").unwrap();
+
+        let mut from_children = HashMap::new();
+        from_children.insert(
+            "save".to_string(),
+            FsNode::File {
+                location: FileLocation::Path(host_dir.join("from").join("save")),
+                writeable: true,
+            },
+        );
+        let mut children = HashMap::new();
+        children.insert(
+            "from".to_string(),
+            FsNode::Directory {
+                children: from_children,
+                writeable: Some(host_dir.join("from")),
+            },
+        );
+        let mut fs = Fs {
+            root: FsNode::Directory {
+                children,
+                writeable: Some(host_dir.clone()),
+            },
+            working_directory: GuestPathBuf::from("/".to_string()),
+            home_directory: GuestPathBuf::from("/".to_string()),
+        };
+
+        fs.rename(GuestPath::new("/from"), GuestPath::new("/to"))
+            .expect("a writeable directory can be renamed");
+
+        assert!(!fs.exists(GuestPath::new("/from")));
+        assert!(fs.is_dir(GuestPath::new("/to")));
+        // The file inside it moved with it, and still opens: its host path was
+        // rewritten rather than left pointing at a directory that is gone.
+        assert_eq!(
+            fs.read(GuestPath::new("/to/save")),
+            Ok(b"a saved game".to_vec())
+        );
+        assert!(host_dir.join("to").join("save").is_file());
+        assert!(!host_dir.join("from").exists());
+
+        // Renaming onto something that is already there is refused rather than
+        // being answered differently on each host.
+        std::fs::create_dir_all(host_dir.join("occupied")).unwrap();
+        let mut children = HashMap::new();
+        children.insert(
+            "occupied".to_string(),
+            FsNode::Directory {
+                children: HashMap::new(),
+                writeable: Some(host_dir.join("occupied")),
+            },
+        );
+        if let FsNode::Directory {
+            children: root_children,
+            ..
+        } = &mut fs.root
+        {
+            root_children.extend(children);
+        }
+        assert!(matches!(
+            fs.rename(GuestPath::new("/to"), GuestPath::new("/occupied")),
+            Err(FsError::AlreadyExist)
+        ));
 
         std::fs::remove_dir_all(&host_dir).unwrap();
     }
