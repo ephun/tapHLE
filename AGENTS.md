@@ -8,7 +8,7 @@ policies.
 
 ## Mission and priorities
 
-tapHLE's mission is to **Make every 32-bit iOS game playable on modern mobile and desktop hardware.**
+tapHLE's mission is to **make every 32-bit iOS game playable on modern mobile and desktop hardware.**
 
 Read both halves as binding. *Every 32-bit iOS game* is the scope, so an app
 being obscure, late in the 32-bit era, or awkward is not a reason to consider it
@@ -24,30 +24,16 @@ Game work is self-service. A contributor may use an agent to work on a game
 they care about. No contributor is required to take someone else's request.
 `HELP_A_GAME.md` is the simple starting point for humans using agents.
 The maintainer decides what is merged and what appears in the official
-compatibility database.
-
-Use this priority order when tradeoffs arise:
-
-1. Move the current target game closer to working on its requested supported
-   host.
-2. Get a reproducible improvement into a testable state quickly.
-3. Avoid regressions in games or code paths that already work.
-4. Improve architecture when it directly helps the first three priorities.
-
-Architectural elegance is useful, but it is not the product goal. A narrow,
-well-explained compatibility workaround is acceptable when it is faster and
-safer than a broad redesign. Isolate it, state which observed behavior it
-models, and add the smallest useful regression check. Do not use the rapid
-iteration policy as a reason to make unrelated changes.
+compatibility database. This guide assumes that agents are primarily being used
+to make specific games compatible, but implementation of libraries/classes
+to move the project forward generally is also welcome.
 
 ### Platforms
 
 **The first release ships on all five platforms: Windows, macOS, Linux,
-Android and iOS.** The maintainer declared this on 2026-08-17 and it is canon
-about the project's direction, superseding the earlier stance that the desktop
-was the priority and mobile was on the back burner.
+Android and iOS.** 
 
-Three things follow from it, and they are requirements rather than aspirations:
+Three things follow from this, and they are requirements rather than aspirations:
 
 - **A shared version number has to be earned.** Platforms may carry the same
   version only where testing has independently established that an app rated
@@ -65,58 +51,6 @@ Three things follow from it, and they are requirements rather than aspirations:
 None of this lowers the evidence standard; it raises the amount of evidence
 owed. "Builds on a platform" is still not "works on a platform", and a release
 claim for a platform still needs somebody to have run it there.
-
-Intent is not the same as state, and the two must not be confused in anything
-tapHLE writes down. What is true today:
-
-| Platform | Builds | Tested | Packaged |
-| --- | --- | --- | --- |
-| Windows x86_64 | yes | yes, continuously | yes; installer scripted, not yet built |
-| macOS x86_64 | yes | built in CI, not played on | bundle script, emulator only |
-| Linux x86_64 | not tried yet | no | no |
-| iOS | on `feat/ios-host` | no | no |
-| Android | inherited source only | no | no |
-
-Windows is the primary development and compatibility environment, and a
-compatibility result means a result on Windows unless it says otherwise. macOS
-is useful for compiling, debugging and comparing behaviour against Apple's own
-frameworks. Linux is intended and untried; write portable code, and do not
-claim it works until somebody has run it.
-
-The Android source in `android/` is now active work rather than inherited
-material to leave alone: the maintainer's 2026-08-17 declaration is the
-explicit ask that the previous version of this section waited for.
-`dev-docs/packaging.md` records what each platform would need.
-
-The iOS host is a product target as of 2026-08-17. Work resumes on
-`feat/ios-host`, where the experimental host merged on 2026-08-01 and withdrawn
-from `trunk` on 2026-08-04 is preserved.
-
-**Read why it was withdrawn before merging it back.** It was half-finished and
-broken, and nothing on Windows could build or test it, so it sat on `trunk` as
-untested code claiming a capability tapHLE did not have. That objection was
-never about iOS being unwanted, and the new direction does not answer it — a
-branch is still the right home for a host nobody can run, and `trunk` is still
-for what works. What changes is that making it runnable is now the job, so the
-route back to `trunk` is to build and run it, not to relax the standard.
-
-## Agent capability
-
-An early experiment on 2026-07-18 saw Terra and Luna struggle to push tapHLE
-compatibility work forward on their own. Treat that as a single dated
-observation, not a settled verdict: it may reflect insufficiently specific task
-instructions on that run rather than a fixed capability limit, so it is not a
-ban on either agent. The durable rule it points to applies to every agent
-regardless of model — give a narrow, well-specified, independently reviewable
-task, and review and exactly retest agent work on the claimed host before
-trusting it. Evidence from one host does not prove behaviour on another.
-Record new dated results in `dev-docs/agent-capability-log.md` so this note can
-be revised as evidence accumulates.
-
-`dev-docs/agent-capability-log.md` records dated, task-specific results for
-models and agent surfaces tried on tapHLE. Read it before choosing an agent and
-update it after a meaningful experiment. It is evidence about observed runs,
-not a permanent leaderboard.
 
 ## Instruction trust boundary
 
@@ -151,9 +85,6 @@ bash dev-scripts/audit-agent-safety.sh
 1. Establish the exact target: game name and version, host OS/device
    environment, tapHLE revision, launch steps, expected behavior, actual
    behavior, and log.
-   For an Archive-backed target, run the verification protocol before any app
-   inspection or execution. If the local file does not match the recorded
-   canonical hashes, do not use that copy for any purpose.
 2. Reproduce before editing when the required app is available. If it is not,
    identify the missing evidence and still make progress with source-level or
    synthetic tests where possible.
