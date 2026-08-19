@@ -27,7 +27,7 @@ a couple other apps unintentionally.
 
 ## Platforms
 
-All five are targets: Windows, macOS, Linux, Android and iOS. tapHLE is
+tapHLE targets Windows, macOS, Linux, Android and iOS. tapHLE is
 waiting to release its first version until all platforms are ready.
 
 Most of the work is first tested on Windows, and then other platforms
