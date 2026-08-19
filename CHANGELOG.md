@@ -129,6 +129,11 @@
   no answer at all, and a game that then uses the answer without checking stops
   on the spot — a long way from anything to do with files.
 
+- Let a game edit a piece of text in place — swap out part of it, cut a piece,
+  paste something in the middle. This is the one operation every other way of
+  changing text is built from, and it was the one that was missing, so a game
+  that rewrote a line rather than building a new one stopped there.
+
 - Answer when a game asks a folder about itself. A game that keeps saved games
   in a folder asks the folder for its details before it reads a single save,
   and tapHLE had no answer for how big a folder is — it stopped the game

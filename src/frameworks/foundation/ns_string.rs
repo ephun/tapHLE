@@ -1585,9 +1585,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 @end
 
-// NSMutableString is an abstract class. A subclass must everything
-// NSString provides, plus:
+// NSMutableString is an abstract class. Apple's contract is that a subclass
+// provides everything NSString provides, plus the single mutation primitive:
 // - (void)replaceCharactersInRange:(NSRange)range withString:(NSString)string;
+// Here that primitive is written once, in terms of `setString:` and the
+// substring methods, so every mutator below — and any subclass — gets it from
+// this class rather than having to reimplement it.
 // Note that it inherits from NSString, so we must ensure we override any
 // default methods that would be inappropriate for mutability.
 @implementation NSMutableString: NSString
@@ -1617,6 +1620,25 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (id)copyWithZone:(NSZonePtr)_zone {
     let new: id = msg_class![env; NSString alloc];
     msg![env; new initWithString:this]
+}
+
+- (())replaceCharactersInRange:(NSRange)range
+                    withString:(id)a_string { // NSString*
+    assert_ne!(a_string, nil);
+
+    let length: NSUInteger = msg![env; this length];
+    let location = range.location;
+    assert!(location <= length);
+    assert!(range.length <= length - location);
+
+    // Replacing a range with the empty string is a deletion and replacing an
+    // empty range is an insertion, so this one method covers both: keep what is
+    // on either side of the range and put the new text between them.
+    let left: id = msg![env; this substringToIndex:location];
+    let right: id = msg![env; this substringFromIndex:(location + range.length)];
+    let res: id = msg![env; left stringByAppendingString:a_string];
+    let res: id = msg![env; res stringByAppendingString:right];
+    () = msg![env; this setString:res];
 }
 
 - (())appendString:(id)a_string { // NSString*
