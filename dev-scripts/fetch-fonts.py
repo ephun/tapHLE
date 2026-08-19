@@ -67,8 +67,9 @@ def gf(directory, filename):
 # table and compared, which is what catches a moved file, a truncated download
 # or a variable font standing in for a static one.
 #
-# `substitutes` is documentation, not logic: the mapping the emulator uses
-# lives in `src/font/catalogue.rs`, because it has to be compiled in.
+# `substitutes` names the iPhone fonts a family is here for, and nothing more.
+# The mapping the emulator uses, and how close each match is, live in
+# `src/font/catalogue.rs`, because they have to be compiled in.
 FAMILIES = [
     {
         'id': 'inter', 'name': 'Inter', 'licence': 'OFL-1.1',
@@ -99,7 +100,7 @@ FAMILIES = [
     {
         'id': 'gelasio', 'name': 'Gelasio', 'licence': 'OFL-1.1',
         'licence_url': 'https://raw.githubusercontent.com/google/fonts/main/ofl/gelasio/OFL.txt',
-        'substitutes': 'Georgia (metric-compatible)',
+        'substitutes': 'Georgia',
         'files': {
             'Gelasio-Bold.ttf': (
                 'https://raw.githubusercontent.com/SorkinType/Gelasio/master/fonts/ttf/Gelasio-Bold.ttf',
@@ -372,7 +373,7 @@ FAMILIES = [
     {
         'id': 'kalam', 'name': 'Kalam', 'licence': 'OFL-1.1',
         'licence_url': 'https://raw.githubusercontent.com/google/fonts/main/ofl/kalam/OFL.txt',
-        'substitutes': 'Noteworthy (bold), handwriting faces',
+        'substitutes': 'Noteworthy',
         'files': {
             'Kalam-Bold.ttf': (
                 'https://raw.githubusercontent.com/google/fonts/main/ofl/kalam/Kalam-Bold.ttf',
@@ -415,7 +416,7 @@ FAMILIES = [
     {
         'id': 'tangerine', 'name': 'Tangerine', 'licence': 'OFL-1.1',
         'licence_url': 'https://raw.githubusercontent.com/google/fonts/main/ofl/tangerine/OFL.txt',
-        'substitutes': 'Zapfino (role only)',
+        'substitutes': 'Zapfino',
         'files': {
             'Tangerine-Bold.ttf': (
                 'https://raw.githubusercontent.com/google/fonts/main/ofl/tangerine/Tangerine-Bold.ttf',
@@ -432,7 +433,7 @@ FAMILIES = [
     {
         'id': 'almendra', 'name': 'Almendra', 'licence': 'OFL-1.1',
         'licence_url': 'https://raw.githubusercontent.com/google/fonts/main/ofl/almendra/OFL.txt',
-        'substitutes': 'Papyrus (role only)',
+        'substitutes': 'Papyrus',
         'files': {
             'Almendra-Bold.ttf': (
                 'https://raw.githubusercontent.com/google/fonts/main/ofl/almendra/Almendra-Bold.ttf',
@@ -457,7 +458,7 @@ FAMILIES = [
     {
         'id': 'lobster', 'name': 'Lobster', 'licence': 'OFL-1.1',
         'licence_url': 'https://raw.githubusercontent.com/google/fonts/main/ofl/lobster/OFL.txt',
-        'substitutes': 'Party LET (role only)',
+        'substitutes': 'Party LET',
         'files': {
             'Lobster-Regular.ttf': (
                 'https://raw.githubusercontent.com/google/fonts/main/ofl/lobster/Lobster-Regular.ttf',
