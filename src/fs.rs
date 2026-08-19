@@ -153,6 +153,56 @@ impl FsNode {
             writeable: false,
         }
     }
+
+    /// When this file or directory was last modified, in seconds since the Unix
+    /// epoch.
+    ///
+    /// Note: the time returned for a file inside an `.ipa` is consistent with
+    /// the 'Date' and 'Time' 7-zip reports for it, but it can be a few hours
+    /// off from what `NSFileModificationDate` reports for app bundle files on a
+    /// device, and it changes with the system timezone if the app is
+    /// re-installed. That is not much of a problem while the codebase assumes
+    /// GMT throughout.
+    /// TODO: double check this once different timezones are supported.
+    fn modified(&self) -> Result<i64, ()> {
+        match self {
+            FsNode::File { location, .. } => match location {
+                FileLocation::IpaFileRef(ipa_file_ref) => {
+                    Ok(ipa_file_ref.get_last_modified().into())
+                }
+                // TODO: account for the current timezone, here it's in GMT
+                FileLocation::Path(path) => host_modified(path),
+                FileLocation::ResourceFilePath(name) => {
+                    paths::ResourceFile::modified(name).ok_or(())
+                }
+            },
+            FsNode::Directory {
+                writeable: Some(host_path),
+                ..
+            } => host_modified(host_path),
+            // A directory tapHLE synthesised — inside a bundle read from an
+            // `.ipa`, say — has no host counterpart to ask. Refusing to answer
+            // is not the safe option it looks like: an app that asks a folder
+            // when it changed goes on to use the answer without checking, and
+            // one that used a missing date as a dictionary key died on a null
+            // dereference a long way from anything to do with files.
+            //
+            // The newest date among the files it holds is an answer and the
+            // right one: that is what a directory's modification time means,
+            // and each of those files carries the date the archive recorded.
+            // A directory holding nothing measurable has nothing to report but
+            // still has to answer, and the epoch reads as "unknown" without
+            // being nothing at all.
+            FsNode::Directory {
+                children,
+                writeable: None,
+            } => Ok(children
+                .values()
+                .filter_map(|child| child.modified().ok())
+                .max()
+                .unwrap_or(0)),
+        }
+    }
 }
 
 // Put well-known paths in the guest filesystem here.
@@ -511,6 +561,21 @@ impl Seek for GuestFile {
     }
 }
 
+/// When a host file or directory was last modified, in seconds since the Unix
+/// epoch.
+fn host_modified(host_path: &Path) -> Result<i64, ()> {
+    fs::metadata(host_path)
+        .and_then(|metadata| metadata.modified())
+        .map(|time| {
+            time.duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                .try_into()
+                .unwrap()
+        })
+        .map_err(|_| ())
+}
+
 /// The type that owns the guest filesystem and provides accessors for it.
 #[derive(Debug)]
 pub struct Fs {
@@ -809,56 +874,7 @@ impl Fs {
 
     pub fn modified(&self, path: &GuestPath) -> Result<i64, ()> {
         // TODO: error handling
-        let node = self.lookup_node(path).ok_or(())?;
-        match node {
-            FsNode::File { location, .. } => match location {
-                // Note: the returned time is consistent with 'Date' and 'Time'
-                // of files inside IPA archive as reported by 7-zip.
-                // But it can be few hours off in comparison with modification
-                // time reported by NSFileModificationDate for app bundle files
-                // and changes if system timezone changes and apps gets
-                // re-installed!
-                // This shouldn't be a big problem as we're always assuming
-                // GMT in the codebase right now.
-                // TODO: double check that when we support different timezones
-                FileLocation::IpaFileRef(ipa_file_ref) => {
-                    Ok(ipa_file_ref.get_last_modified().into())
-                }
-                FileLocation::Path(path) => {
-                    // TODO: account for the current timezone, here it's in GMT
-                    fs::metadata(path)
-                        .and_then(|m| m.modified())
-                        .map(|t| {
-                            t.duration_since(UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs()
-                                .try_into()
-                                .unwrap()
-                        })
-                        .map_err(|_| ())
-                }
-                _ => unimplemented!(),
-            },
-            // Directories have modification times too, and apps ask for them:
-            // a game listing its save folder sorts the worlds by when they were
-            // last played, which is the directory's date, not any one file's.
-            FsNode::Directory { writeable, .. } => match writeable {
-                Some(host_path) => fs::metadata(host_path)
-                    .and_then(|m| m.modified())
-                    .map(|t| {
-                        t.duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs()
-                            .try_into()
-                            .unwrap()
-                    })
-                    .map_err(|_| ()),
-                // A directory tapHLE synthesised — inside an app bundle, say —
-                // has no host counterpart to ask, and inventing a timestamp
-                // would be worse than reporting that there isn't one.
-                None => Err(()),
-            },
-        }
+        self.lookup_node(path).ok_or(())?.modified()
     }
 
     pub fn size(&self, path: &GuestPath) -> Result<u64, ()> {
@@ -1396,6 +1412,59 @@ mod tests {
             fs.size(GuestPath::new("/saves/save")),
             Ok("a saved game".len() as u64)
         );
+
+        std::fs::remove_dir_all(&host_dir).unwrap();
+    }
+
+    /// An app that asks a folder when it changed uses the answer without
+    /// checking — one that used it as a dictionary key died on a null
+    /// dereference far from anything to do with files — so a directory tapHLE
+    /// synthesised has to answer with a date rather than with nothing. The
+    /// files it holds carry dates; the newest of them is the directory's.
+    #[test]
+    fn a_synthesised_directory_reports_the_newest_date_it_holds() {
+        let host_dir = std::env::temp_dir().join("tapHLE-fs-test-directory-date");
+        let _ = std::fs::remove_dir_all(&host_dir);
+        std::fs::create_dir_all(&host_dir).unwrap();
+        std::fs::write(host_dir.join("save"), b"a saved game").unwrap();
+
+        let mut children = HashMap::new();
+        children.insert(
+            "save".to_string(),
+            FsNode::File {
+                location: FileLocation::Path(host_dir.join("save")),
+                writeable: false,
+            },
+        );
+        let mut root_children = HashMap::new();
+        root_children.insert(
+            "holds-a-file".to_string(),
+            FsNode::Directory {
+                children,
+                writeable: None,
+            },
+        );
+        root_children.insert(
+            "holds-nothing".to_string(),
+            FsNode::Directory {
+                children: HashMap::new(),
+                writeable: None,
+            },
+        );
+        let fs = Fs {
+            root: FsNode::Directory {
+                children: root_children,
+                writeable: None,
+            },
+            working_directory: GuestPathBuf::from("/".to_string()),
+            home_directory: GuestPathBuf::from("/".to_string()),
+        };
+
+        let file_date = fs.modified(GuestPath::new("/holds-a-file/save")).unwrap();
+        assert_eq!(fs.modified(GuestPath::new("/holds-a-file")), Ok(file_date));
+        // Nothing to measure is still answered, because nothing at all is what
+        // the caller cannot handle.
+        assert_eq!(fs.modified(GuestPath::new("/holds-nothing")), Ok(0));
 
         std::fs::remove_dir_all(&host_dir).unwrap();
     }

@@ -594,12 +594,14 @@ fn file_attributes_common(env: &mut Environment, guest_path: &GuestPath) -> id {
     // TODO: support more attributes
     let dict = msg_class![env; NSMutableDictionary new];
 
-    // Not every path in the guest filesystem has a modification time to report:
-    // a directory tapHLE synthesised has no host counterpart to ask, and
-    // inventing a date would be worse than leaving the key out. The dictionary
-    // is still returned with everything else that is known, because an app that
-    // asked for a folder's attributes and got nothing back would be worse off
-    // than one that reads a dictionary missing one key.
+    // The filesystem answers for every kind of file and directory it holds, so
+    // these two branches are guards rather than the normal path: a key is left
+    // out only when there is genuinely nothing to measure. The dictionary is
+    // still returned with everything else that is known, because an app that
+    // asked for a folder's attributes and got nothing back is worse off than
+    // one reading a dictionary missing one key — though an app that reads a
+    // missing key without checking is worse off still, which is why the
+    // filesystem answers rather than declining to.
     if let Ok(unix_timestamp) = env.fs.modified(guest_path) {
         let unix_timestamp: f64 = unix_timestamp as f64;
         let unix_ref_date: id = msg_class![env; NSDate dateWithTimeIntervalSince1970:0f64];
