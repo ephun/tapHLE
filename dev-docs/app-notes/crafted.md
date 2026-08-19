@@ -31,7 +31,7 @@ moment a fix works is exactly the moment the tree is dirty. The remedy is in
 `AGENTS.md`: stop at a boundary, commit, rebuild clean, re-verify, publish, and
 only then start the next blocker.
 
-## 2026-08-19: the saved-world panic is fixed, and the next blocker is text
+## 2026-08-19: a saved world can be reopened
 
 `Fs::size()` now answers for a directory, so the Singleplayer tap on a profile
 that already has a saved world no longer panics tapHLE. Fixed on `trunk` in
@@ -49,24 +49,28 @@ local copy (`940c9074…`):
   the new "no size available" / "no modification time available" warnings was
   logged, so both attributes were answered.
 
-**The second launch still does not reach the world list**, on a different and
-later fault:
+That got as far as the Select World screen and no further: building the row's
+label asked `NSMutableString` for `replaceCharactersInRange:withString:`, which
+is the one primitive that class's subclasses must provide and the one
+`ns_string.rs` documented without implementing. Fixed on `trunk` in
+`feat/foundation-mutable-string-replace-characters` (commit `63119bcf`), also
+general rather than this app's.
 
-```text
-thread 'main' panicked at src\objc\messages.rs:432:13:
-Object … (class "_tapHLE_NSMutableString") does not respond to selector
-"replaceCharactersInRange:withString:"!
-```
+**With both fixes the app survives a save and reload.** Replayed on `63119bcf`:
+the Select World screen lists `New World (19.08.26 06:46, 0 Bytes)`, the row
+selects, Play Selected World reopens it, and the world it was left on is still
+being played half a minute later. The saved-world half of the route is now part
+of `dev-docs/clickmaps/crafted.json`, behind `-HasSaveState`.
 
-That is the one primitive `NSMutableString` subclasses must implement, and
-`ns_string.rs` says so in a comment while not implementing it — everything else
-(`appendString:`, `deleteCharactersInRange:`, `insertString:atIndex:`,
-`replaceOccurrencesOfString:…`) is built on top of it and exists. So this is a
-Foundation gap that any app editing a mutable string in place will hit, and it
-gets its own branch rather than riding along here.
+The rating is unchanged at three stars — the loop already started and persisted
+on a fresh profile — but it now holds across launches, which is what a player
+actually does. There is no star boundary here to report.
 
-So the rating is unchanged: three stars on a fresh profile, and a saved world
-still cannot be reopened — one blocker further along than before.
+The size in that label reads `0 Bytes` because the size of a *directory* is
+what the app asks for and what tapHLE answers with: on Windows the host reports
+zero for a directory record. A device would have answered with a small number
+too, so this is cosmetic, but it is the visible edge of the fix and worth
+recognising rather than rediscovering.
 
 ## 2026-08-17: the route is a clickmap, and a saved world breaks the app
 
