@@ -1,12 +1,7 @@
 # Contributing to tapHLE
 
 tapHLE welcomes human contributors, coding agents, and human-agent teams. This
-fork is deliberately AI-development-led: agents are expected to help
-investigate, implement, test, and document changes. A person remains
-accountable for deciding what enters the project.
-
-Read `AGENTS.md` first. It defines the project priorities, trust boundary,
-artifact rules, and validation expectations.
+file seeks to answer questions for human programmers.
 
 If you are new to programming and want to use a coding agent for one game,
 start with `HELP_A_GAME.md`. It includes a prompt you can copy.
@@ -17,18 +12,15 @@ repeating runtime or static-analysis work.
 
 ## What the project wants
 
-The mission is to **Make every 32-bit iOS game playable on modern mobile and desktop hardware.** The
+The mission is to **make every 32-bit iOS game playable on modern mobile and desktop hardware.** The
 fastest way to move toward it is often to fix a real blocker in one game. Contributors may choose games they care about. Nobody is required to
 take a game request from someone else.
 
-Five platforms are targets: Windows, macOS, Linux, Android and iOS. Windows is
-where tapHLE is developed today and where compatibility is judged unless a
-result says otherwise, but that is a description of the current state rather
-than the goal — the first release ships on all five. `AGENTS.md` has the honest
-per-platform state, and `dev-docs/packaging.md` says what each one would need.
-Portable code is welcome; a claim that a platform works is not, until somebody
-has run it there. Broad framework-completeness projects, aesthetic rewrites,
-and speculative abstractions are lower priority than a working game.
+Five platforms are targets: Windows, macOS, Linux, Android and iOS.
+`AGENTS.md` has the honest per-platform state, and `dev-docs/packaging.md` 
+says what each one would need. As of writing, tapHLE is mainly developed
+on Windows, so instructions below are Windows-specific. Hopefully this
+will change soon.
 
 Pragmatic fixes are welcome. If a game needs a narrow workaround, keep it
 local, document the evidence behind it, and add a regression check when
@@ -164,7 +156,7 @@ provisional and must not enter the database.
 
 ## Development workflow
 
-1. Create a focused branch from `trunk`; use `compat/<app-slug>` for app work.
+1. Create a focused branch from `trunk`; use `compat/<app-slug>` for app work
 2. Initialize submodules with `git submodule update --init --recursive`.
 3. Reproduce the failure or create a small synthetic probe.
 4. Make the smallest complete change that advances the target game.
@@ -214,7 +206,7 @@ cherry-picks for changes that directly help a Windows game.
 
 Review is outcome-focused:
 
-- Does this improve or protect a target Windows game?
+- Does this improve or protect a target game?
 - Is the behavior supported by a reproduction, log, probe, or test?
 - Is any shortcut bounded and understandable?
 - Are proprietary artifacts absent and source provenance acceptable?
