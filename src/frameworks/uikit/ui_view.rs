@@ -805,6 +805,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())insertSubview:(id)view atIndex:(NSInteger)index {
     assert!(view != nil);
+    assert!(index >= 0);
     retain(env, view);
     () = msg![env; view removeFromSuperview];
 
@@ -818,9 +819,15 @@ pub const CLASSES: ClassExports = objc_classes! {
         ..
     } = env.objc.borrow_mut(this);
 
-    subviews.insert(index as usize, view);
+    // An index past the end means the top of the stack. iPhone OS accepted
+    // that: an app that builds a screen out of order, or that has a fixed idea
+    // of where each of its views goes and adds them as it gets to them, hands
+    // over an index larger than the number of views it has so far, and the view
+    // ends up on top. Refusing would end the game over a view that was going to
+    // be on top either way.
+    let index = (index as usize).min(subviews.len());
+    subviews.insert(index, view);
 
-    assert!(index >= 0);
     () = msg![env; this_layer insertSublayer:subview_layer atIndex:(index as u32)];
     mark_needs_layout_on_mount(env, view);
 }

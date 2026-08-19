@@ -345,7 +345,10 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.objc.borrow_mut::<CALayerHostObject>(layer).superlayer = this;
 
     let CALayerHostObject { ref mut sublayers, .. } = env.objc.borrow_mut(this);
-    sublayers.insert(idx.try_into().unwrap(), layer);
+    // Past the end is the top, the same as for a view: this is where the view
+    // side lands, and a layer tree built directly gets the same treatment.
+    let idx = (idx as usize).min(sublayers.len());
+    sublayers.insert(idx, layer);
 }
 
 - (())insertSublayer:(id)layer below:(id)sibling {
