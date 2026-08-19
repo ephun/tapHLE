@@ -592,21 +592,40 @@ fn file_attributes_common(env: &mut Environment, guest_path: &GuestPath) -> id {
     }
 
     // TODO: support more attributes
-    let unix_timestamp: f64 = env.fs.modified(guest_path).unwrap() as f64;
-    let unix_ref_date: id = msg_class![env; NSDate dateWithTimeIntervalSince1970:0f64];
-    let unix_date: id =
-        msg_class![env; NSDate dateWithTimeInterval:unix_timestamp sinceDate:unix_ref_date];
-
-    let size = env.fs.size(guest_path).unwrap();
-    let size_num: id = msg_class![env; NSNumber numberWithUnsignedLongLong:size];
-
     let dict = msg_class![env; NSMutableDictionary new];
 
-    let modif_date_key = get_static_str(env, NSFileModificationDate);
-    () = msg![env; dict setObject:unix_date forKey:modif_date_key];
+    // Not every path in the guest filesystem has a modification time to report:
+    // a directory tapHLE synthesised has no host counterpart to ask, and
+    // inventing a date would be worse than leaving the key out. The dictionary
+    // is still returned with everything else that is known, because an app that
+    // asked for a folder's attributes and got nothing back would be worse off
+    // than one that reads a dictionary missing one key.
+    if let Ok(unix_timestamp) = env.fs.modified(guest_path) {
+        let unix_timestamp: f64 = unix_timestamp as f64;
+        let unix_ref_date: id = msg_class![env; NSDate dateWithTimeIntervalSince1970:0f64];
+        let unix_date: id =
+            msg_class![env; NSDate dateWithTimeInterval:unix_timestamp sinceDate:unix_ref_date];
+        let modif_date_key = get_static_str(env, NSFileModificationDate);
+        () = msg![env; dict setObject:unix_date forKey:modif_date_key];
+    } else {
+        log!(
+            "Warning: no modification time available for {:?}, omitting {}",
+            guest_path,
+            NSFileModificationDate
+        );
+    }
 
-    let size_key = get_static_str(env, NSFileSize);
-    () = msg![env; dict setObject:size_num forKey:size_key];
+    if let Ok(size) = env.fs.size(guest_path) {
+        let size_num: id = msg_class![env; NSNumber numberWithUnsignedLongLong:size];
+        let size_key = get_static_str(env, NSFileSize);
+        () = msg![env; dict setObject:size_num forKey:size_key];
+    } else {
+        log!(
+            "Warning: no size available for {:?}, omitting {}",
+            guest_path,
+            NSFileSize
+        );
+    }
 
     // Ownership and permissions. tapHLE's guest filesystem does not model
     // either, but every file an app can see on iPhone OS belongs to the same
