@@ -140,6 +140,11 @@
   held on to every intermediate version. One level load spent eleven gigabytes
   this way; it now spends a fraction of that.
 
+- Stop ending a game when it hands the graphics driver a nonsense size. A
+  negative buffer size is something OpenGL has an answer for — it refuses the
+  call and the game carries on — and tapHLE was treating it as impossible
+  instead. Cut the Rope's first level did this and could not be opened.
+
 - The buttons in a game's button bar work. A bar built in Interface Builder came
   up with nothing in it, and because the bar is still there — invisible, and on
   top — it swallowed every tap aimed at the buttons the game had drawn beneath
