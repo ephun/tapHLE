@@ -170,6 +170,13 @@ Each report is a dated snapshot of one revision, so the series is what shows
 which commit moved the app; a missing boundary erases that, and a later
 regression hunt has nothing to bisect against.
 
+**When the endpoint cannot be reached, the obligation does not lapse.** Record
+the boundary in `compatibility/UNFILED.md` — one register for the whole
+project, rather than a sentence in each app note that nobody will collect — and
+submit from it when the endpoint returns, at whatever rating each app holds
+then. Check the site's root with one `curl` before composing anything: a 522
+there means nothing can be filed and no report needs writing yet.
+
 A boundary passed without a report cannot be filled in later. Do not reconstruct
 one from an app note, from memory, or from a rerun on a newer revision: a report
 asserts that the artifact was run at that revision and rated then, and a
