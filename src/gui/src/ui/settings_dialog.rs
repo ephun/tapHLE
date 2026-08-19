@@ -594,38 +594,24 @@ fn fonts_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Emul
 
     optional_row(
         ui,
-        "Use my fonts when they match",
+        "Use fonts installed here",
         &mut draft.use_host_fonts,
         true,
         inherited.map(|i| describe(&i.use_host_fonts, |v| on_off(*v))),
         |ui, value| {
-            ui.checkbox(value, "").on_hover_text(
-                "Draw an app's font with this computer's copy of it when the names \
-                     match, instead of a substitute. Only an exact family name counts.",
-            );
+            ui.checkbox(value, "");
         },
     );
 
-    ui.add_space(6.0);
-    ui.label(
-        egui::RichText::new(
-            "tapHLE cannot ship the iPhone's own fonts — they are licensed, not free \
-             to redistribute — so it draws a substitute for each. Where a substitute \
-             was picked to match the original's spacing, text still fits where the \
-             app expects; where it only fills the same role, expect it to reflow.",
-        )
-        .small()
-        .color(theme::LIGHT.text_dim),
-    );
     ui.add_space(6.0);
 
     let installed = tapHLE::font::host::installed().families();
 
     egui::ScrollArea::vertical()
-        .max_height(320.0)
+        .max_height(340.0)
         .show(ui, |ui| {
             egui::Grid::new("font-substitutes")
-                .num_columns(3)
+                .num_columns(2)
                 .spacing([12.0, 6.0])
                 .striped(true)
                 .show(ui, |ui| {
@@ -637,7 +623,11 @@ fn fonts_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Emul
         });
 }
 
-/// One iPhone font: its name, what will be drawn for it, and why.
+/// One iPhone font and the font drawn for it.
+///
+/// Deliberately just the two: the catalogue knows how close each substitute is
+/// and why it was chosen, and that belongs in the catalogue. A settings row
+/// that explains itself is a settings row nobody reads.
 fn font_row(
     ui: &mut Ui,
     draft: &mut EmulatorSettings,
@@ -647,18 +637,17 @@ fn font_row(
     use tapHLE::font::catalogue;
 
     let family = substitution.ios_family;
-    let default_family = catalogue::bundled(substitution.bundled);
-    let default_label = format!(
-        "{} ({})",
-        default_family.map_or(substitution.bundled, |f| f.name),
-        substitution.closeness.describe()
-    );
+    let default_name = catalogue::bundled(substitution.bundled)
+        .map_or(substitution.bundled, |bundled| bundled.name);
+    // The font is what the row is about, so it leads; "default" is a note
+    // about where the choice came from and belongs after it.
+    let default_label = format!("{default_name} (default)");
 
     ui.label(family);
 
     let current = draft.font_choices.get(family).cloned();
     let shown = match &current {
-        None => format!("Default — {default_label}"),
+        None => default_label.clone(),
         Some(choice) => match catalogue::bundled(choice) {
             Some(bundled) => bundled.name.to_string(),
             None => choice.clone(),
@@ -667,10 +656,10 @@ fn font_row(
 
     egui::ComboBox::from_id_salt(("font", family))
         .selected_text(shown)
-        .width(220.0)
+        .width(240.0)
         .show_ui(ui, |ui| {
             // The list is the bundled families plus every font on the
-            // computer, which here is over a hundred; without a height it
+            // computer, which is over a hundred here; without a height it
             // grows past the bottom of the screen and the last entries cannot
             // be reached at all.
             egui::ScrollArea::vertical()
@@ -678,14 +667,17 @@ fn font_row(
                 .show(ui, |ui| {
                     let mut chosen: Option<Option<String>> = None;
                     if ui
-                        .selectable_label(current.is_none(), format!("Default — {default_label}"))
+                        .selectable_label(current.is_none(), &default_label)
                         .clicked()
                     {
                         chosen = Some(None);
                     }
                     ui.separator();
+                    // The two group headings stay. With a hundred and forty
+                    // entries, knowing which half you are in is navigation
+                    // rather than commentary.
                     ui.label(
-                        egui::RichText::new("Bundled with tapHLE")
+                        egui::RichText::new("Bundled")
                             .small()
                             .color(theme::LIGHT.text_dim),
                     );
@@ -698,7 +690,7 @@ fn font_row(
                     if !installed.is_empty() {
                         ui.separator();
                         ui.label(
-                            egui::RichText::new("Installed on this computer")
+                            egui::RichText::new("Installed")
                                 .small()
                                 .color(theme::LIGHT.text_dim),
                         );
@@ -721,12 +713,6 @@ fn font_row(
                     }
                 });
         });
-
-    ui.label(
-        egui::RichText::new(substitution.note)
-            .small()
-            .color(theme::LIGHT.text_dim),
-    );
 }
 
 fn system_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {

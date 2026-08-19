@@ -608,9 +608,9 @@
   looks through the fonts installed on your computer for the real thing before
   falling back to a substitute, so someone with Helvetica gets Helvetica.
 - You can choose the fonts yourself. Settings has a Fonts page listing every
-  iPhone font tapHLE knows about, what it will draw for each and why, and a
-  choice beside it — any font tapHLE ships or any font installed on your
-  computer. Set it once for everything, or for one game only.
+  iPhone font tapHLE knows about and the font it draws for each, and you can
+  change any of them to a font tapHLE ships or one installed on your computer.
+  Set it once for everything, or for one game only.
 - Fixed an ugly patch of the window where the app list's scroll bar and the
   edge you drag to resize the details panel sat on the same two pixels, so
   moving the pointer across it flipped between the two and neither the
