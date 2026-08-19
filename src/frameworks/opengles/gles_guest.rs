@@ -572,12 +572,20 @@ fn glBufferData(
     usage: GLenum,
 ) {
     with_ctx_and_mem(env, |gles, mem| unsafe {
-        let data = if data.is_null() {
+        // A negative size is something OpenGL ES has an answer for: it is
+        // GL_INVALID_VALUE, the call does nothing, and the app carries on. It
+        // reached this far as a length to read guest memory with, where it is
+        // not a number at all — so the pointer is not computed, and the call is
+        // still made, which is what leaves the error flag where the app can
+        // find it. A game whose first level did this ended the emulator.
+        let data = if data.is_null() || size < 0 {
             std::ptr::null()
         } else {
-            mem.ptr_at(data.cast::<u8>(), size.try_into().unwrap())
-                .cast()
+            mem.ptr_at(data.cast::<u8>(), size as GuestUSize).cast()
         };
+        if size < 0 {
+            log!("Warning: glBufferData() with negative size {}; passing it on for the driver to reject", size);
+        }
         gles.BufferData(target, size as HostGLsizeiptr, data, usage)
     })
 }
@@ -590,12 +598,15 @@ fn glBufferSubData(
     data: ConstPtr<GLvoid>,
 ) {
     with_ctx_and_mem(env, |gles, mem| unsafe {
-        let data = if data.is_null() {
+        // Negative sizes are the driver's to reject here too; see glBufferData.
+        let data = if data.is_null() || size < 0 {
             std::ptr::null()
         } else {
-            mem.ptr_at(data.cast::<u8>(), size.try_into().unwrap())
-                .cast()
+            mem.ptr_at(data.cast::<u8>(), size as GuestUSize).cast()
         };
+        if size < 0 {
+            log!("Warning: glBufferSubData() with negative size {}; passing it on for the driver to reject", size);
+        }
         gles.BufferSubData(target, offset as HostGLintptr, size as HostGLsizeiptr, data)
     })
 }
