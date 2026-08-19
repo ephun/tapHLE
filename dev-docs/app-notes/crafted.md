@@ -31,6 +31,43 @@ moment a fix works is exactly the moment the tree is dirty. The remedy is in
 `AGENTS.md`: stop at a boundary, commit, rebuild clean, re-verify, publish, and
 only then start the next blocker.
 
+## 2026-08-19: the saved-world panic is fixed, and the next blocker is text
+
+`Fs::size()` now answers for a directory, so the Singleplayer tap on a profile
+that already has a saved world no longer panics tapHLE. Fixed on `trunk` in
+`fix/fs-directory-size` (commit `82595e15`); the change is general emulator
+behaviour, not this app's.
+
+Verified on `82595e15`, a clean build, in two runs against the hash-verified
+local copy (`940c9074…`):
+
+- `dev-docs/clickmaps/crafted.json` replayed end to end on a fresh profile —
+  world generated, player on terrain, hearts and hotbar drawn, still live half a
+  minute later.
+- Relaunched with `Documents/saves/New World/` in place. The Singleplayer tap
+  reached the attributes call and got past it: no `fs.rs` panic, and neither of
+  the new "no size available" / "no modification time available" warnings was
+  logged, so both attributes were answered.
+
+**The second launch still does not reach the world list**, on a different and
+later fault:
+
+```text
+thread 'main' panicked at src\objc\messages.rs:432:13:
+Object … (class "_tapHLE_NSMutableString") does not respond to selector
+"replaceCharactersInRange:withString:"!
+```
+
+That is the one primitive `NSMutableString` subclasses must implement, and
+`ns_string.rs` says so in a comment while not implementing it — everything else
+(`appendString:`, `deleteCharactersInRange:`, `insertString:atIndex:`,
+`replaceOccurrencesOfString:…`) is built on top of it and exists. So this is a
+Foundation gap that any app editing a mutable string in place will hit, and it
+gets its own branch rather than riding along here.
+
+So the rating is unchanged: three stars on a fresh profile, and a saved world
+still cannot be reopened — one blocker further along than before.
+
 ## 2026-08-17: the route is a clickmap, and a saved world breaks the app
 
 The route is recorded as `dev-docs/clickmaps/crafted.json` and was replayed end
@@ -59,9 +96,9 @@ So this app is three stars on a fresh profile and cannot reach its own world
 list on the second launch — which is worse than the rating suggests, because
 saving a world is the normal thing a player does. The fix is general and
 belongs to `Fs::size()`, not to this app: a directory has a size on every host
-tapHLE runs on, and any app that stats one hits this. It is not fixed here
-because it is emulator behaviour a user hits, so it wants its own `fix/` branch
-rather than riding along with a documentation change.
+tapHLE runs on, and any app that stats one hits this. It was fixed on `trunk`
+in `fix/fs-directory-size` on 2026-08-19; the section above records what the
+second launch does now.
 
 ## 2026-08-05: three stars on `10075dc6`
 
