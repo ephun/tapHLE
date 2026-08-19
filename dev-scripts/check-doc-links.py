@@ -63,6 +63,37 @@ def references(text):
         yield f"{match.group(1)}.{match.group(2)}"
 
 
+# docs/platforms.md owns the per-platform status matrix. It lived in README.md,
+# AGENTS.md and dev-docs/packaging.md at the same time, and the three disagreed
+# about whether the first release was Windows-only or all-platform. A second
+# copy is not a formatting preference; it is how that happens again.
+MATRIX_OWNER = "docs/platforms.md"
+
+MATRIX_MARKERS = (
+    "Linux x86_64",
+    "inherited source only",
+)
+
+
+def duplicate_matrices():
+    """Report any file other than the owner carrying a platform status table."""
+    offenders = {}
+    for path in tracked_text_files():
+        name = str(path).replace("\\", "/")
+        if name == MATRIX_OWNER or name == "dev-scripts/check-doc-links.py":
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        # A table needs both a row label and the pipe syntax to be a matrix
+        # rather than prose that happens to mention a platform.
+        hits = [m for m in MATRIX_MARKERS if m in text]
+        if hits and "| --- |" in text:
+            offenders[name] = hits
+    return offenders
+
+
 def main():
     broken = {}
     for path in tracked_text_files():
@@ -74,18 +105,31 @@ def main():
             if not pathlib.Path(target).exists():
                 broken.setdefault(target, set()).add(str(path))
 
-    if not broken:
+    duplicates = duplicate_matrices()
+
+    if not broken and not duplicates:
         print("Documentation references: OK")
+        print(f"Platform status matrix: only in {MATRIX_OWNER}")
         return 0
 
     for target in sorted(broken):
         print(f"Missing referenced file: {target}", file=sys.stderr)
         for source in sorted(broken[target]):
             print(f"    referenced by {source}", file=sys.stderr)
-    print(
-        f"\n{len(broken)} referenced file(s) do not exist.",
-        file=sys.stderr,
-    )
+
+    for name in sorted(duplicates):
+        print(
+            f"Platform status matrix duplicated in {name} "
+            f"(matched: {', '.join(duplicates[name])})",
+            file=sys.stderr,
+        )
+        print(f"    {MATRIX_OWNER} owns it. Link there instead.", file=sys.stderr)
+
+    if broken:
+        print(
+            f"\n{len(broken)} referenced file(s) do not exist.",
+            file=sys.stderr,
+        )
     return 1
 
 

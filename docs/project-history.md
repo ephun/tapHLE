@@ -127,9 +127,9 @@ deliberately does not import HyperHLE's later ES3 foundation, unrelated product
 changes, or incomplete desktop-GL fallback.
 
 **The ported work is by Бусик**, in HyperHLE commit `d640dd4d`, "Add GLES2Native
-backend and shader-based present path". That commit adds
-`src/gles/gles2_native.rs`, `src/frameworks/opengles/eagl.rs`, and the
-shader-based present path — the material `fd543d42` describes adapting.
+backend and shader-based present path". That commit adds, in HyperHLE's tree,
+the files that became tapHLE's `gles2_native.rs` and `opengles/eagl.rs`, plus
+the shader-based present path — the material `fd543d42` describes adapting.
 
 ### Erratum: the ES 2.0 attribution in `fd543d42` is wrong (recorded 2026-07-22)
 
@@ -137,29 +137,32 @@ shader-based present path — the material `fd543d42` describes adapting.
 `ec06f12b886a166b220df94d44861a2de78299b3` and carries `Co-authored-by:
 Dev-HyperHle`. Both are incorrect:
 
-- `ec06f12b` is "triage-22-coremedia-stub-dylib". It touches
-  `src/frameworks/core_media.rs`, `src/dyld/dylib_list.rs` and
-  `src/frameworks.rs`, and **no graphics files at all**. It is not the source of
-  any ES 2.0 code.
+- `ec06f12b` is "triage-22-coremedia-stub-dylib". In HyperHLE's tree it touches
+  only a Core Media stub, the dylib list, and the framework registry — **no
+  graphics files at all**. It is not the source of any ES 2.0 code.
 - The trailer does not parse. A blank line separates it from the trailer block,
   so `git interpret-trailers --parse` on `fd543d42` returns only the Codex
   trailer, and GitHub records no co-author for the upstream work. Trailers must
   be contiguous; see the commit-provenance rules in `AGENTS.md`.
 
-The commit cannot be rewritten. It lives on `compat/baby-monkey`, not on `trunk`,
-with 54 commits after it — including `f0947bc4`, which is the tapHLE version cited
-by the published Baby Monkey report in the compatibility database. Rewriting
-`fd543d42` would change that descendant's hash and invalidate a published result,
-which `docs/compatibility.md` forbids outright. This page and the provenance
-comment in `src/gles/gles2_native.rs` are therefore the correcting record.
+The commit cannot be rewritten. `f0947bc4`, a descendant, is the tapHLE version
+cited by the published Baby Monkey report in the compatibility database.
+Rewriting `fd543d42` would change that descendant's hash and invalidate a
+published result, which `docs/compatibility.md` forbids outright. This page and
+the provenance comment at the top of `src/gles/gles2_native.rs` are therefore
+the correcting record.
 
 Credit for the native ES 2.0 backend belongs to **Бусик**. Any future commit that
 extends or re-ports this work should carry a contiguous `Co-authored-by:` trailer
 naming that author, and cite `d640dd4d`.
 
-The port is not on `trunk` at all: `src/gles/gles2_native.rs` exists only on
-`compat/baby-monkey`. If that work is ever promoted to `trunk`, the promoting
-commit is the place to attach the attribution that `fd543d42` failed to record.
+**Correction (2026-08-19): the port is on `trunk`.** This section previously
+said `src/gles/gles2_native.rs` existed only on `compat/baby-monkey`, and that
+a future promoting commit would be the place to attach the missing attribution.
+That was true when written and is not true now: `fd543d42` is an ancestor of
+`origin/trunk` and added the file there. No promoting commit is coming, so the
+source-file comment is the attribution of record, and any commit that extends
+or re-ports the backend is the next opportunity to credit it correctly.
 
 HyperHLE hashes do not resolve from a fresh clone: `upstream` is touchHLE, and
 these objects only exist locally from an earlier fetch. To verify any citation

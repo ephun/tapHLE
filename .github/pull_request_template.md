@@ -17,9 +17,21 @@ implementation or game-specific workaround.
 - [ ] `cargo build --release`
 - [ ] Exact target game launched on the claimed host
 - [ ] `python dev-scripts/compatibility.py check`
+- [ ] `bash dev-scripts/lint.sh`
+- [ ] `dev-scripts/regression-sweep.ps1`, if a shared path changed
 
 List the checks actually run, host OS/device/CPU/GPU details for game
 validation, and any skipped checks with their reason.
+
+## Documentation impact
+
+- [ ] Platform status, settings/CLI behaviour, release policy, or the
+      compatibility protocol changed — and the file that **owns** that fact
+      (see the table in `docs/README.md`) was updated.
+- [ ] No fact was restated in a second document instead of linked.
+- [ ] No new documentation file was added without the maintainer asking.
+
+If none applies, say "no documentation impact".
 
 ## Provenance and agents
 
