@@ -134,6 +134,12 @@
   changing text is built from, and it was the one that was missing, so a game
   that rewrote a line rather than building a new one stopped there.
 
+- Building up a piece of text no longer gets slower the longer it gets. Adding
+  to the end of a string rewrote the whole string every time, so a game
+  assembling a level file a word at a time did more and more work per word and
+  held on to every intermediate version. One level load spent eleven gigabytes
+  this way; it now spends a fraction of that.
+
 - Reading a text file no longer gets slower the further into it a game gets.
   Every step of reading through text — take the next word, check for this
   marker, read this number — was copying everything that came after it first,

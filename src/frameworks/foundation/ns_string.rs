@@ -2177,11 +2177,32 @@ pub const CLASSES: ClassExports = objc_classes! {
     data_using_encoding_lossy_inner(env, this, encoding, lossy)
 }
 
+// Appending, on the concrete class, writes into the string that is already
+// there. NSMutableString's own implementation goes through the mutation
+// primitive, which rebuilds the whole string from its two halves — correct for
+// any subclass, and fine for the one-off edits it is usually asked for, but
+// appending is the one that gets done in a loop. A game assembling a file a
+// token at a time then pays for the whole string on every token, so the work
+// and the memory grow with the square of the result: one level load spent
+// eleven gigabytes on eleven thousand appends before it was killed.
+- (())appendString:(id)a_string { // NSString*
+    assert_ne!(a_string, nil);
+    // Only what is being added is copied here.
+    let addition = to_rust_string(env, a_string).into_owned();
+    match env.objc.borrow_mut::<StringHostObject>(this) {
+        StringHostObject::Utf8(utf8) => utf8.to_mut().push_str(&addition),
+        StringHostObject::Utf16(utf16) => utf16.extend(addition.encode_utf16()),
+    }
+}
+
 - (())appendFormat:(id)format, // NSString*
                    ...args {
     assert_ne!(format, nil);
     let res = with_format(env, format, args.start());
-    *env.objc.borrow_mut(this) = StringHostObject::Utf8(format!("{}{}", to_rust_string(env, this), res).into());
+    match env.objc.borrow_mut::<StringHostObject>(this) {
+        StringHostObject::Utf8(utf8) => utf8.to_mut().push_str(&res),
+        StringHostObject::Utf16(utf16) => utf16.extend(res.encode_utf16()),
+    }
 }
 
 - (())setString:(id)a_string { // NSString*
