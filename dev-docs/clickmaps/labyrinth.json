@@ -1,0 +1,58 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "se.codify.labyrinth",
+    "display_name": "Labyrinth",
+    "version": "1.2",
+    "sha256": "1ff7275f8aa90b07180aafe5cbeb34df238202fc99ac5f57132ee4b8e7402a08"
+  },
+  "recorded": {
+    "date": "2026-08-19",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
+  "milestone": {
+    "rating": 2,
+    "describes": "The welcome screen is drawn and stays up: the wooden maze box, the instruction to hold the device parallel to the floor, and a bar along the bottom with Play, Settings and Credits. Play opens the level-pack list, which is further than the rating goes - see the note."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 8000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 45000,
+      "expect": "The welcome screen: the maze box photograph, 'Welcome to Labyrinth', and the instruction to tilt."
+    },
+    {
+      "id": "hold",
+      "action": "wait",
+      "settle_ms": 10000,
+      "expect": "Still there. This is the two-star milestone."
+    },
+    {
+      "id": "play",
+      "from": "welcome",
+      "action": "tap",
+      "at": [
+        28,
+        445
+      ],
+      "press_ms": 250,
+      "settle_ms": 8000,
+      "expect": "The level-pack list: a header reading 'Demo levels, By: Rod Ferguson'. The rows below it are dark and it is not established whether they are missing or simply unlit."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 320x480 portrait window. A capture includes the window border and title bar, so a position read off a frame is about (8, 31) out.",
+    "**Play only works from `6dd4671e` onwards.** Before that the bar swallowed every touch: a toolbar decoded from a nib had no items and was an invisible solid rectangle over the app's own artwork. See `dev-docs/app-notes/labyrinth.md`.",
+    "The route stops at the pack list because tapping a pack sends the app's own `initGLAndApp` to its own `LevelStatusView`, which tapHLE cannot find. That is the frontier, and it is a class-loading gap rather than a missing framework method."
+  ]
+}
