@@ -3,9 +3,11 @@
 tapHLE is a high-level emulator for 32-bit iOS applications. Its mission is to
 **make every 32-bit iOS game playable on modern mobile and desktop hardware.**
 
-Open tapHLE, see your apps, pick one, press Play.
+Instead of emulating an entire iPhone and operating system, tapHLE runs the
+game's 32-bit ARM code and supplies its own implementations of frameworks such
+as Foundation, UIKit, OpenGL ES, and OpenAL.
 
-## Want a game to work?
+## Want a specific game to work?
 
 You can use your own coding agent to work on it. You do not need to know how to
 program, and you do not need to wait for someone else to take your request.
@@ -13,60 +15,31 @@ tapHLE gives the agent rules, tests, and a step-by-step debugging guide.
 
 **[Start here: make a game work with a coding agent](HELP_A_GAME.md)**
 
-Opening an issue does not promise that another contributor will do the work.
-It gives you and your agent a place to record the goal and avoid duplicate
-work. Never upload an IPA, game files, or a raw log.
-
-Instead of emulating an entire iPhone and operating system, tapHLE runs the
-game's 32-bit ARM code and supplies its own implementations of frameworks such
-as Foundation, UIKit, OpenGL ES, and OpenAL.
-
 ## Project direction
 
 This fork is AI-development-led. Coding agents are first-class contributors
-for investigation, implementation, testing, and documentation. Contributors
-may choose the games they care about. Each game is a practical step toward
-broader compatibility.
+for investigation, implementation, testing, and documentation. 
 
-The priorities are intentionally practical:
-
-1. Move one chosen game closer to working on its requested supported host.
-2. Iterate quickly from logs and observed behavior.
-3. Protect working behavior with focused tests.
-4. Improve architecture when it helps deliver compatibility.
-
-Bounded compatibility workarounds are acceptable. Elegance is welcome, but a
-large from-the-ground-up implementation is not a prerequisite for a useful
-fix.
+Contribution is either driven by direct work on a specific app or by broad
+work implementing iOS systems missing from the emulator. Broad work helps
+a lot of apps a little, and specific app work helps one app a lot and maybe
+a couple other apps unintentionally.
 
 ## Platforms
 
-All five are targets: Windows, macOS, Linux, Android and iOS. The first
-release ships on all of them.
+All five are targets: Windows, macOS, Linux, Android and iOS. tapHLE is
+waiting to release its first version until all platforms are ready.
 
-That is a statement of intent, so here is the state of each one separately.
-Nothing in this table is a promise about the next row along, and none of these
-rows becomes a claim until somebody has run tapHLE on that platform.
+Most of the work is first tested on Windows, and then other platforms
+follow.
 
 | Platform | Builds | Tested | Packaged |
 | --- | --- | --- | --- |
-| Windows x86_64 | yes | yes, continuously | yes; installer scripted but not yet built |
+| Windows x86_64 | yes | yes | yes; installer scripted but not yet built |
 | macOS x86_64 | yes | built in CI, not played on | bundle script, emulator only |
-| Linux x86_64 | not tried yet | no | no |
+| Linux x86_64 | no | no | no |
 | iOS | on the `feat/ios-host` branch | no | no |
 | Android | inherited source only | no | no |
-
-Windows is where tapHLE is developed and where compatibility is judged, so it
-is the platform to expect things to work on. macOS compiles and is useful for
-comparing behaviour against Apple's own frameworks. Linux has not been tried;
-nothing in the code is Windows-specific by design, and `dev-docs/packaging.md`
-lists what a first attempt would run into.
-
-Running on modern iOS is a likely future direction rather than something tapHLE
-does today. An experimental host was tried and withdrawn from `trunk` because it
-was unfinished and could not be built or tested; that work continues on the
-`feat/ios-host` branch. The inherited Android source remains in the repository
-and is not being developed.
 
 ## Status
 
@@ -74,25 +47,20 @@ tapHLE is experimental. Compatibility is specific to an exact game version,
 and many applications will not work yet. The project does not include games,
 Apple software, decryption keys, or other proprietary material.
 
-The first tapHLE release line is `0.3`; numbered alpha/beta/RC/stable builds are
-Windows x86_64 releases, while green `trunk` builds are commit-identified
-previews. **No release has been published yet**, so tapHLE's update check
-correctly reports that there is nothing to compare against. The versioning and
-packaging policy is documented in `dev-docs/releases.md`.
-
 **[See the compatibility ratings (1–5 stars)](https://taphle.ephun.net/compatibility).**
-That live database is the current record; the legacy JSON records remain only
-until they are migrated. Every result names the exact app build it was earned
-on, read from the bundle metadata of the file that was actually run, and a
-record for a game that is no longer sold may also note where that file came
-from. Those rules do not cover a game that is still sold, and the project
-respects DMCA notices and rightsholder requests. `compatibility/README.md` is
-the full protocol.
+That live database is the current record. Every result names the exact app build it 
+was earned on, read from the bundle metadata of the file that was actually run.
 
 The project is not affiliated with or endorsed by Apple Inc. iPhone, iOS,
 iPod, iPod touch, and iPad are Apple trademarks.
 
-## Build on Windows
+## Windows instructions
+
+At this point, development mostly takes place on Windows. As of writing, tapHLE
+should work for other platforms (see above) but is untested. Following are Windows
+specific instructions ahead of providing better multi-platform instructions. 
+
+### Build on Windows
 
 The full prerequisites and troubleshooting notes are in
 `dev-docs/building.md`. At a high level, install Git, Rust, CMake, a C/C++
@@ -115,7 +83,7 @@ A distributable directory also needs `tapHLE_dylibs`, `tapHLE_fonts`,
 `res\icon.png` and `tapHLE_default_options.txt`; `dev-scripts/make-windows-bundle.sh`
 assembles those, and `dev-docs/packaging.md` covers the installer.
 
-## Using it
+### Using it
 
 Put `.ipa` files or `.app` bundles in `tapHLE_apps`, or drop them onto the
 window, or use **Add App**. Those files are ignored by Git, so you can keep
@@ -164,10 +132,6 @@ The version and numbered release rules are in `dev-docs/releases.md`.
 If you want to use a coding agent for a game, start with `HELP_A_GAME.md`.
 Agents must read `AGENTS.md`. Human contributors can find more detail in
 `CONTRIBUTING.md`.
-
-Game compatibility reports are especially useful when they identify the exact
-game version, supported host environment, reproduction steps, and sanitized
-tapHLE log. Never attach an app binary or raw log.
 
 ## Origin and license
 
