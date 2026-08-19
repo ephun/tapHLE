@@ -140,6 +140,11 @@
   held on to every intermediate version. One level load spent eleven gigabytes
   this way; it now spends a fraction of that.
 
+- Games that work out routes can do so. The collection Core Foundation provides
+  for "which of these is the cheapest to try next" — the thing every path search
+  is built around — did not exist, so a game that started a level with any kind
+  of route-finding ended there. Fieldrunners now loads a level and draws it.
+
 - Read numbers with a decimal point out of text. Games keep level geometry,
   timings and positions in text files, and reading a whole number worked while
   reading a fractional one did not exist at all, so the game ended at the first
