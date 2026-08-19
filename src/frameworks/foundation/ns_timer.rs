@@ -22,6 +22,10 @@ struct NSTimerHostObject {
     /// Strong reference
     target: id,
     selector: SEL,
+    /// Strong reference, and the alternative to the two fields above: a timer
+    /// is made either with a target and a selector or with an invocation that
+    /// already knows both. [nil] when the timer has a target.
+    invocation: id,
     /// Strong reference
     user_info: id,
     repeats: bool,
@@ -50,6 +54,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         rust_interval: Duration::ZERO,
         target: nil,
         selector: env.objc.lookup_selector("fire").unwrap(),
+        invocation: nil,
         user_info: nil,
         repeats: false,
         due_by: None,
@@ -75,6 +80,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         rust_interval,
         target,
         selector,
+        invocation: nil,
         user_info,
         repeats,
         due_by: Some(Instant::now().checked_add(rust_interval).unwrap()),
@@ -94,6 +100,57 @@ pub const CLASSES: ClassExports = objc_classes! {
     );
 
     autorelease(env, new)
+}
+
+// The invocation form. An app that already has an NSInvocation - because it
+// built one to call something with arguments a timer cannot supply - schedules
+// it directly rather than routing through a target and selector, and a timer
+// that cannot be made this way ends the app at the moment it tries.
++ (id)timerWithTimeInterval:(NSTimeInterval)ns_interval
+                 invocation:(id)invocation // NSInvocation*
+                    repeats:(bool)repeats {
+    let ns_interval = ns_interval.max(0.0001);
+    let rust_interval = Duration::from_secs_f64(ns_interval);
+
+    retain(env, invocation);
+
+    let host_object = Box::new(NSTimerHostObject {
+        ns_interval,
+        rust_interval,
+        target: nil,
+        selector: SEL::null(),
+        invocation,
+        user_info: nil,
+        repeats,
+        due_by: Some(Instant::now().checked_add(rust_interval).unwrap()),
+        run_loop: nil,
+        is_running_callback: false
+    });
+    let new = env.objc.alloc_object(this, host_object, &mut env.mem);
+
+    log_dbg!(
+        "New {} timer {:?}, interval {}s, invocation {:?}",
+        if repeats { "repeating" } else { "single-use" },
+        new,
+        ns_interval,
+        invocation,
+    );
+
+    autorelease(env, new)
+}
+
++ (id)scheduledTimerWithTimeInterval:(NSTimeInterval)interval
+                          invocation:(id)invocation // NSInvocation*
+                             repeats:(bool)repeats {
+    let timer = msg![env; this timerWithTimeInterval:interval
+                                          invocation:invocation
+                                             repeats:repeats];
+
+    let run_loop: id = msg_class![env; NSRunLoop currentRunLoop];
+    let mode: id = ns_string::get_static_str(env, NSDefaultRunLoopMode);
+    let _: () = msg![env; run_loop addTimer:timer forMode:mode];
+
+    timer
 }
 
 + (id)scheduledTimerWithTimeInterval:(NSTimeInterval)interval
@@ -172,10 +229,12 @@ pub const CLASSES: ClassExports = objc_classes! {
     let &NSTimerHostObject {
         target,
         user_info,
+        invocation,
         ..
     } = env.objc.borrow(this);
     release(env, target);
     release(env, user_info);
+    release(env, invocation);
     env.objc.dealloc_object(this, &mut env.mem)
 }
 
@@ -263,6 +322,7 @@ pub(super) fn handle_timer(env: &mut Environment, timer: id) -> Option<Instant> 
         rust_interval,
         target,
         selector,
+        invocation,
         repeats,
         due_by,
         is_running_callback,
@@ -335,8 +395,15 @@ pub(super) fn handle_timer(env: &mut Environment, timer: id) -> Option<Instant> 
 
     let pool: id = msg_class![env; NSAutoreleasePool new];
 
-    // Signature should be `- (void)timerDidFire:(NSTimer *)which`.
-    let _: () = msg_send(env, (target, selector, timer));
+    if invocation != nil {
+        // An invocation carries its own target, selector and arguments; the
+        // timer does not get to add itself to them, and Apple's does not
+        // either.
+        let _: () = msg![env; invocation invoke];
+    } else {
+        // Signature should be `- (void)timerDidFire:(NSTimer *)which`.
+        let _: () = msg_send(env, (target, selector, timer));
+    }
 
     env.objc
         .borrow_mut::<NSTimerHostObject>(timer)

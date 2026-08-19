@@ -140,6 +140,11 @@
   held on to every intermediate version. One level load spent eleven gigabytes
   this way; it now spends a fraction of that.
 
+- Let a game set a timer that calls something it has already prepared, rather
+  than only a plain method. Games use this when the thing the timer should do
+  needs arguments a timer cannot supply, and there was no way to make one, so
+  the game ended when it tried.
+
 - Show a picture beside a row in a list. A game that puts an icon next to each
   entry — a level, a save, a track — asks the row for its picture well while
   filling the row in, and there was nothing there to ask, so the game ended at
