@@ -52,8 +52,36 @@ button leads to.
 **The report for two stars is blocked** by the database outage (HTTP 522 at the
 root all day). Submit what the app holds when the endpoint returns.
 
+## 2026-08-19, later: the buttons work, and the next stop is the app's own class
+
+`feat/toolbar-buttons-can-be-pressed` landed and Play opens the level-pack list
+— "Demo levels, by Rod Ferguson" — so the dead-button frontier is closed. The
+list draws its header and little else; whether the rows below are missing or
+simply dark is not yet established.
+
+Tapping the pack stops on something different in kind from everything before
+it:
+
+```text
+Object … (class "LevelStatusView") does not respond to selector "initGLAndApp"!
+```
+
+**Both names belong to the app, not to iPhone OS.** `initGLAndApp` appears
+three times in the app's binary and `LevelStatusView` thirty-five, so the
+method is there and tapHLE has not attached it to the object it is being sent
+to. That is a class-loading gap rather than a missing framework method, and it
+is a different kind of problem from a missing selector on a system class:
+nothing can be implemented to fix it, only found.
+
+The next discriminator: whether `initGLAndApp` is defined in a category, or on
+a superclass — the name suggests a shared GL view base class — that tapHLE
+failed to build, leaving `LevelStatusView` parented somewhere shallower than it
+should be. `dev-scripts/objc-method-at.py` names the method at an address, and
+walking `__objc_classlist` for the two class names says which class really owns
+it.
+
 ## Next step
 
-Make `UIToolbar` interactive, then come back: this game is steered by tilting,
-`tilt` exists in clickmaps now, and the whole route to a rating is one button
+Find out why that method is missing, then come back: this game is steered by
+tilting, `tilt` exists in clickmaps now, and a rating is one working level
 away.
