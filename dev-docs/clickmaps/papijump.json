@@ -1,0 +1,63 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "net.sunflat.iphone.PapiJump",
+    "display_name": "PapiJump",
+    "version": "1.6.1.0.4",
+    "sha256": "7808e1793f9e3a6a7e74d4d64b025cc52d0e9035485740cddb033c0172e69272"
+  },
+  "recorded": {
+    "date": "2026-08-19",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "A round is being played: the ball bounces on the platforms under its own physics, the score is drawn, and it is still bouncing - at a different height each time it is looked at - half a minute later."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 8000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 45000,
+      "expect": "The menu: the PapiJump logo over Start Game, How to Play, More Games! and a fourth button."
+    },
+    {
+      "id": "start",
+      "from": "menu",
+      "action": "tap",
+      "at": [
+        160,
+        240
+      ],
+      "settle_ms": 15000,
+      "expect": "The game: green platforms on blue, the red ball, and the score along the top."
+    },
+    {
+      "id": "bounce1",
+      "action": "wait",
+      "settle_ms": 15000,
+      "expect": "The ball is somewhere else vertically - it is bouncing, not held."
+    },
+    {
+      "id": "bounce2",
+      "action": "wait",
+      "settle_ms": 15000,
+      "expect": "Somewhere else again, and nothing has stopped."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 320x480 portrait window. A capture includes the window border and title bar, so a position read off a frame is about (8, 31) out.",
+    "**Steering is not on this route, and that is the game rather than the map.** PapiJump is played by tilting the device, which tapHLE gives as the right mouse button held while the cursor moves, and a clickmap has no way to say that. So the milestone rests on the ball bouncing and the game staying live, not on climbing: the score sits where it started.",
+    "The logo at the top of the menu is drawn wider than the screen and is cut off at both sides. Everything else on the menu is in place, and the game screen itself is not affected."
+  ]
+}
