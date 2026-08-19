@@ -1,0 +1,85 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.chillingo.cuttherope",
+    "display_name": "Cut the Rope",
+    "version": "1.6",
+    "sha256": "18bb07cc0417541bbc7fffabd7c647dd656fd6c9396b42ff470ae9a7e2fad693"
+  },
+  "recorded": {
+    "date": "2026-08-19",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "Level 1 is open and running: the candy hanging from its rope, the star targets, Om Nom waiting below, the star count and MENU across the top, and the scene animating between captures."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 8000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 45000,
+      "expect": "The title screen: the Cut the Rope logo over Play, Drawings and Settings."
+    },
+    {
+      "id": "play",
+      "from": "title",
+      "action": "tap",
+      "at": [
+        160,
+        291
+      ],
+      "settle_ms": 12000,
+      "expect": "The box list, with the Cardboard Box pack at the top."
+    },
+    {
+      "id": "pack",
+      "from": "box list",
+      "action": "tap",
+      "at": [
+        160,
+        119
+      ],
+      "settle_ms": 10000,
+      "expect": "The level grid for that box: 0/75 stars, level 1 unlocked and the rest padlocked."
+    },
+    {
+      "id": "level",
+      "from": "level grid",
+      "action": "tap",
+      "at": [
+        47,
+        81
+      ],
+      "settle_ms": 15000,
+      "expect": "Level 1: the candy on its rope, three star targets, Om Nom at the bottom."
+    },
+    {
+      "id": "watch1",
+      "action": "wait",
+      "settle_ms": 8000,
+      "expect": "The scene is animating - the candy swings and Om Nom moves."
+    },
+    {
+      "id": "watch2",
+      "action": "wait",
+      "settle_ms": 8000,
+      "expect": "Still animating, and nothing has stopped."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 320x480 portrait window. A capture includes the window border and title bar, so a position read off a frame is about (8, 31) out.",
+    "**The level only opens from `2f2b0b0d` onwards** — before that tapHLE aborted on `glBufferData` with a negative size, four times, the moment the level was built. The app still makes those calls; the driver refuses them and the level draws correctly anyway.",
+    "Cutting a rope is a swipe across it, and this route does not do it: the rating rests on the level running, not on playing it."
+  ]
+}
