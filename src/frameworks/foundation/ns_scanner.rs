@@ -204,22 +204,28 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     let stop_len: NSUInteger = msg![env; stop_string length];
     // A stop string with nothing in it is already there wherever the scanner
-    // is, so nothing is scanned - which is what searching for it used to
-    // report as well.
+    // is, so nothing is scanned.
     let found = if stop_len == 0 {
         Some(pos)
     } else {
         find_string(env, string, len, pos, stop_string)
     };
-    if found == Some(pos) {
-        *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos };
-        return false;
-    }
 
     let scan_len = match found {
         Some(location) => location - pos,
         None => len - pos,
     };
+
+    // "Returns YES if the receiver scanned any characters, otherwise NO." A
+    // scan that moved nowhere - because the stop string is right here, or
+    // because there is nothing left of the string at all - scanned no
+    // characters, and saying otherwise is how a loop that reads until the
+    // scanner stops finding things never ends. One game's level load sat at
+    // the end of a seven-character string twelve million times.
+    if scan_len == 0 {
+        *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos };
+        return false;
+    }
     assert!(pos + scan_len <= len);
     *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos: pos + scan_len };
 

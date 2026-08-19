@@ -140,6 +140,12 @@
   held on to every intermediate version. One level load spent eleven gigabytes
   this way; it now spends a fraction of that.
 
+- A game that reads through a text file until there is nothing left now gets to
+  the end of it. Being asked to read past the end was answered as though
+  something had been read, so a game looping until it ran out never ran out:
+  one level load sat on the last seven characters of a line twelve million
+  times, taking a gigabyte a minute with it, and never started the level.
+
 - Reading a text file no longer gets slower the further into it a game gets.
   Every step of reading through text — take the next word, check for this
   marker, read this number — was copying everything that came after it first,
