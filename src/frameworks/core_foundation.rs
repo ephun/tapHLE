@@ -18,6 +18,7 @@
 
 pub mod cf_allocator;
 pub mod cf_array;
+pub mod cf_binary_heap;
 pub mod cf_bundle;
 pub mod cf_data;
 pub mod cf_dictionary;
@@ -39,7 +40,8 @@ pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
     path: "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation",
     aliases: &[],
     class_exports: &[
-        cf_run_loop_timer::CLASSES, // Special internal classes.
+        cf_binary_heap::CLASSES, // Special internal classes.
+        cf_run_loop_timer::CLASSES,
         cf_uuid::CLASSES,
     ],
     constant_exports: &[
@@ -58,6 +60,7 @@ pub const DYLIB: crate::dyld::HostDylib = crate::dyld::HostDylib {
     function_exports: &[
         FUNCTIONS,
         cf_array::FUNCTIONS,
+        cf_binary_heap::FUNCTIONS,
         cf_dictionary::FUNCTIONS,
         cf_bundle::FUNCTIONS,
         cf_socket::FUNCTIONS,
