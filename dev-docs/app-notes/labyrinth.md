@@ -8,6 +8,8 @@
   are separate apps by a different developer (`se.illusionlabs.*`) and stop in
   different places. This note is about the original only.
 - Local copy from the maintainer's collection, not Archive-backed.
+- Route: `dev-docs/clickmaps/labyrinth.json` — the two-star milestone, and the
+  Play tap that now opens the level-pack list.
 
 ## 2026-08-19: two stars, and the buttons are dead for a findable reason
 
