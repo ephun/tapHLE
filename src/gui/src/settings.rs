@@ -25,6 +25,7 @@
 //! generated arguments back through the emulator's own parser.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// The orientation the virtual device starts in.
@@ -170,6 +171,19 @@ pub struct EmulatorSettings {
     pub direct_memory_access: Option<bool>,
     pub error_popup: Option<bool>,
     pub preferred_languages: Option<String>,
+    /// Whether to draw an app's font with this computer's copy of it when the
+    /// names match, rather than with a substitute.
+    pub use_host_fonts: Option<bool>,
+    /// What to draw in place of a particular iPhone font, keyed by the font's
+    /// family name. The value is either the id of a family tapHLE ships or the
+    /// path of a font file.
+    ///
+    /// A map rather than an `Option`, because these are a set of independent
+    /// choices: an app that picks a font for Futura should still get the
+    /// general choice for Helvetica. `inherit` overlays rather than replaces
+    /// for that reason.
+    #[serde(default)]
+    pub font_choices: BTreeMap<String, String>,
     /// Modules to enable verbose tracing for. This is the `TAPHLE_LOG_MODULES`
     /// environment variable rather than an option, because that is how the
     /// emulator reads it.
@@ -193,6 +207,14 @@ impl EmulatorSettings {
             ($($field:ident),+ $(,)?) => {
                 EmulatorSettings {
                     $($field: over.$field.clone().or_else(|| base.$field.clone()),)+
+                    // Font choices merge instead of one level replacing the
+                    // other: picking a font for Futura in one app must not
+                    // discard the general choice made for Helvetica.
+                    font_choices: {
+                        let mut merged = base.font_choices.clone();
+                        merged.extend(over.font_choices.clone());
+                        merged
+                    },
                 }
             };
         }
@@ -218,6 +240,7 @@ impl EmulatorSettings {
             preferred_languages,
             log_modules,
             extra_arguments,
+            use_host_fonts,
         )
     }
 
@@ -303,6 +326,15 @@ impl EmulatorSettings {
             .filter(|l| !l.is_empty())
         {
             args.push(format!("--preferred-languages={languages}"));
+        }
+        flag(
+            &mut args,
+            self.use_host_fonts,
+            "--host-fonts",
+            "--no-host-fonts",
+        );
+        for (family, choice) in &self.font_choices {
+            args.push(format!("--font={family}={choice}"));
         }
         if let Some(extra) = self.extra_arguments.as_deref() {
             args.extend(extra.split_whitespace().map(str::to_string));

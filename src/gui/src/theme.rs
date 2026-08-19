@@ -160,6 +160,20 @@ pub fn apply(ctx: &egui::Context, zoom: f32) {
     spacing.indent = 18.0;
     spacing.scroll.bar_width = 11.0;
     spacing.scroll.floating = false;
+    // Keep a scroll bar off the edge of its container.
+    //
+    // A panel that can be dragged to resize puts its grab band on that same
+    // edge, so with the bar flush against it the two overlap: moving the
+    // pointer a pixel flips between the library's scroll bar appearing and the
+    // panel divider lighting up as a heavy black bar, and neither the pointer
+    // nor the drawing says which one a drag would get. Six points is wider
+    // than the grab band below, so the two never claim the same pixel.
+    spacing.scroll.bar_outer_margin = 6.0;
+
+    // egui's default of five points either side of a panel edge is generous
+    // for a divider that is one point wide, and the generosity is what reaches
+    // across to the scroll bar. Three is still comfortably grabbable.
+    style.interaction.resize_grab_radius_side = 3.0;
 
     ctx.set_style(style);
 }
