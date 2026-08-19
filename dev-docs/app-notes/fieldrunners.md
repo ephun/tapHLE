@@ -80,6 +80,32 @@ profile. A game that cannot be replayed after being played once is its own
 compatibility problem, and nothing is known yet about which of the two paths is
 at fault.
 
+## 2026-08-19, later still: 1.2.3 reaches its menu too
+
+`1.2.3` — display name `Fieldrunners`, bundle `com.subatomicstudios.Fieldrunners`,
+canonical `Fieldrunners.app`, minimum OS `2.0`, iPhone, SHA-256 `3e83ae6a…3a07dd`
+— stopped at `NSScanner`'s missing `scanFloat:` before today and now boots to
+its main menu: the same title art with PLAY, RESUME, SCORES and HELP, and no
+SOCIAL, which that build does not have. **1★ → 2★ on `d387265f`.**
+
+The route is the first two steps of `dev-docs/clickmaps/fieldrunners.json`; the
+map itself stays 1.5.3's, since a map belongs to an app rather than to a build,
+and the steps past the menu have not been checked against this one.
+
+**Its report is blocked by the same outage** — `https://taphle.ephun.net/`
+still returns HTTP 522 — so this boundary joins 1.5.3's as an open threshold.
+Submit whatever rating each build holds when the endpoint returns; do not
+back-date either.
+
+## What the survey says about the whole family, after today
+
+Re-surveyed all 124 files at `d387265f` and compared against `63119bcf`:
+**zero regressions**, and the two builds that moved are both this app's —
+`1.2.3` off `scanFloat:` and `1.5.3` off the directory rename. That the other
+fixes do not show is expected rather than disappointing: the survey presses no
+buttons, and everything after the scanner work only matters once something has
+been tapped.
+
 ## Where the other builds in the collection stop
 
 Surveyed at `63119bcf`; the family is eight files and four different frontiers,
