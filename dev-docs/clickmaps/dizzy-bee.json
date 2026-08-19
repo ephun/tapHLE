@@ -1,0 +1,107 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.dizzybeegame.dizzybee",
+    "display_name": "Dizzy Bee",
+    "version": "1.5",
+    "sha256": "f85283ff2ff4e303fd01266882c32247a597651038d9f13b37c77adc271ae105"
+  },
+  "recorded": {
+    "date": "2026-08-19",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "A level is being played: the bee rolls where the device is tipped, the flowers and the spinner on the board react as it goes, and the board is still live after half a minute of steering."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 8000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 45000,
+      "expect": "The file-select screen: three slots down the left, each marked NEW on a fresh profile, with Select File To Load beside them."
+    },
+    {
+      "id": "slot",
+      "from": "file select",
+      "action": "tap",
+      "at": [
+        97,
+        60
+      ],
+      "settle_ms": 15000,
+      "expect": "The first level: a honeycomb board with flowers, a spinner, gates, and the bee at the left."
+    },
+    {
+      "id": "settle",
+      "action": "wait",
+      "settle_ms": 5000,
+      "expect": "The board before any tilting, for comparison."
+    },
+    {
+      "id": "tilt-right",
+      "action": "tilt",
+      "at": [
+        250,
+        300
+      ],
+      "hold_ms": 1500,
+      "settle_ms": 500,
+      "expect": "The bee rolls right."
+    },
+    {
+      "id": "tilt-left",
+      "action": "tilt",
+      "at": [
+        80,
+        300
+      ],
+      "hold_ms": 1500,
+      "settle_ms": 500,
+      "expect": "And back to the left."
+    },
+    {
+      "id": "tilt-right-2",
+      "action": "tilt",
+      "at": [
+        250,
+        300
+      ],
+      "hold_ms": 1500,
+      "settle_ms": 500,
+      "expect": "Right again."
+    },
+    {
+      "id": "tilt-left-2",
+      "action": "tilt",
+      "at": [
+        80,
+        300
+      ],
+      "hold_ms": 1500,
+      "settle_ms": 500,
+      "expect": "And left."
+    },
+    {
+      "id": "after",
+      "action": "wait",
+      "settle_ms": 5000,
+      "expect": "The bee has ended up somewhere it did not start, the board has changed as it went, and nothing has stopped."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 320x480 portrait window. A capture includes the window border and title bar, so a position read off a frame is about (8, 31) out.",
+    "This game is steered by tilting, and the route uses the `tilt` action for it: a tilt is the right mouse button held at a point, where the middle of the window is level. Without it the board comes up and nothing happens, which looks like a game that does not work.",
+    "The two other Dizzy Bee files in the collection - Dizzy Bee 2 and DizzyBeeFree - are separate apps with their own bundle identifiers and have not been checked against this route."
+  ]
+}
