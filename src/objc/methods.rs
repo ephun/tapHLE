@@ -85,9 +85,12 @@ impl_HostIMP!(P1, P2, P3);
 impl_HostIMP!(P1, P2, P3, P4);
 impl_HostIMP!(P1, P2, P3, P4, P5);
 // Six is not arbitrary: -[NSTimer initWithFireDate:interval:target:selector:
-// userInfo:repeats:] needs it, and it is the longest selector any host class
-// implements. CallFromGuest goes further, so raising this again is one line.
+// userInfo:repeats:] needs it. Seven is not either: -[NSString getBytes:
+// maxLength:usedLength:encoding:options:range:remainingRange:] needs one more,
+// and it is now the longest selector any host class implements. CallFromGuest
+// goes further, so raising this again is one line.
 impl_HostIMP!(P1, P2, P3, P4, P5, P6);
+impl_HostIMP!(P1, P2, P3, P4, P5, P6, P7);
 
 /// Type for a guest function implementing a method. See [GuestFunction].
 pub type GuestIMP = GuestFunction;

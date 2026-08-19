@@ -140,6 +140,10 @@
   held on to every intermediate version. One level load spent eleven gigabytes
   this way; it now spends a fraction of that.
 
+- Hand a game its own text back as bytes, a piece at a time. A game that fills
+  a buffer it owns — to build a key, write a file, or send a message — had no
+  way to ask for that and stopped when it tried.
+
 - Games that work out routes can do so. The collection Core Foundation provides
   for "which of these is the cheapest to try next" — the thing every path search
   is built around — did not exist, so a game that started a level with any kind

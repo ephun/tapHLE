@@ -26,7 +26,9 @@ use crate::frameworks::uikit::ui_font::{
 };
 use crate::fs::GuestPath;
 use crate::mach_o::MachO;
-use crate::mem::{guest_size_of, ConstPtr, ConstVoidPtr, GuestUSize, Mem, MutPtr, Ptr, SafeRead};
+use crate::mem::{
+    guest_size_of, ConstPtr, ConstVoidPtr, GuestUSize, Mem, MutPtr, MutVoidPtr, Ptr, SafeRead,
+};
 use crate::objc::{
     autorelease, id, msg, msg_class, nil, objc_classes, release, retain, Class, ClassExports,
     HostObject, NSZonePtr, ObjC,
@@ -977,6 +979,72 @@ pub const CLASSES: ClassExports = objc_classes! {
     }).collect();
     let array = ns_array::from_vec(env, component_ns_strings);
     autorelease(env, array)
+}
+
+// Filling a caller's buffer with as much of a range of the string as fits,
+// and saying what did not fit. This is how a game hands text to something that
+// wants bytes — a texture atlas key, a file it is writing, a network message —
+// without giving up control of the memory.
+- (bool)getBytes:(MutVoidPtr)buffer
+       maxLength:(NSUInteger)max_length
+      usedLength:(MutPtr<NSUInteger>)used_length
+        encoding:(NSStringEncoding)encoding
+         options:(NSUInteger)options
+           range:(NSRange)range
+  remainingRange:(MutPtr<NSRange>)remaining_range {
+    // NSStringEncodingConversionAllowLossy and ...ExternalRepresentation. The
+    // first would substitute characters the encoding cannot say, which this
+    // does not do, and the second asks for a byte-order mark. Neither changes
+    // the answer for text that encodes cleanly, which is what a caller filling
+    // a buffer normally has, so they are noted rather than obeyed.
+    if options != 0 {
+        log!("TODO: [(NSString*) getBytes:...] ignoring conversion options {}", options);
+    }
+
+    let NSRange { location, length } = range;
+    let text: id = msg![env; this substringWithRange:range];
+    let text = to_rust_string(env, text).into_owned();
+
+    // Characters are added one at a time so that the buffer is filled up to a
+    // character boundary rather than part way through one, which is what makes
+    // the leftover range meaningful: the caller can hand it straight back on
+    // the next call.
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut converted: NSUInteger = 0;
+    let mut unrepresentable = false;
+    for c in text.chars() {
+        let mut utf8 = [0u8; 4];
+        let Some(encoded) = encode_rust_str(c.encode_utf8(&mut utf8), encoding) else {
+            unrepresentable = true;
+            break;
+        };
+        if bytes.len() + encoded.len() > max_length as usize {
+            break;
+        }
+        bytes.extend_from_slice(&encoded);
+        converted += c.len_utf16() as NSUInteger;
+    }
+
+    if !buffer.is_null() && !bytes.is_empty() {
+        let dest = env.mem.bytes_at_mut(buffer.cast(), bytes.len().try_into().unwrap());
+        dest.copy_from_slice(&bytes);
+    }
+    if !used_length.is_null() {
+        env.mem.write(used_length, bytes.len().try_into().unwrap());
+    }
+    if !remaining_range.is_null() {
+        env.mem.write(remaining_range, NSRange {
+            location: location + converted,
+            length: length - converted,
+        });
+    }
+
+    // "Returns YES if some characters were converted", and a request to convert
+    // nothing is satisfied by converting nothing.
+    if unrepresentable && converted == 0 {
+        return false;
+    }
+    converted > 0 || length == 0
 }
 
 - (())getCharacters:(MutPtr<unichar>)buffer
@@ -2686,7 +2754,12 @@ pub fn encode_string(
     encoding: NSStringEncoding,
 ) -> Option<Vec<u8>> {
     let string = to_rust_string(env, string);
+    encode_rust_str(&string, encoding)
+}
 
+/// The encoding itself, without a guest string to read it from. Separate so
+/// that a caller filling a buffer can ask what one character costs.
+pub fn encode_rust_str(string: &str, encoding: NSStringEncoding) -> Option<Vec<u8>> {
     fn with_encoding_rs(encoding: &'static encoding_rs::Encoding, string: &str) -> Option<Vec<u8>> {
         // encoding_rs substitutes a numeric character reference for anything it
         // cannot map and reports that as an error. Substituting "&#1234;" into
@@ -2697,8 +2770,8 @@ pub fn encode_string(
     }
 
     match encoding {
-        NSUTF8StringEncoding => Some(string.into_owned().into_bytes()),
-        NSASCIIStringEncoding => string.is_ascii().then(|| string.into_owned().into_bytes()),
+        NSUTF8StringEncoding => Some(string.as_bytes().to_vec()),
+        NSASCIIStringEncoding => string.is_ascii().then(|| string.as_bytes().to_vec()),
         // Latin-1 is exactly the first 256 Unicode code points, one byte each,
         // so this needs no table: a character outside that range is the whole
         // of what the encoding cannot say.
@@ -2706,9 +2779,9 @@ pub fn encode_string(
             .chars()
             .map(|c| u8::try_from(u32::from(c)).ok())
             .collect(),
-        NSMacOSRomanStringEncoding => with_encoding_rs(MACINTOSH, &string),
-        NSWindowsCP1252StringEncoding => with_encoding_rs(WINDOWS_1252, &string),
-        NSShiftJISStringEncoding => with_encoding_rs(SHIFT_JIS, &string),
+        NSMacOSRomanStringEncoding => with_encoding_rs(MACINTOSH, string),
+        NSWindowsCP1252StringEncoding => with_encoding_rs(WINDOWS_1252, string),
+        NSShiftJISStringEncoding => with_encoding_rs(SHIFT_JIS, string),
         NSUTF16StringEncoding
         | NSUTF16BigEndianStringEncoding
         | NSUTF16LittleEndianStringEncoding => {
