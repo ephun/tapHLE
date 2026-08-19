@@ -99,6 +99,15 @@ impl Transaction {
         let animation_timing_function_name = get_static_str(env, kCAMediaTimingFunctionDefault);
         let animation_timing_function =
             msg_class![env; CAMediaTimingFunction functionWithName:animation_timing_function_name];
+        // Owned for as long as the transaction is. `functionWithName:` hands
+        // back a reference the caller does not own — the named functions are
+        // cached and the cache holds the only retain — and the setter below
+        // releases whatever it replaces. Storing it unowned therefore ends with
+        // the cached object being released by a transaction that never retained
+        // it, after which the cache hands the next transaction a pointer to
+        // something freed. That is not theoretical: it is a crash on a game's
+        // first launch, several frames after the release that caused it.
+        retain(env, animation_timing_function);
         Self {
             disable_actions: false,
             animation_duration: 0.25,
@@ -130,6 +139,8 @@ impl Transaction {
         for (_key, value) in self.data {
             release(env, value);
         }
+
+        release(env, self.animation_timing_function);
     }
 }
 

@@ -140,6 +140,12 @@
   held on to every intermediate version. One level load spent eleven gigabytes
   this way; it now spends a fraction of that.
 
+- Fix a crash on a game's first launch that came from tapHLE releasing
+  something it did not own. Animation timing was the thing being freed early,
+  so what a game saw was a crash a few frames after an animation, with nothing
+  to connect the two. Dizzy Bee 2 could not get past its own tutorial on a
+  fresh install.
+
 - Let a game set a timer that calls something it has already prepared, rather
   than only a plain method. Games use this when the thing the timer should do
   needs arguments a timer cannot supply, and there was no way to make one, so
