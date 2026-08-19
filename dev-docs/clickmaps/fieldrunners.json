@@ -1,0 +1,47 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "com.subatomicstudios.Fieldrunners",
+    "display_name": "Fieldrunners",
+    "version": "1.5.3",
+    "sha256": "eef3b0d0ab9069544ae2e24ef5231e7d1f808308865ffc5c2af2b30599b00105"
+  },
+  "recorded": {
+    "date": "2026-08-19",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "window": {
+    "width": 480,
+    "height": 320,
+    "orientation": "landscape-left"
+  },
+  "milestone": {
+    "rating": 2,
+    "describes": "The main menu is drawn and stays up: the title art with PLAY, RESUME, SOCIAL, SCORES and HELP down the right-hand side, the whole frame rendered the right way up and the right way round."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 8000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 45000,
+      "expect": "The main menu: Fieldrunners title art with PLAY, RESUME, SOCIAL, SCORES and HELP stacked on the right."
+    },
+    {
+      "id": "hold",
+      "action": "wait",
+      "settle_ms": 15000,
+      "expect": "The menu is still there and the app has not stopped. Its log keeps ticking drawables, so it is running rather than frozen at the last frame it managed."
+    }
+  ],
+  "notes": [
+    "Coordinates would be client coordinates for the 480x320 landscape window; this route has no taps yet.",
+    "No launch options are needed: the app declares iPhone only and comes up landscape by itself.",
+    "This build reached the menu for the first time on `e643eb3e`. Before `fix/fs-rename-directory` it aborted tapHLE during start-up, because it moves a directory and moving a directory was not implemented.",
+    "The log fills with `Call to faked class \"OpenFeint\"` lines every frame. That is the social-network SDK being absent rather than anything going wrong, and it is what the SOCIAL button leads to."
+  ]
+}
