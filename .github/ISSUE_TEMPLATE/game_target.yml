@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         This is a place to track work, not a promise that someone else will do it.
-        You can use your own coding agent. Start with [HELP_A_GAME.md](https://github.com/ephun/tapHLE/blob/trunk/HELP_A_GAME.md).
+        You can use your own coding agent. Start with [docs/compatibility.md](https://github.com/ephun/tapHLE/blob/trunk/docs/compatibility.md).
         Never upload an IPA, game files, or a raw log.
   - type: input
     id: game

@@ -18,7 +18,7 @@ path = "src/main.rs"
 [dependencies]
 # The frontend links the emulator library so that app bundles, launch options
 # and tapHLE's file locations have exactly one implementation. The reasoning is
-# in dev-docs/gui-architecture.md.
+# in docs/architecture.md.
 tapHLE = { path = "../.." }
 tapHLE_version = { path = "../version" }
 # eframe brings the window, the event loop and the OpenGL painter; egui draws

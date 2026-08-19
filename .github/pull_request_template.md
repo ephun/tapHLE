@@ -31,7 +31,7 @@ verified.
       included.
 - [ ] No leaked/private Apple implementation material or incompatible code was
       used.
-- [ ] Upstream changes were reviewed under `dev-docs/upstream-sync.md`.
+- [ ] Upstream changes were reviewed under `docs/maintaining.md`.
 - [ ] Any compatibility result named the app build it was earned on, read from
       `tapHLE --info`, on a committed tapHLE revision; no dirty-worktree result
       was entered in the database.

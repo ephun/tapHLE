@@ -10,7 +10,7 @@
 //! and ends a run by calling `exit` — so the library window cannot live in
 //! the same one. The frontend launches `tapHLE` as a child process with the
 //! same arguments a person would type, and reads its output back. See
-//! `dev-docs/gui-architecture.md` for the whole reasoning.
+//! `docs/architecture.md` for the whole reasoning.
 //!
 //! Both programs are built from the same workspace and share the emulator
 //! library, so app bundles, launch options and tapHLE's file locations have

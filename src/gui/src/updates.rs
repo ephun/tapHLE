@@ -7,7 +7,7 @@
 //!
 //! ## What exists today
 //!
-//! tapHLE's release process is documented in `dev-docs/releases.md` and its
+//! tapHLE's release process is documented in `docs/maintaining.md` and its
 //! release tags live in their own namespace, `taphle-v*`, to keep them apart
 //! from the `v*` tags inherited from touchHLE. As of writing, **no tapHLE
 //! release has been published**: the repository's releases list is empty, and

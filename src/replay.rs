@@ -5,7 +5,7 @@
  */
 //! Replaying a clickmap from inside the emulator.
 //!
-//! A clickmap (`dev-docs/clickmaps/`) is the recorded route through an app to a
+//! A clickmap (`compatibility/clickmaps/`) is the recorded route through an app to a
 //! rating milestone. Replaying one used to mean `dev-scripts/clickmap.ps1`,
 //! which drives the host's real mouse cursor through `user32.dll`. That works
 //! on Windows and nowhere else, and it is fragile even there: it needs an
@@ -19,7 +19,7 @@
 //! because no host cursor is involved, it works identically on every platform
 //! tapHLE runs on and does not need the window to be in front.
 //!
-//! The format is `dev-docs/clickmaps/schema.json`. This reads the fields it can
+//! The format is `compatibility/clickmaps/schema.json`. This reads the fields it can
 //! act on and ignores the rest: `expect` and `from` are prose for a human,
 //! deliberately not checked here, because a screen that animates on its own
 //! changes whether or not a tap landed.

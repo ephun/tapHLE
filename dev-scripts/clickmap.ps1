@@ -7,17 +7,17 @@
 # This script reports; it does not judge. `expect` is prose and cannot be
 # checked mechanically, and comparing frames does not work either -- a screen
 # that animates on its own changes whether or not the tap landed, which is the
-# false negative recorded in dev-docs/app-debugging-playbook.md. So every step
+# false negative recorded in docs/debugging.md. So every step
 # gets a capture and a line of output, and a human or an agent looks at them.
 #
-#   .\dev-scripts\clickmap.ps1 -Map dev-docs\clickmaps\cubed-rally-redline.json `
+#   .\dev-scripts\clickmap.ps1 -Map compatibility\clickmaps\cubed-rally-redline.json `
 #                              -App "tapHLE_apps\Cubed Rally Redline (v1.32) [Decrypted].ipa"
-#   .\dev-scripts\clickmap.ps1 -Map dev-docs\clickmaps\jim-and-frank-hd.json -Validate
+#   .\dev-scripts\clickmap.ps1 -Map compatibility\clickmaps\jim-and-frank-hd.json -Validate
 #
 # Exit code is 0 when every step ran and the app was still alive at the end,
 # 1 otherwise. A non-zero exit names the step it stopped on.
 #
-# See dev-docs/clickmaps/protocol.md.
+# See compatibility/clickmaps/protocol.md.
 
 [CmdletBinding()]
 param(

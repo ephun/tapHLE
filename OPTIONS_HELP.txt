@@ -264,7 +264,7 @@ Other options:
 
     --replay=PATH
         Replays a clickmap: the recorded route through an app to a milestone,
-        as stored in dev-docs/clickmaps/. tapHLE drives the app itself, queuing
+        as stored in compatibility/clickmaps/. tapHLE drives the app itself, queuing
         each tap as though the mouse had been used at that position in its own
         window.
 
