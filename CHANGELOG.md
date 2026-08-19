@@ -597,6 +597,16 @@
   download. It is now refused with the actual reason, whether it is dropped on
   the window, added from the menu, or found while scanning a folder — and it
   does not take a place in the grid as an app that will never start.
+- Games look much closer to how they looked on a phone. tapHLE had three
+  substitute fonts and used one of them for everything; it now has twenty-two,
+  chosen one by one for the iPhone fonts they stand in for — a geometric sans
+  for Futura, a Clarendon for Superclarendon, a script for Snell Roundhand, a
+  chalk-like face for Chalkduster, and so on. Where a font was picked to match
+  the original's *spacing* rather than its shapes, it still is, so text that
+  used to fit its button still does.
+- If you already have the font a game is asking for, tapHLE now uses it. It
+  looks through the fonts installed on your computer for the real thing before
+  falling back to a substitute, so someone with Helvetica gets Helvetica.
 
 ### Known limitations
 

@@ -43,7 +43,11 @@ mod cpu;
 mod debug;
 mod dyld;
 mod environment;
-mod font;
+/// Text rendering, and the catalogue of what tapHLE draws in place of the
+/// iPhone's fonts. Public because the desktop frontend shows that catalogue
+/// and lets somebody change it, and it must show the same answers the emulator
+/// will actually use rather than a second copy of the list.
+pub mod font;
 mod frameworks;
 mod fs;
 mod gdb;
