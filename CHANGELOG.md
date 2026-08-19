@@ -698,6 +698,11 @@
   edge you drag to resize the details panel sat on the same two pixels, so
   moving the pointer across it flipped between the two and neither the
   pointer nor the drawing said which one a drag would get.
+- `--deadzone` now rejects a value outside 0 to 1 with a message that says so.
+  It was being checked as though it were an angle, so anything from -360 to 360
+  was accepted: a negative one crashed tapHLE the moment a stick moved, and one
+  above 1 quietly swallowed the stick's whole range and looked like a dead
+  controller.
 
 ### Known limitations
 

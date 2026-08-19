@@ -150,6 +150,22 @@ impl Options {
             Ok(arg)
         }
 
+        // A fraction of an axis's travel, not an angle. This needs its own
+        // range check: the deadzone used to be parsed as if it were degrees,
+        // which accepted anything from -360 to 360. A negative one reached
+        // `assert!(deadzone >= 0.0)` in `window::convert_axis` and panicked on
+        // an ordinary command line, and one above 1 silently swallowed the
+        // stick's whole range instead of being rejected.
+        fn parse_fraction(arg: &str, name: &str) -> Result<f32, String> {
+            let arg: f32 = arg
+                .parse()
+                .map_err(|_| format!("Value for {name} is invalid"))?;
+            if !arg.is_finite() || !(0.0..=1.0).contains(&arg) {
+                return Err(format!("Value for {name} must be between 0 and 1"));
+            }
+            Ok(arg)
+        }
+
         // Every boolean option below has both an on and an off spelling. A
         // one-way flag cannot be turned back off by a later argument, and
         // options arrive in layers — the bundled defaults file, the user's
@@ -208,7 +224,7 @@ impl Options {
         } else if arg == "--enable-analog-stick-tilt-controls" {
             self.analog_stick_tilt_controls = true;
         } else if let Some(value) = arg.strip_prefix("--deadzone=") {
-            self.deadzone = parse_degrees(value, "deadzone")?;
+            self.deadzone = parse_fraction(value, "deadzone")?;
         } else if let Some(value) = arg.strip_prefix("--x-tilt-range=") {
             self.x_tilt_range = parse_degrees(value, "X tilt range")?;
         } else if let Some(value) = arg.strip_prefix("--y-tilt-range=") {
@@ -493,6 +509,32 @@ mod tests {
         for &(on, off, read) in BOOLEAN_OPTION_PAIRS {
             assert!(read(&parse_all(&[off, on])), "{on:?} did not switch on");
             assert!(!read(&parse_all(&[on, off])), "{off:?} did not switch off");
+        }
+    }
+
+    /// The deadzone is a fraction of the stick's travel, and the emulator
+    /// asserts it is not negative once a stick moves. Parsing it as if it were
+    /// an angle accepted -360 to 360, so `--deadzone=-1` parsed cleanly and
+    /// then panicked in `window::convert_axis` the first time somebody touched
+    /// the stick.
+    #[test]
+    fn a_deadzone_outside_zero_to_one_is_rejected() {
+        for bad in ["-1", "-0.5", "1.5", "200", "inf", "NaN"] {
+            let mut options = Options::default();
+            assert!(
+                options
+                    .parse_argument(&format!("--deadzone={bad}"))
+                    .is_err(),
+                "--deadzone={bad} should have been rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn a_deadzone_inside_zero_to_one_is_accepted() {
+        for good in ["0", "0.1", "0.25", "1"] {
+            let options = parse_all(&[&format!("--deadzone={good}")]);
+            assert_eq!(options.deadzone, good.parse::<f32>().unwrap());
         }
     }
 
