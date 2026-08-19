@@ -5,8 +5,8 @@
  */
 //! The `NSScanner` class.
 
-use crate::frameworks::foundation::ns_string::{from_u16_vec, to_rust_string};
-use crate::frameworks::foundation::{unichar, NSNotFound, NSRange, NSUInteger};
+use crate::frameworks::foundation::ns_string::from_u16_vec;
+use crate::frameworks::foundation::{unichar, NSRange, NSUInteger};
 use crate::mem::MutPtr;
 use crate::objc::{
     autorelease, id, msg, msg_class, nil, objc_classes, release, retain, ClassExports, HostObject,
@@ -201,27 +201,32 @@ pub const CLASSES: ClassExports = objc_classes! {
     skip_characters(env, this);
 
     let NSScannerHostObject { to_be_skipped, string, len, pos } = std::mem::take(env.objc.borrow_mut::<NSScannerHostObject>(this));
-    log_dbg!("scanUpToString:'{}' intoString: from '{}' at {}", to_rust_string(env, stop_string), to_rust_string(env, string), pos);
 
-    // TODO: avoid string copying
-    let left: id = msg![env; string substringFromIndex:pos];
-    let range: NSRange = msg![env; left rangeOfString:stop_string];
-    if range.location == 0 {
+    let stop_len: NSUInteger = msg![env; stop_string length];
+    // A stop string with nothing in it is already there wherever the scanner
+    // is, so nothing is scanned - which is what searching for it used to
+    // report as well.
+    let found = if stop_len == 0 {
+        Some(pos)
+    } else {
+        find_string(env, string, len, pos, stop_string)
+    };
+    if found == Some(pos) {
         *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos };
         return false;
     }
 
-    let scan_len = if range.location == NSNotFound as NSUInteger {
-        len - pos
-    } else {
-        range.location
+    let scan_len = match found {
+        Some(location) => location - pos,
+        None => len - pos,
     };
     assert!(pos + scan_len <= len);
     *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos: pos + scan_len };
 
     if !result.is_null() {
-        let copy: id = msg![env; left substringToIndex:scan_len];
-        log_dbg!("scanned '{}' up to {}", to_rust_string(env, copy), pos + scan_len);
+        let range = NSRange { location: pos, length: scan_len };
+        let copy: id = msg![env; string substringWithRange:range];
+        log_dbg!("scanned up to {}", pos + scan_len);
         // Note: substring is already autoreleased
         env.mem.write(result, copy);
     }
@@ -233,18 +238,12 @@ pub const CLASSES: ClassExports = objc_classes! {
     skip_characters(env, this);
 
     let NSScannerHostObject { to_be_skipped, string, len, pos } = std::mem::take(env.objc.borrow_mut::<NSScannerHostObject>(this));
-    log_dbg!("scanString:{} intoString: from '{}' at {}", to_rust_string(env, scan_string), to_rust_string(env, string), pos);
 
-    // TODO: avoid string copying
-    let left: id = msg![env; string substringFromIndex:pos];
-    let same_prefix: bool = msg![env; left hasPrefix:scan_string];
-    if !same_prefix {
+    let scan_len: NSUInteger = msg![env; scan_string length];
+    if pos + scan_len > len || !has_string_at(env, string, pos, scan_string) {
         *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos };
         return false;
     }
-
-    let scan_len: NSUInteger = msg![env; scan_string length];
-    assert!(pos + scan_len <= len);
     *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos: pos + scan_len };
 
     if !result.is_null() {
@@ -259,34 +258,37 @@ pub const CLASSES: ClassExports = objc_classes! {
     skip_characters(env, this);
 
     let NSScannerHostObject { to_be_skipped, string, len, pos } = std::mem::take(env.objc.borrow_mut::<NSScannerHostObject>(this));
-    let left: id = msg![env; string substringFromIndex:pos];
-    if left == nil {
-        *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos };
-        return false;
-    }
 
-    let st = to_rust_string(env, left);
-    let mut cutoff = st.len();
-    for (i, c) in st.char_indices() {
+    // Only the run of characters a number can be written with is read, so this
+    // costs the length of the number rather than the length of everything
+    // after it.
+    let mut digits = String::new();
+    let mut scan = pos;
+    while scan < len {
+        let c: unichar = msg![env; string characterAtIndex:scan];
+        let Some(c) = char::from_u32(u32::from(c)) else {
+            break;
+        };
         if !c.is_ascii_digit() && c != '+' && c != '-' {
-            cutoff = i;
             break;
         }
+        digits.push(c);
+        scan += 1;
     }
-    if cutoff == 0 {
-        log_dbg!("scanInt: no valid int found for '{}'", st);
+    if digits.is_empty() {
+        log_dbg!("scanInt: no valid int found at {}", pos);
         *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos };
         return false;
     }
 
     if !result.is_null() {
         // TODO: handle over/underflow properly
-        let res = st[..cutoff].parse().unwrap_or(0);
-        log_dbg!("scanInt: from '{}' -> {}", st, res);
+        let res = digits.parse().unwrap_or(0);
+        log_dbg!("scanInt: from '{}' -> {}", digits, res);
         env.mem.write(result, res);
     }
 
-    *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos: pos + cutoff as NSUInteger };
+    *env.objc.borrow_mut::<NSScannerHostObject>(this) = NSScannerHostObject { to_be_skipped, string, len, pos: scan };
     true
 }
 
@@ -301,6 +303,44 @@ pub const CLASSES: ClassExports = objc_classes! {
 @end
 
 };
+
+/// Whether `string` has `needle` at `at`, compared code unit by code unit.
+///
+/// The point is what this does not do. The obvious way to answer the question
+/// is to take everything from `at` onwards and ask whether it starts with
+/// `needle`, and that copies the whole of the rest of the string. A scanner
+/// asks once per token, so the copy makes reading a file cost the square of
+/// its length, and each copy is autoreleased, so the memory is held until the
+/// pool drains. One game's level load grew to nine gigabytes that way and
+/// never finished.
+fn has_string_at(env: &mut Environment, string: id, at: NSUInteger, needle: id) -> bool {
+    let needle_len: NSUInteger = msg![env; needle length];
+    for offset in 0..needle_len {
+        let index = at + offset;
+        let a: unichar = msg![env; string characterAtIndex:index];
+        let b: unichar = msg![env; needle characterAtIndex:offset];
+        if a != b {
+            return false;
+        }
+    }
+    true
+}
+
+/// The index of the first occurrence of `needle` in `string` at or after
+/// `from`, or [None]. Compares in place, for the reason in [has_string_at].
+fn find_string(
+    env: &mut Environment,
+    string: id,
+    len: NSUInteger,
+    from: NSUInteger,
+    needle: id,
+) -> Option<NSUInteger> {
+    let needle_len: NSUInteger = msg![env; needle length];
+    if needle_len > len {
+        return None;
+    }
+    (from..=(len - needle_len)).find(|&at| has_string_at(env, string, at, needle))
+}
 
 // Helper functions, skips characters from `charactersToBeSkipped` set
 fn skip_characters(env: &mut Environment, scanner: id) {
