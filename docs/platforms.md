@@ -30,6 +30,10 @@ and compatibility claims earned there. It never means "the code compiled once."
 **Packaged** is not a yes/no. Say *bundle tooling*, *installer tooling*, or
 *published artifact*, whichever you actually mean.
 
+The rest of tapHLE's controlled vocabulary — app versus game, host versus
+guest, numbered release versus trunk preview — is in
+[`docs/README.md`](README.md#words-taphle-uses-precisely).
+
 ## Current state
 
 All five are distribution targets: Windows, macOS, Linux, Android and iOS. The
