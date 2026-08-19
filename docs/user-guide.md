@@ -55,8 +55,13 @@ Options are read in layers, and **a later layer wins**:
 | --- | --- | --- |
 | 1 (lowest) | The emulator's own default | Compiled in |
 | 2 | `tapHLE_default_options.txt` | Per-app entries that ship with tapHLE and make particular apps work |
-| 3 | `tapHLE_options.txt` | Your own options file, applied to every app |
+| 3 | `tapHLE_options.txt` | Your own per-app entries, keyed by the same bundle identifier |
 | 4 (highest) | The command line | Including everything the frontend sets — its global defaults and then its per-app overrides |
+
+Both options files are **per-app**: every line is an app's bundle identifier, a
+colon, and the options for that app. Neither has a global section, so the only
+setting that applies to every app is the frontend's global default, which
+reaches the emulator on the command line.
 
 So a per-app override in the frontend beats your `tapHLE_options.txt`, which
 beats the shipped per-app defaults, which beat the emulator's own.
