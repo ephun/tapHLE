@@ -782,6 +782,16 @@ rather than a note about the single incident that prompted it. The measure of a
 correction is not that this session complied, but that no future agent has to be
 corrected again.
 
+**Do not create new documentation files.** Record what you learn in the files
+that already exist — the app note, this guide, the relevant playbook, the
+changelog, a clickmap — and add a file only when the maintainer asks for one.
+An agent that invents a document every time it has something to say leaves a
+repository full of near-duplicate markdown and one-off scripts with dates and
+model names in their filenames, and nobody reads any of it. The test is not
+whether the content is worth keeping; it is whether an existing file is the
+place for it, and it almost always is. The same goes for scripts: a throwaway
+belongs in a scratch directory outside the repository, not in `dev-scripts/`.
+
 Keep app identity, exact runtime evidence, unresolved hypotheses, and the next
 app-specific discriminator in that app's `compat/<app-slug>` continuation note.
 When a realization contains both general and app-specific parts, split them:
