@@ -42,7 +42,7 @@
         240,
         154
       ],
-      "expect": "The Select World screen. On a fresh profile the world list is empty and Play Selected World, Rename and Delete are all greyed out."
+      "expect": "The Select World screen. On a fresh profile the world list is empty and Play Selected World, Rename and Delete are all greyed out; with a world saved it is listed with its name, date and size."
     },
     {
       "id": "create",
@@ -52,7 +52,8 @@
         366,
         247
       ],
-      "expect": "The world creation form: World Name prefilled with \"New World\", an empty seed box, and its own Create New World button."
+      "expect": "The world creation form: World Name prefilled with \"New World\", an empty seed box, and its own Create New World button.",
+      "requires_save_state": "absent"
     },
     {
       "id": "confirm",
@@ -63,7 +64,32 @@
         247
       ],
       "settle_ms": 40000,
-      "expect": "The world generates and gameplay starts: the player on grass and dirt with trees, pigs wandering, ten hearts along the top, the hotbar along the bottom and the four touch controls."
+      "expect": "The world generates and gameplay starts: the player on grass and dirt with trees, pigs wandering, ten hearts along the top, the hotbar along the bottom and the four touch controls.",
+      "requires_save_state": "absent"
+    },
+    {
+      "id": "select-row",
+      "from": "Select World",
+      "action": "tap",
+      "at": [
+        80,
+        88
+      ],
+      "settle_ms": 4000,
+      "requires_save_state": "present",
+      "expect": "The saved world's row is selected, and Play Selected World, Rename and Delete stop being greyed out."
+    },
+    {
+      "id": "play-saved",
+      "from": "Select World",
+      "action": "tap",
+      "at": [
+        114,
+        244
+      ],
+      "settle_ms": 40000,
+      "requires_save_state": "present",
+      "expect": "The saved world loads and gameplay resumes in it — the terrain it was left on, not a newly generated world."
     },
     {
       "id": "persist",
@@ -78,8 +104,9 @@
     "**`--landscape-left` is part of the route**, and it is already set for this bundle in tapHLE_default_options.txt. The app declares no orientation at all in its Info.plist, and tapHLE only consults `shouldAutorotateToInterfaceOrientation:` when the window is already non-portrait — so nothing ever asks this app which way up it wants to be. Launched portrait it draws its 480-wide layout into a 320-wide screen and the splash is visibly cut off. That gap is general, not specific to this app, and fixing it is separate work.",
     "There are two buttons labelled Create New World, one after the other: (366, 247) on the Select World screen opens the form, and (240, 247) on the form actually creates it. Missing the second one leaves the replay sitting on a form that looks like it should have worked.",
     "The world name and seed are left at their defaults — \"New World\" and a random seed — so no typing is needed. The world is written to `Documents/saves/New World/`.",
-    "**This map replays on a fresh profile.** Once a world exists the Singleplayer tap still does not reach the world list: it used to panic tapHLE in `Fs::size()`, which was fixed on 2026-08-19, and it now dies on `NSMutableString`'s `replaceCharactersInRange:withString:`, which is not implemented. Delete `tapHLE_sandbox/com.Pickl.Crafted/Documents/saves/<world>` to replay this map, and see the app note.",
+    "**The route forks on whether a world is already saved, and the runner cannot tell** — pass -HasSaveState once one exists. Without it the two creation taps run; with it the Select World row is picked and played instead, which is what a player does on every launch after the first. Both halves were replayed on `63119bcf`. Two tapHLE bugs used to make the saved-world half impossible: `Fs::size()` panicked on a directory, and `NSMutableString` had no `replaceCharactersInRange:withString:` to build the row's label; both were fixed on 2026-08-19.",
     "The scene animates on its own: the pigs wander whether or not any input arrived. So two frames differing is not evidence a control worked — compare the region the player is in against a region nothing should have touched.",
-    "**Movement is not on this route, and that is a property of the game rather than a gap in the map.** The two controls down the left are build controls - place a block below, place a block ahead - and with an empty hotbar they correctly do nothing: holding the lower one for 2.5 s moved the view no more than the pigs move it on their own (measured, 1.2 against an ambient 1.2-1.7 mean absolute difference). This app declares `accelerometer` as a required capability and steers by tilt, which in tapHLE is the right mouse button held while the cursor moves, and a clickmap has no way to express that. So the milestone here rests on the world generating and staying live, not on driving the player around."
+    "**Movement is not on this route, and that is a property of the game rather than a gap in the map.** The two controls down the left are build controls - place a block below, place a block ahead - and with an empty hotbar they correctly do nothing: holding the lower one for 2.5 s moved the view no more than the pigs move it on their own (measured, 1.2 against an ambient 1.2-1.7 mean absolute difference). This app declares `accelerometer` as a required capability and steers by tilt, which in tapHLE is the right mouse button held while the cursor moves, and a clickmap has no way to express that. So the milestone here rests on the world generating and staying live, not on driving the player around.",
+    "The Play Selected World coordinate is a client coordinate, and the capture is of the whole window: reading the button's position straight off a frame lands about (8, 31) low, in the gap between the two button rows, where the tap does nothing and the screen does not change."
   ]
 }
