@@ -32,6 +32,15 @@ pub enum Button {
 }
 
 /// Struct containing all user-configurable options.
+/// What somebody chose to draw in place of one of the iPhone's fonts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FontChoice {
+    /// A family tapHLE ships, by its catalogue id.
+    Bundled(String),
+    /// A font file on this computer.
+    File(std::path::PathBuf),
+}
+
 #[derive(Clone)]
 pub struct Options {
     pub fullscreen: bool,
@@ -59,6 +68,15 @@ pub struct Options {
     pub direct_memory_access: bool,
     pub gdb_listen_addrs: Option<Vec<SocketAddr>>,
     pub preferred_languages: Option<Vec<String>>,
+    /// What to draw when an app asks for one of the iPhone's fonts, for the
+    /// fonts somebody has chosen for themselves. Keyed by the normalised
+    /// family name, so that a choice made for "Helvetica" also answers
+    /// `Helvetica-BoldOblique`.
+    pub font_overrides: HashMap<String, FontChoice>,
+    /// Whether to use a font this computer already has when its name matches
+    /// what the app asked for. On by default: someone who owns the real font
+    /// should get it without having to say so.
+    pub use_host_fonts: bool,
     /// Clickmap to replay once the app is running, driving it without any
     /// host-level input synthesis. See [crate::replay].
     pub replay: Option<std::path::PathBuf>,
@@ -99,6 +117,8 @@ impl Default for Options {
             direct_memory_access: true,
             gdb_listen_addrs: None,
             preferred_languages: None,
+            font_overrides: HashMap::new(),
+            use_host_fonts: true,
             replay: None,
             replay_quit: false,
             headless: false,
@@ -148,6 +168,29 @@ impl Options {
             self.initial_orientation = DeviceOrientation::LandscapeLeft;
         } else if arg == "--landscape-right" {
             self.initial_orientation = DeviceOrientation::LandscapeRight;
+        } else if arg == "--host-fonts" {
+            self.use_host_fonts = true;
+        } else if arg == "--no-host-fonts" {
+            self.use_host_fonts = false;
+        } else if let Some(value) = arg.strip_prefix("--font=") {
+            // `--font=<iPhone family>=<what to draw instead>`, where the second
+            // half is either the id of a family tapHLE ships or the path of a
+            // font file on this computer. Repeating the option adds another
+            // font rather than replacing the first, because these are a set of
+            // independent choices, not one setting.
+            let (family, choice) = value
+                .split_once('=')
+                .ok_or_else(|| "--font needs <family>=<substitute>".to_string())?;
+            if family.trim().is_empty() || choice.trim().is_empty() {
+                return Err("--font needs <family>=<substitute>".to_string());
+            }
+            let choice = if crate::font::catalogue::bundled(choice).is_some() {
+                FontChoice::Bundled(choice.to_string())
+            } else {
+                FontChoice::File(std::path::PathBuf::from(choice))
+            };
+            self.font_overrides
+                .insert(crate::font::catalogue::normalise(family), choice);
         } else if arg == "--landscape-native" {
             self.landscape_native = true;
         } else if arg == "--no-landscape-native" {

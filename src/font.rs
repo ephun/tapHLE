@@ -13,6 +13,9 @@
 //! switch to something like cosmic-text in future, but that has a _lot_ more
 //! dependencies.
 
+pub mod catalogue;
+pub mod host;
+
 use crate::frameworks::core_graphics::cg_affine_transform::CGAffineTransform;
 use crate::frameworks::core_graphics::{CGPoint, CGRect, CGSize};
 use crate::paths;
@@ -32,6 +35,113 @@ fn expand_tabs(text: &str) -> Cow<'_, str> {
 pub struct Font {
     font: rusttype::Font<'static>,
     scale_factor: f32,
+}
+
+/// Decide which font to draw when an app asks for one by name.
+///
+/// The order is the whole design, and it is this way round for a reason:
+///
+/// 1. **What somebody chose.** An explicit choice for this font wins over
+///    everything, including a perfect match — they can see what tapHLE would
+///    have picked and decided against it.
+/// 2. **The real font, if this computer has it.** Someone who owns Helvetica
+///    should get Helvetica, without having to say so font by font.
+/// 3. **The substitute tapHLE ships**, from the catalogue.
+/// 4. **A sans, serif or monospace** by the shape of the name, for a font
+///    nobody has classified.
+///
+/// A name that reaches step 4 is worth knowing about, so it is logged once.
+pub fn resolve(name: &str, options: &crate::options::Options) -> catalogue::Face {
+    use crate::options::FontChoice;
+
+    let style = catalogue::style_of(name);
+    let key = catalogue::normalise(name);
+
+    if let Some(choice) = options.font_overrides.get(&key) {
+        match choice {
+            FontChoice::Bundled(id) => {
+                if let Some(family) = catalogue::bundled(id) {
+                    return catalogue::Face::Bundled {
+                        family: family.id,
+                        style,
+                    };
+                }
+                log!(
+                    "Warning: {:?} is set to be drawn with {:?}, which tapHLE does not ship; \
+                     ignoring that choice",
+                    name,
+                    id
+                );
+            }
+            FontChoice::File(path) => {
+                return catalogue::Face::Host {
+                    path: path.clone(),
+                    index: 0,
+                }
+            }
+        }
+    }
+
+    if options.use_host_fonts {
+        if let Some(face) = host::installed().face(name, style) {
+            return catalogue::Face::Host {
+                path: face.path.clone(),
+                index: face.index,
+            };
+        }
+    }
+
+    if let Some(substitution) = catalogue::substitution(name) {
+        return catalogue::Face::Bundled {
+            family: substitution.bundled,
+            style,
+        };
+    }
+
+    let family = catalogue::generic_family(name);
+    log!(
+        "No substitute is recorded for the font {:?}; drawing it with {}.",
+        name,
+        catalogue::bundled(family).map_or(family, |f| f.name)
+    );
+    catalogue::Face::Bundled { family, style }
+}
+
+/// Load the font a [catalogue::Face] names.
+///
+/// A host font that cannot be read falls back to the substitute rather than
+/// ending the app: the file may have been uninstalled since it was chosen, and
+/// an app should not die because a setting went stale.
+pub fn load_face(face: &catalogue::Face) -> Font {
+    match face {
+        catalogue::Face::Bundled { family, style } => {
+            let family = catalogue::bundled(family).expect("a bundled family that exists");
+            Font::from_resource_file(family.file_for(*style))
+        }
+        catalogue::Face::Host { path, index } => match std::fs::read(path) {
+            Ok(bytes) => match rusttype::Font::try_from_vec_and_index(bytes, *index) {
+                Some(font) => Font {
+                    font,
+                    scale_factor: 1.0,
+                },
+                None => {
+                    log!(
+                        "Warning: {:?} is not a font tapHLE can read; using its own instead.",
+                        path
+                    );
+                    Font::sans_regular()
+                }
+            },
+            Err(error) => {
+                log!(
+                    "Warning: {:?} could not be read ({}); using tapHLE's own font instead.",
+                    path,
+                    error
+                );
+                Font::sans_regular()
+            }
+        },
+    }
 }
 
 pub enum TextAlignment {
@@ -121,41 +231,9 @@ impl Font {
         }
     }
 
-    pub fn mono_regular() -> Font {
-        Self::from_resource_file("LiberationMono-Regular.ttf")
-    }
-    pub fn mono_bold() -> Font {
-        Self::from_resource_file("LiberationMono-Bold.ttf")
-    }
-    pub fn mono_bold_italic() -> Font {
-        Self::from_resource_file("LiberationMono-BoldItalic.ttf")
-    }
-    pub fn mono_italic() -> Font {
-        Self::from_resource_file("LiberationMono-Italic.ttf")
-    }
+    /// The face everything falls back to when nothing else can be read.
     pub fn sans_regular() -> Font {
         Self::from_resource_file("LiberationSans-Regular.ttf")
-    }
-    pub fn sans_bold() -> Font {
-        Self::from_resource_file("LiberationSans-Bold.ttf")
-    }
-    pub fn sans_bold_italic() -> Font {
-        Self::from_resource_file("LiberationSans-BoldItalic.ttf")
-    }
-    pub fn sans_italic() -> Font {
-        Self::from_resource_file("LiberationSans-Italic.ttf")
-    }
-    pub fn serif_regular() -> Font {
-        Self::from_resource_file("LiberationSerif-Regular.ttf")
-    }
-    pub fn serif_bold() -> Font {
-        Self::from_resource_file("LiberationSerif-Bold.ttf")
-    }
-    pub fn serif_bold_italic() -> Font {
-        Self::from_resource_file("LiberationSerif-BoldItalic.ttf")
-    }
-    pub fn serif_italic() -> Font {
-        Self::from_resource_file("LiberationSerif-Italic.ttf")
     }
     pub fn sans_regular_ja() -> Font {
         Self::from_resource_file("NotoSansJP-Regular.otf")
@@ -650,5 +728,133 @@ mod tests {
     fn tabs_expand_to_renderable_spacing() {
         assert_eq!(expand_tabs("\u{2022}\tEnsure"), "\u{2022}    Ensure");
         assert_eq!(expand_tabs("No tabs"), "No tabs");
+    }
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::catalogue::{Face, Style};
+    use super::resolve;
+    use crate::options::{FontChoice, Options};
+
+    /// Host fonts are off in most of these: what is installed varies by
+    /// machine, and the order of the other three steps is what is being
+    /// asserted.
+    fn options() -> Options {
+        let mut options = Options::default();
+        options.use_host_fonts = false;
+        options
+    }
+
+    #[test]
+    fn a_known_font_gets_the_substitute_the_catalogue_names() {
+        assert_eq!(
+            resolve("Futura-Medium", &options()),
+            Face::Bundled {
+                family: "jost",
+                style: Style::Regular
+            }
+        );
+        assert_eq!(
+            resolve("TimesNewRomanPS-BoldMT", &options()),
+            Face::Bundled {
+                family: "liberation-serif",
+                style: Style::Bold
+            }
+        );
+    }
+
+    #[test]
+    fn an_unknown_font_falls_back_by_the_shape_of_its_name() {
+        assert_eq!(
+            resolve("SomeCompanySerifPro-Italic", &options()),
+            Face::Bundled {
+                family: "liberation-serif",
+                style: Style::Italic
+            }
+        );
+        assert_eq!(
+            resolve("SomeCompanyMono", &options()),
+            Face::Bundled {
+                family: "liberation-mono",
+                style: Style::Regular
+            }
+        );
+    }
+
+    #[test]
+    fn a_choice_beats_the_catalogue() {
+        let mut options = options();
+        options.font_overrides.insert(
+            crate::font::catalogue::normalise("Helvetica"),
+            FontChoice::Bundled("cinzel".to_string()),
+        );
+        // And it answers for every face of that family, not just the one name
+        // that was set.
+        assert_eq!(
+            resolve("Helvetica", &options),
+            Face::Bundled {
+                family: "cinzel",
+                style: Style::Regular
+            }
+        );
+        assert_eq!(
+            resolve("Helvetica-BoldOblique", &options),
+            Face::Bundled {
+                family: "cinzel",
+                style: Style::BoldItalic
+            }
+        );
+        // A font nobody chose for is unaffected.
+        assert_eq!(
+            resolve("Futura", &options),
+            Face::Bundled {
+                family: "jost",
+                style: Style::Regular
+            }
+        );
+    }
+
+    #[test]
+    fn a_chosen_file_is_used_as_given() {
+        let mut options = options();
+        let path = std::path::PathBuf::from("C:/fonts/Whatever.ttf");
+        options.font_overrides.insert(
+            crate::font::catalogue::normalise("Georgia"),
+            FontChoice::File(path.clone()),
+        );
+        assert_eq!(
+            resolve("Georgia-Bold", &options),
+            Face::Host { path, index: 0 }
+        );
+    }
+
+    /// A choice naming a family tapHLE no longer ships must not lose the font
+    /// altogether — the catalogue answers instead.
+    #[test]
+    fn a_choice_naming_nothing_falls_through_to_the_catalogue() {
+        let mut options = options();
+        options.font_overrides.insert(
+            crate::font::catalogue::normalise("Georgia"),
+            FontChoice::Bundled("a-family-that-was-removed".to_string()),
+        );
+        assert_eq!(
+            resolve("Georgia", &options),
+            Face::Bundled {
+                family: "gelasio",
+                style: Style::Regular
+            }
+        );
+    }
+
+    /// What this machine has installed cannot be asserted, but that looking
+    /// for it answers *something* can be.
+    #[test]
+    fn looking_through_the_installed_fonts_still_answers() {
+        let options = Options::default();
+        assert!(options.use_host_fonts, "host fonts should be on by default");
+        for name in ["Helvetica", "Arial", "Georgia", "Zapfino", "Nonexistent"] {
+            let _ = resolve(name, &options);
+        }
     }
 }

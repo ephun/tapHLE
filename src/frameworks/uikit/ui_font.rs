@@ -6,6 +6,8 @@
 //! `UIFont`.
 
 use super::ui_graphics::UIGraphicsGetCurrentContext;
+use crate::font::catalogue::{Face, Style};
+use crate::font::{self};
 use crate::font::{Font, TextAlignment, WrapMode};
 use crate::frameworks::core_graphics::cg_bitmap_context::CGBitmapContextDrawer;
 use crate::frameworks::core_graphics::cg_context::{
@@ -24,50 +26,41 @@ use std::ops::Range;
 
 #[derive(Default)]
 pub(super) struct State {
-    fonts: HashMap<FontKind, Font>,
+    /// Loaded faces, kept because a font is asked for once per string drawn.
+    /// Keyed by the face rather than by a size: `UIFont` carries the size and
+    /// the rasteriser scales, so two sizes of Helvetica are one entry.
+    fonts: HashMap<Face, Font>,
     sans_regular_ja: Option<Font>,
     sans_bold_ja: Option<Font>,
 }
 impl State {
-    fn get_font_by_kind(&mut self, font_kind: FontKind) -> &Font {
-        self.fonts
-            .entry(font_kind)
-            .or_insert_with(|| match font_kind {
-                FontKind::MonoRegular => Font::mono_regular(),
-                FontKind::MonoBold => Font::mono_bold(),
-                FontKind::MonoBoldItalic => Font::mono_bold_italic(),
-                FontKind::MonoItalic => Font::mono_italic(),
-                FontKind::SansRegular => Font::sans_regular(),
-                FontKind::SansBold => Font::sans_bold(),
-                FontKind::SansBoldItalic => Font::sans_bold_italic(),
-                FontKind::SansItalic => Font::sans_italic(),
-                FontKind::SerifRegular => Font::serif_regular(),
-                FontKind::SerifBold => Font::serif_bold(),
-                FontKind::SerifBoldItalic => Font::serif_bold_italic(),
-                FontKind::SerifItalic => Font::serif_italic(),
-            })
+    fn get_font(&mut self, face: &Face) -> &Font {
+        if !self.fonts.contains_key(face) {
+            self.fonts.insert(face.clone(), font::load_face(face));
+        }
+        self.fonts.get(face).unwrap()
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-enum FontKind {
-    MonoRegular,
-    MonoBold,
-    MonoBoldItalic,
-    MonoItalic,
-    SansRegular,
-    SansBold,
-    SansBoldItalic,
-    SansItalic,
-    SerifRegular,
-    SerifBold,
-    SerifBoldItalic,
-    SerifItalic,
+/// The face for one of the system-font factories.
+///
+/// Early iPhone OS answers `+systemFontOfSize:` with Helvetica, so that is
+/// what is asked for — by name, through the same catalogue every other font
+/// goes through, so that somebody who has told tapHLE what to draw for
+/// Helvetica gets it here too.
+fn system_face(env: &Environment, style: Style) -> (Face, &'static str) {
+    let name = match style {
+        Style::Regular => "Helvetica",
+        Style::Bold => "Helvetica-Bold",
+        Style::Italic => "Helvetica-Oblique",
+        Style::BoldItalic => "Helvetica-BoldOblique",
+    };
+    (font::resolve(name, &env.options), name)
 }
 
 struct UIFontHostObject {
     size: CGFloat,
-    kind: FontKind,
+    face: Face,
     /// PostScript name reported by `-fontName`. For fonts created by name this
     /// is the requested name (even when we substitute a bundled font); for the
     /// system-font factories it is the corresponding Helvetica variant, as on
@@ -123,7 +116,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 + (id)systemFontOfSize:(CGFloat)size {
     let host_object = UIFontHostObject {
         size,
-        kind: FontKind::SansRegular,
+        face: system_face(env, Style::Regular).0,
         name: "Helvetica".to_string(),
     };
     let new = env.objc.alloc_object(this, Box::new(host_object), &mut env.mem);
@@ -132,7 +125,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 + (id)boldSystemFontOfSize:(CGFloat)size {
     let host_object = UIFontHostObject {
         size,
-        kind: FontKind::SansBold,
+        face: system_face(env, Style::Bold).0,
         name: "Helvetica-Bold".to_string(),
     };
     let new = env.objc.alloc_object(this, Box::new(host_object), &mut env.mem);
@@ -141,7 +134,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 + (id)italicSystemFontOfSize:(CGFloat)size {
     let host_object = UIFontHostObject {
         size,
-        kind: FontKind::SansItalic,
+        face: system_face(env, Style::Italic).0,
         name: "Helvetica-Oblique".to_string(),
     };
     let new = env.objc.alloc_object(this, Box::new(host_object), &mut env.mem);
@@ -151,10 +144,7 @@ pub const CLASSES: ClassExports = objc_classes! {
             size:(CGFloat)fontSize {
     let font_name = to_rust_string(env, fontName).to_string();
     let host_object = UIFontHostObject {
-        kind: get_equivalent_font(&font_name).unwrap_or_else(|| {
-            log!("No replacement found for font {}. Using system font instead.", font_name);
-            FontKind::SansRegular
-        }),
+        face: font::resolve(&font_name, &env.options),
         size: fontSize,
         name: font_name,
     };
@@ -184,7 +174,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         return this;
     }
     let host_object = UIFontHostObject {
-        kind: host_object.kind,
+        face: host_object.face.clone(),
         size: fontSize,
         name: host_object.name.clone(),
     };
@@ -213,17 +203,17 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (CGFloat)ascender {
     let host_object = env.objc.borrow::<UIFontHostObject>(this);
-    let font = env.framework_state.uikit.ui_font.get_font_by_kind(host_object.kind);
+    let font = env.framework_state.uikit.ui_font.get_font(&host_object.face);
     font.ascent(host_object.size)
 }
 - (CGFloat)descender {
     let host_object = env.objc.borrow::<UIFontHostObject>(this);
-    let font = env.framework_state.uikit.ui_font.get_font_by_kind(host_object.kind);
+    let font = env.framework_state.uikit.ui_font.get_font(&host_object.face);
     font.descent(host_object.size)
 }
 - (CGFloat)leading {
     let host_object = env.objc.borrow::<UIFontHostObject>(this);
-    let font = env.framework_state.uikit.ui_font.get_font_by_kind(host_object.kind);
+    let font = env.framework_state.uikit.ui_font.get_font(&host_object.face);
     font.line_gap(host_object.size)
 }
 
@@ -269,7 +259,7 @@ fn convert_line_break_mode(ui_mode: UILineBreakMode) -> WrapMode {
 }
 
 #[rustfmt::skip]
-fn get_font<'a>(state: &'a mut State, kind: FontKind, text: &str) -> &'a Font {
+fn get_font<'a>(state: &'a mut State, face: &Face, text: &str) -> &'a Font {
     // The default fonts (see font.rs) are the Liberation family, which are a
     // good substitute for Helvetica, the iPhone OS system font. Unfortunately,
     // there is no CJK support in these fonts. To support Super Monkey Ball in
@@ -282,25 +272,21 @@ fn get_font<'a>(state: &'a mut State, kind: FontKind, text: &str) -> &'a Font {
            (0xFF00..=0xFFEF).contains(&c) || // full-width/half-width chars
            (0x4e00..=0x9FA0).contains(&c) || // various kanji
            (0x3400..=0x4DBF).contains(&c) { // more kanji
-            match kind {
-                // CJK has no italic equivalent
-                FontKind::MonoRegular | FontKind::MonoItalic | FontKind::SansRegular | FontKind::SansItalic | FontKind::SerifRegular | FontKind::SerifItalic => {
-                    if state.sans_regular_ja.is_none() {
-                        state.sans_regular_ja = Some(Font::sans_regular_ja());
-                    }
-                    return state.sans_regular_ja.as_ref().unwrap();
-                },
-                FontKind::MonoBold | FontKind::MonoBoldItalic | FontKind::SansBold | FontKind::SansBoldItalic | FontKind::SerifBold | FontKind::SerifBoldItalic => {
-                    if state.sans_bold_ja.is_none() {
-                        state.sans_bold_ja = Some(Font::sans_bold_ja());
-                    }
-                    return state.sans_bold_ja.as_ref().unwrap();
-                },
+            // CJK has no italic equivalent, so only the weight carries over.
+            if face_is_bold(face) {
+                if state.sans_bold_ja.is_none() {
+                    state.sans_bold_ja = Some(Font::sans_bold_ja());
+                }
+                return state.sans_bold_ja.as_ref().unwrap();
             }
+            if state.sans_regular_ja.is_none() {
+                state.sans_regular_ja = Some(Font::sans_regular_ja());
+            }
+            return state.sans_regular_ja.as_ref().unwrap();
         }
     }
 
-    state.get_font_by_kind(kind)
+    state.get_font(face)
 }
 
 /// Called by the `sizeWithFont:` method family on `NSString`.
@@ -314,7 +300,7 @@ pub fn size_with_font(
 
     let font = get_font(
         &mut env.framework_state.uikit.ui_font,
-        host_object.kind,
+        &host_object.face,
         text,
     );
 
@@ -336,7 +322,7 @@ pub fn break_lines_with_font<'a>(
 
     let font = get_font(
         &mut env.framework_state.uikit.ui_font,
-        host_object.kind,
+        &host_object.face,
         text,
     );
 
@@ -459,17 +445,18 @@ pub fn draw_at_point(
     let context = UIGraphicsGetCurrentContext(env);
 
     let font_id = font;
-    let &UIFontHostObject {
+    let UIFontHostObject {
         size: font_size,
-        kind,
+        face,
         ..
     } = env.objc.borrow::<UIFontHostObject>(font_id);
+    let (font_size, face) = (*font_size, face.clone());
 
     let width_and_line_break_mode =
         width_and_line_break_mode.map(|(width, ui_mode)| (width, convert_line_break_mode(ui_mode)));
     let clip_x = width_and_line_break_mode.map(|(width, _)| point.x..(point.x + width));
     let (width, height) = {
-        let font = get_font(&mut env.framework_state.uikit.ui_font, kind, text);
+        let font = get_font(&mut env.framework_state.uikit.ui_font, &face, text);
         font.calculate_text_size(font_size, text, width_and_line_break_mode)
     };
 
@@ -477,7 +464,7 @@ pub fn draw_at_point(
     // [counter_flip_for_text].
     let flipped = counter_flip_for_text(env, context, point.y, height);
 
-    let font = get_font(&mut env.framework_state.uikit.ui_font, kind, text);
+    let font = get_font(&mut env.framework_state.uikit.ui_font, &face, text);
     let mut drawer = CGBitmapContextDrawer::new(&env.objc, &mut env.mem, context);
     let fill_color = drawer.rgb_fill_color();
 
@@ -518,18 +505,19 @@ pub fn draw_in_rect(
 
     let text_size = size_with_font(env, font, text, Some((rect.size, line_break_mode)));
 
-    let &UIFontHostObject {
+    let UIFontHostObject {
         size: font_size,
-        kind,
+        face,
         ..
     } = env.objc.borrow::<UIFontHostObject>(font);
+    let (font_size, face) = (*font_size, face.clone());
 
     // The context is flipped back for the duration of the drawing; see
     // [counter_flip_for_text]. The band is the rect the caller asked for, so
     // clipping below still refers to the same place.
     let flipped = counter_flip_for_text(env, context, rect.origin.y, rect.size.height);
 
-    let font = get_font(&mut env.framework_state.uikit.ui_font, kind, text);
+    let font = get_font(&mut env.framework_state.uikit.ui_font, &face, text);
 
     let mut drawer = CGBitmapContextDrawer::new(&env.objc, &mut env.mem, context);
     let fill_color = drawer.rgb_fill_color();
@@ -565,86 +553,44 @@ pub fn draw_in_rect(
     text_size
 }
 
-fn get_equivalent_font(system_font: &str) -> Option<FontKind> {
-    // Maps every font found in every font family in an iOS 2 Simulator
-    match system_font {
-        // Font Family: Courier
-        "Courier" => None,
-        "Courier-BoldOblique" => None,
-        "Courier-Oblique" => None,
-        "Courier-Bold" => None,
-        // Font Family: AppleGothic
-        "AppleGothic" => None,
-        // Font Family: Arial
-        "ArialMT" => Some(FontKind::SansRegular),
-        "Arial-BoldMT" => Some(FontKind::SansBold),
-        "Arial-BoldItalicMT" => Some(FontKind::SansBoldItalic),
-        "Arial-ItalicMT" => Some(FontKind::SansItalic),
-        // Font Family: STHeiti TC
-        "STHeitiTC-Light" => None,
-        "STHeitiTC-Medium" => None,
-        // Font Family: Hiragino Kaku Gothic ProN
-        "HiraKakuProN-W6" => None,
-        "HiraKakuProN-W3" => None,
-        // Font Family: Courier New
-        "CourierNewPS-BoldMT" => Some(FontKind::MonoRegular),
-        "CourierNewPS-ItalicMT" => Some(FontKind::MonoBold),
-        "CourierNewPS-BoldItalicMT" => Some(FontKind::MonoBoldItalic),
-        "CourierNewPSMT" => Some(FontKind::MonoItalic),
-        // Font Family: Zapfino
-        "Zapfino" => None,
-        // Font Family: Arial Unicode MS
-        "ArialUnicodeMS" => None,
-        // Font Family: STHeiti SC
-        "STHeitiSC-Medium" => None,
-        "STHeitiSC-Light" => None,
-        // Font Family: American Typewriter
-        "AmericanTypewriter" => Some(FontKind::MonoRegular),
-        "AmericanTypewriter-Bold" => Some(FontKind::MonoBold),
-        // Font Family: Helvetica
-        "Helvetica-Oblique" => None,
-        "Helvetica-BoldOblique" => None,
-        "Helvetica" => None,
-        "Helvetica-Bold" => None,
-        // Font Family: Marker Felt
-        "MarkerFelt-Thin" => None,
-        // Font Family: Helvetica Neue
-        "HelveticaNeue" => Some(FontKind::SansRegular),
-        "HelveticaNeue-Bold" => Some(FontKind::SansBold),
-        // Font Family: DB LCD Temp
-        "DBLCDTempBlack" => None,
-        // Font Family: Verdana
-        "Verdana-Bold" => None,
-        "Verdana-BoldItalic" => None,
-        "Verdana" => None,
-        "Verdana-Italic" => None,
-        // Font Family: Times New Roman
-        "TimesNewRomanPSMT" => Some(FontKind::SerifRegular),
-        "TimesNewRomanPS-BoldMT" => Some(FontKind::SerifBold),
-        "TimesNewRomanPS-BoldItalicMT" => Some(FontKind::SerifBoldItalic),
-        "TimesNewRomanPS-ItalicMT" => Some(FontKind::SerifItalic),
-        // Font Family: Georgia
-        "Georgia-Bold" => None,
-        "Georgia" => None,
-        "Georgia-BoldItalic" => None,
-        "Georgia-Italic" => None,
-        _ => None,
+/// Whether a face is one of the bold ones.
+///
+/// The Japanese fallback needs to know, and a face is either a bundled family
+/// with a style or a file somebody chose — for the second, the style is what
+/// was asked for when it was resolved, which is not recorded, so a host font
+/// falls back to the regular Japanese face. That is the same answer the old
+/// code gave for anything it did not recognise.
+fn face_is_bold(face: &Face) -> bool {
+    match face {
+        Face::Bundled { style, .. } => style.is_bold(),
+        Face::Host { .. } => false,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::font::catalogue;
 
+    /// The case the old hand-written table got wrong for years: it listed
+    /// `HelveticaNeue` and `HelveticaNeue-Bold` and nothing else, so every
+    /// other weight of the platform's own interface font fell through to the
+    /// system font. Reducing a name to its family answers for all of them.
     #[test]
-    fn helvetica_neue_uses_matching_sans_weight() {
-        assert!(matches!(
-            get_equivalent_font("HelveticaNeue"),
-            Some(FontKind::SansRegular)
-        ));
-        assert!(matches!(
-            get_equivalent_font("HelveticaNeue-Bold"),
-            Some(FontKind::SansBold)
-        ));
+    fn helvetica_neue_keeps_its_weight_at_every_face() {
+        for (name, expected) in [
+            ("HelveticaNeue", catalogue::Style::Regular),
+            ("HelveticaNeue-Bold", catalogue::Style::Bold),
+            ("HelveticaNeue-Italic", catalogue::Style::Italic),
+            ("HelveticaNeue-BoldItalic", catalogue::Style::BoldItalic),
+            ("HelveticaNeue-Medium", catalogue::Style::Regular),
+            ("HelveticaNeue-CondensedBlack", catalogue::Style::Bold),
+        ] {
+            assert_eq!(catalogue::style_of(name), expected, "style of {name}");
+            assert!(
+                catalogue::substitution(name).is_some(),
+                "{name} finds no substitution"
+            );
+        }
     }
 }

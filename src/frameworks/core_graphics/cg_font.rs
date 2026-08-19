@@ -40,43 +40,17 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 };
 
-/// Pick a bundled font that best matches a requested PostScript/family name.
+/// Pick the font to draw for a requested PostScript or family name.
 ///
-/// tapHLE ships only the Liberation family (plus a Japanese fallback), so an
-/// arbitrary installed-font name cannot be reproduced exactly. Real devices
-/// return NULL for a font that is not installed, but apps that ask for one by
-/// name generally expect a usable font back, so we substitute the closest
-/// bundled style rather than fail. The classification is by well-known name
-/// substrings; it is deliberately coarse.
-fn font_for_name(name: &str) -> Font {
-    let lower = name.to_ascii_lowercase();
-    let bold = lower.contains("bold") || lower.contains("black") || lower.contains("heavy");
-    let italic = lower.contains("italic") || lower.contains("oblique");
-    let mono = lower.contains("courier") || lower.contains("mono") || lower.contains("typewriter");
-    let serif = !mono
-        && (lower.contains("times")
-            || lower.contains("serif")
-            || lower.contains("georgia")
-            || lower.contains("papyrus"));
-    match (mono, serif, bold, italic) {
-        (true, _, true, true) => Font::mono_bold_italic(),
-        (true, _, true, false) => Font::mono_bold(),
-        (true, _, false, true) => Font::mono_italic(),
-        (true, _, false, false) => Font::mono_regular(),
-        (false, true, true, true) => Font::serif_bold_italic(),
-        (false, true, true, false) => Font::serif_bold(),
-        (false, true, false, true) => Font::serif_italic(),
-        (false, true, false, false) => Font::serif_regular(),
-        (false, false, true, true) => Font::sans_bold_italic(),
-        (false, false, true, false) => Font::sans_bold(),
-        (false, false, false, true) => Font::sans_italic(),
-        (false, false, false, false) => Font::sans_regular(),
-    }
-}
-
+/// A real device returns NULL for a font that is not installed. tapHLE
+/// substitutes instead, because an app that asks for a font by name generally
+/// expects a usable one back and dies on the NULL — and because with the
+/// catalogue behind it, the substitute is a considered answer rather than a
+/// shrug. See [crate::font::resolve] for the order it decides in.
 fn CGFontCreateWithFontName(env: &mut Environment, name: CFStringRef) -> CGFontRef {
     let name_str = to_rust_string(env, name).to_string();
-    let font = font_for_name(&name_str);
+    let face = crate::font::resolve(&name_str, &env.options);
+    let font = crate::font::load_face(&face);
     let host_obj = Box::new(CGFontHostObject { font });
     let class = env.objc.get_known_class("_tapHLE_CGFont", &mut env.mem);
     env.objc.alloc_object(class, host_obj, &mut env.mem)
