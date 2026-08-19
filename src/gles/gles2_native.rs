@@ -13,7 +13,7 @@
 //! backend and shader-based present path"
 //! (<https://github.com/HyperHLE/HyperHLE>). The tapHLE commit that introduced
 //! this file, `fd543d42`, cited the wrong upstream commit and credited the
-//! wrong author; see the erratum in `dev-docs/upstream-sync.md`. That commit
+//! wrong author; see the erratum in `docs/project-history.md`. That commit
 //! cannot be corrected in place because a published compatibility report cites
 //! one of its descendants, so this notice is the attribution of record.
 

@@ -1,6 +1,6 @@
 # Report whether the conditions for a numbered release are met.
 #
-# The release trigger in dev-docs/releases.md is deliberately mechanical, but a
+# The release trigger in docs/maintaining.md is deliberately mechanical, but a
 # rule nobody evaluates is the same as no rule: this project reached hundreds of
 # commits, an untouched Unreleased heading, and zero published releases. This
 # turns the rule into something you can run.
@@ -20,7 +20,7 @@ $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
 # The first numbered release waits for the new GUI; see "The first release is
-# on hold" in dev-docs/releases.md. Set this to $false when the GUI ships and
+# on hold" in docs/maintaining.md. Set this to $false when the GUI ships and
 # delete that section - after the first release the changelog trigger applies
 # on its own. A held release is stated rather than left to look like a rule
 # that mysteriously never fires.
@@ -48,7 +48,7 @@ function Invoke-Capture {
 # 0. The standing hold, checked before anything else so a held release is never
 #    reported as ready no matter how green the rest of the run is.
 if ($FirstReleaseHeldForGui) {
-    Add-Blocker 'The first release is held until the new GUI ships (dev-docs/releases.md).'
+    Add-Blocker 'The first release is held until the new GUI ships (docs/maintaining.md).'
 }
 
 # 1. Is there anything to release? This is the trigger, not a formality: an

@@ -12,7 +12,7 @@
 //! look installed rather than downloaded.
 //!
 //! Nothing happens on other platforms; their equivalents belong with their
-//! packaging, which is described in `dev-docs/packaging.md`.
+//! packaging, which is described in `docs/maintaining.md`.
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");

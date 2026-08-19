@@ -2,8 +2,8 @@
 # and still drawing.
 #
 # This exists because the check kept being rewritten from memory each session
-# and kept coming out smaller than the one before. dev-docs/app-debugging-
-# playbook.md, "A liveness check is not a regression check", records what went
+# and kept coming out smaller than the one before. docs/compatibility.md,
+# "A liveness check is not a regression check", records what went
 # wrong when it did: SPY mouse HD aborted at about forty seconds and a
 # twenty-second check called it healthy, and JellyCar 2 was not in the list at
 # all and had been dead for a dozen commits before anyone launched it.
@@ -33,7 +33,7 @@
 # What this does NOT do: drive each app to the milestone it is rated for.
 # Three stars means a gameplay loop, and nothing here leaves the title screen,
 # so a break that only shows in play is still invisible to it. The click maps
-# in dev-docs/app-notes/ are what a check that goes that far would use.
+# in compatibility/notes/ are what a check that goes that far would use.
 
 [CmdletBinding()]
 param(

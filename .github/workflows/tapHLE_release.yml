@@ -30,6 +30,10 @@ jobs:
           fetch-depth: 0
       - name: Validate agent policy
         run: bash dev-scripts/audit-agent-safety.sh
+      # A document pointing at a file that does not exist is a silent failure:
+      # the README named dev-docs/packaging.md twice while it was absent.
+      - name: Check documentation references
+        run: python dev-scripts/check-doc-links.py
       - name: Test repository policy tools
         run: python -m unittest discover -s dev-scripts/tests -v
       - name: Validate compatibility database

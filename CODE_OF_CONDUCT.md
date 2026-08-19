@@ -2,11 +2,11 @@
 
 Be respectful, direct, and considerate of other contributors' time. Critique
 the change and its evidence, not the person or agent that produced it.
+Harassment, discrimination, threats, and deliberate disruption are not welcome.
 
-Harassment, discrimination, threats, and deliberate disruption are not
-welcome. Human contributors are responsible for the agent output they submit,
-and reviewers should evaluate AI-assisted work by the same technical,
-provenance, and conduct standards as other work.
+Human contributors are responsible for the agent output they submit, and
+reviewers should evaluate AI-assisted work by the same technical, provenance,
+and conduct standards as other work.
 
 ## Copyright, abandonware, and compatibility research
 
