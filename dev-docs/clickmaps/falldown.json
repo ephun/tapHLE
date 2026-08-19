@@ -1,0 +1,85 @@
+{
+  "clickmap_version": 1,
+  "app": {
+    "bundle_identifier": "FallDown",
+    "display_name": "FallDown!",
+    "version": "1.4",
+    "sha256": "c268449bdc0075831d9a2a6da80c109b6b61e867a453f379b23966cb44a6105f"
+  },
+  "recorded": {
+    "date": "2026-08-19",
+    "host": "Windows 11, Intel Iris Xe Graphics",
+    "by": "Claude Code (Opus 5)"
+  },
+  "window": {
+    "width": 320,
+    "height": 480,
+    "orientation": "portrait"
+  },
+  "milestone": {
+    "rating": 2,
+    "describes": "The menu is drawn and stays up: the FallDown! logo in neon over Play, How to play, Highscores and More, with the advert strip along the bottom. The steps past it start a round, which is further than the rating goes - see the note."
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 8000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 45000,
+      "expect": "The menu: FallDown! in green neon over Play, How to play, Highscores and More."
+    },
+    {
+      "id": "hold",
+      "action": "wait",
+      "settle_ms": 10000,
+      "expect": "Still there. This is the two-star milestone."
+    },
+    {
+      "id": "press",
+      "from": "menu",
+      "action": "tap",
+      "at": [
+        160,
+        222
+      ],
+      "settle_ms": 300,
+      "expect": "A round starts: green platforms scrolling upwards, the ball at the top, the crush bar across the top of the screen."
+    },
+    {
+      "id": "steer-left",
+      "action": "tilt",
+      "at": [
+        148,
+        240
+      ],
+      "hold_ms": 900,
+      "settle_ms": 150,
+      "expect": "The ball moves left under the tilt."
+    },
+    {
+      "id": "steer-right",
+      "action": "tilt",
+      "at": [
+        172,
+        240
+      ],
+      "hold_ms": 900,
+      "settle_ms": 150,
+      "expect": "And right."
+    },
+    {
+      "id": "after",
+      "action": "wait",
+      "settle_ms": 4000,
+      "expect": "The round is over by here and the Highscores screen is up, reading 'Last score: 4'. That is the frontier, not the milestone: see the note."
+    }
+  ],
+  "notes": [
+    "Coordinates are client coordinates for the 320x480 portrait window. A capture includes the window border and title bar, so a position read off a frame is about (8, 31) out.",
+    "Tilting works and can be seen working: held at the left edge the ball travels to the left wall and stays against it. It is not enough to keep a round going - see the note for why that is a finding rather than a limitation of the route.",
+    "**Every round ends at score 4**, after about three seconds, with no steering, with hard steering, and with gentle steering. A score that does not vary with the input is the thing to explain here."
+  ]
+}
