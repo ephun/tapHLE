@@ -56,6 +56,32 @@ owner instead of restating the fact. This table is what makes that checkable.
 | Agent provenance and capability history | `docs/project-history.md` | Never normative |
 | What changed in a version | `CHANGELOG.md` | Never a current-state claim |
 | App working state | `compatibility/notes/<app>.md` | Explicitly non-canonical |
+| Project terminology | this file, below | `docs/platforms.md` defines the status axes |
+
+## Words tapHLE uses precisely
+
+These words had drifted into meaning several things at once, which is how the
+project ended up claiming a platform was both packaged and unpackaged in one
+table cell. Use the canonical column.
+
+| Instead of | Write | Because |
+| --- | --- | --- |
+| app / application / game, interchangeably | **app** for any emulated iOS application | "game" is fine in user-facing prose and where the thing genuinely is a game — the rating label "In game", the mission sentence. Technical writing says "app", because tapHLE runs more than games. |
+| target platform | **distribution target** or **build target** | Bare "target" hides which of the two is meant. |
+| supported platform | **supported host** | "Supported" is a commitment: the maintainer accepts compatibility claims earned there. It never means the code compiled once. |
+| host / platform, loosely | **host OS** or **host platform** | The host is the modern machine running tapHLE. |
+| guest / game / binary | **guest app** or **guest code** | The guest is the 32-bit application and the environment tapHLE emulates for it. |
+| tested | **build-verified**, **runtime-verified**, or **CI-tested** | "Built in CI" is not a runtime test, and conflating them is what put "built in CI, not played on" in a column headed *Tested*. |
+| packaged | **bundle tooling**, **installer tooling**, or **published artifact** | Not a yes/no. A bundle script existing is not an installer, and neither is a published download. |
+| release | **numbered release**, as against a **trunk preview** | A commit-identified `trunk` build is not a release. |
+| compatibility, as a bare noun | **compatibility result** | A result names an app build, a tapHLE revision, a host, and a rating. Anything short of that is an observation. |
+| app note / work note | **compatibility work note** | Explicitly non-canonical, continuation state — never a claim. |
+| touchHLE, for anything current | **tapHLE** | Use touchHLE only for upstream and inherited history. Renaming a file does not make an inherited claim true here; see `project-history.md`. |
+
+`docs/platforms.md` owns the operational definitions of the status axes —
+distribution target, build verified, runtime verified, CI, package tooling,
+release eligible, compatibility support. This table governs word choice; that
+one governs what each column asserts.
 
 ## Rules for writing tapHLE documentation
 
@@ -78,8 +104,9 @@ not write the sentence.
 **History never defines current behaviour.** `CHANGELOG.md` and
 `project-history.md` explain how tapHLE got here, not what works now.
 
-**"Supported" is a commitment word.** It means the maintainer accepts
-compatibility claims on that host. It never means the code compiled once.
+**Use the controlled vocabulary.** "Supported", "packaged", "tested",
+"release" and "app" all had loose senses that produced real contradictions.
+See "Words tapHLE uses precisely" above.
 
 **Do not add a documentation file.** These eight, plus the root gateways and the
 two local READMEs, are the documentation system. Record what you learn in the

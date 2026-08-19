@@ -567,6 +567,14 @@ exactly one home. If a fact already has an owner, link to it rather than
 restating it — the five-platform matrix existed in three files at once and they
 disagreed, which is the failure this rule exists to prevent.
 
+**Use the controlled vocabulary.** The same page defines the words tapHLE uses
+precisely — *app* rather than game in technical writing, *supported host* rather
+than supported platform, *guest app* for the emulated side, *build-verified*
+against *runtime-verified*, *numbered release* against *trunk preview*. Each of
+those had a loose sense that produced a contradiction somebody then had to
+untangle. "Supported" in particular is a commitment: it means the maintainer
+accepts compatibility claims earned on that host, never that the code compiled.
+
 **Do not create new documentation files.** The eight documents in `docs/`, the
 root gateways, and the two local READMEs are the documentation system. Add a file
 only when the maintainer asks for one. An agent that invents a document every
