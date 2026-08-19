@@ -140,6 +140,11 @@
   held on to every intermediate version. One level load spent eleven gigabytes
   this way; it now spends a fraction of that.
 
+- Show a picture beside a row in a list. A game that puts an icon next to each
+  entry — a level, a save, a track — asks the row for its picture well while
+  filling the row in, and there was nothing there to ask, so the game ended at
+  its own list. Labyrinth 2's level list did exactly that.
+
 - Stop ending a game when it puts one of its screens in a place further along
   than it has screens so far. Games that build a screen out of order do this,
   and the answer is simply to put it on top, which is what the game meant and
