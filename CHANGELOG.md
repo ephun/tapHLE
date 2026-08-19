@@ -140,6 +140,11 @@
   held on to every intermediate version. One level load spent eleven gigabytes
   this way; it now spends a fraction of that.
 
+- Read numbers with a decimal point out of text. Games keep level geometry,
+  timings and positions in text files, and reading a whole number worked while
+  reading a fractional one did not exist at all, so the game ended at the first
+  number with a point in it.
+
 - A game that reads through a text file until there is nothing left now gets to
   the end of it. Being asked to read past the end was answered as though
   something had been read, so a game looping until it ran out never ran out:

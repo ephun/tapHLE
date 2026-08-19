@@ -196,6 +196,39 @@ pub const CLASSES: ClassExports = objc_classes! {
     true
 }
 
+// Reading a number written with a decimal point. A game keeping level data as
+// text reads its geometry this way, so a scanner that cannot do it stops the
+// game rather than the parse.
+//
+// What counts as part of the number is the shape Foundation accepts: an
+// optional sign, digits around at most one decimal point, and an optional
+// exponent introduced by e or E with its own optional sign. Characters are
+// taken only while they can still be part of that shape, so a scanner asked
+// for a number where there is not one leaves its position alone and says so.
+- (bool)scanDouble:(MutPtr<f64>)result {
+    let Some((value, end)) = scan_floating_point(env, this) else {
+        return false;
+    };
+    if !result.is_null() {
+        env.mem.write(result, value);
+    }
+    env.objc.borrow_mut::<NSScannerHostObject>(this).pos = end;
+    true
+}
+
+- (bool)scanFloat:(MutPtr<f32>)result {
+    let Some((value, end)) = scan_floating_point(env, this) else {
+        return false;
+    };
+    if !result.is_null() {
+        // Foundation reports HUGE_VAL for a number too big to represent, and
+        // Rust's parse already gives infinity there, so this is that value.
+        env.mem.write(result, value as f32);
+    }
+    env.objc.borrow_mut::<NSScannerHostObject>(this).pos = end;
+    true
+}
+
 - (bool)scanUpToString:(id)stop_string // NSString *
             intoString:(MutPtr<id>)result { // NSString **
     skip_characters(env, this);
@@ -309,6 +342,62 @@ pub const CLASSES: ClassExports = objc_classes! {
 @end
 
 };
+
+/// Read a floating-point number at the scan position, returning its value and
+/// the position just after it, or [None] if there is no number there.
+///
+/// Shared by `scanDouble:` and `scanFloat:`, which differ only in the width
+/// they report the answer in.
+fn scan_floating_point(env: &mut Environment, scanner: id) -> Option<(f64, NSUInteger)> {
+    skip_characters(env, scanner);
+
+    let &NSScannerHostObject {
+        string, len, pos, ..
+    } = env.objc.borrow(scanner);
+
+    let mut number = String::new();
+    let mut scan = pos;
+    let mut seen_point = false;
+    let mut seen_exponent = false;
+    let mut seen_digit = false;
+    while scan < len {
+        let c: unichar = msg![env; string characterAtIndex:scan];
+        let Some(c) = char::from_u32(u32::from(c)) else {
+            break;
+        };
+        let acceptable = if c.is_ascii_digit() {
+            seen_digit = true;
+            true
+        } else if c == '.' && !seen_point && !seen_exponent {
+            seen_point = true;
+            true
+        } else if (c == 'e' || c == 'E') && seen_digit && !seen_exponent {
+            seen_exponent = true;
+            true
+        } else if c == '+' || c == '-' {
+            // A sign belongs at the start of the number or straight after the
+            // exponent marker, and nowhere else.
+            number.is_empty() || number.ends_with(['e', 'E'])
+        } else {
+            false
+        };
+        if !acceptable {
+            break;
+        }
+        number.push(c);
+        scan += 1;
+    }
+
+    if !seen_digit {
+        return None;
+    }
+
+    // The run can still end in something that is not a number on its own - a
+    // trailing exponent marker, say - so what was collected is parsed rather
+    // than assumed.
+    let value: f64 = number.parse().ok()?;
+    Some((value, scan))
+}
 
 /// Whether `string` has `needle` at `at`, compared code unit by code unit.
 ///
