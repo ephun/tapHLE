@@ -594,12 +594,12 @@ fn fonts_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Emul
 
     optional_row(
         ui,
-        "Use fonts installed here",
+        "Installed fonts",
         &mut draft.use_host_fonts,
         true,
         inherited.map(|i| describe(&i.use_host_fonts, |v| on_off(*v))),
         |ui, value| {
-            ui.checkbox(value, "");
+            ui.checkbox(value, "Use mine when the name matches");
         },
     );
 
