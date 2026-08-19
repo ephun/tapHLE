@@ -140,6 +140,12 @@
   held on to every intermediate version. One level load spent eleven gigabytes
   this way; it now spends a fraction of that.
 
+- The buttons in a game's button bar work. A bar built in Interface Builder came
+  up with nothing in it, and because the bar is still there — invisible, and on
+  top — it swallowed every tap aimed at the buttons the game had drawn beneath
+  it. Games whose entire menu is a button bar could not be started at all;
+  Labyrinth's Play button now opens its level list.
+
 - Fix a crash on a game's first launch that came from tapHLE releasing
   something it did not own. Animation timing was the thing being freed early,
   so what a game saw was a crash a few frames after an animation, with nothing

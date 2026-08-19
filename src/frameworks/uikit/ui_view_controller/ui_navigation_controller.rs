@@ -5,13 +5,15 @@
  */
 //! `UINavigationController`.
 
+use crate::frameworks::core_graphics::{CGFloat, CGPoint, CGRect, CGSize};
 use crate::frameworks::foundation::ns_string::get_static_str;
 use crate::frameworks::foundation::{ns_array, NSInteger, NSUInteger};
 use crate::frameworks::uikit::ui_application::UIInterfaceOrientation;
 use crate::objc::{
-    autorelease, id, impl_HostObject_with_superclass, msg, msg_super, nil, objc_classes, release,
-    retain, ClassExports, NSZonePtr, SEL,
+    autorelease, id, impl_HostObject_with_superclass, msg, msg_send, msg_super, nil, objc_classes,
+    release, retain, ClassExports, NSZonePtr, SEL,
 };
+use crate::Environment;
 
 // TODO: navigation bar and toolbar
 // TODO: animations
@@ -30,6 +32,16 @@ struct UINavigationItemHostObject {
     title_view: id,
 }
 impl crate::objc::HostObject for UINavigationItemHostObject {}
+
+/// What a navigation bar keeps. Nothing draws it; the stack exists so that an
+/// app which pushes an item can read back what it pushed.
+#[derive(Default)]
+struct UINavigationBarHostObject {
+    superclass: crate::frameworks::uikit::ui_view::UIViewHostObject,
+    /// `UINavigationItem*`, retained, oldest first.
+    items: Vec<id>,
+}
+impl_HostObject_with_superclass!(UINavigationBarHostObject);
 
 #[derive(Default)]
 struct UIToolbarHostObject {
@@ -85,6 +97,116 @@ struct UINavigationControllerHostObject {
     navigation_bar_hidden: bool,
 }
 impl_HostObject_with_superclass!(UINavigationControllerHostObject);
+
+/// Where a toolbar's items sit, in the toolbar's own coordinates.
+///
+/// tapHLE does not draw the items, so this exists only to decide which one a
+/// touch landed on. It follows UIKit's arrangement: items are laid out left to
+/// right, a flexible space takes an equal share of whatever is left over, and a
+/// fixed space takes its own width. Widths for ordinary items are estimated
+/// from their titles, which is the part that cannot be exact — an item's real
+/// width depends on the font the bar draws it in.
+fn toolbar_item_frames(env: &mut Environment, toolbar: id) -> Vec<(id, CGRect)> {
+    let items: id = env.objc.borrow::<UIToolbarHostObject>(toolbar).items;
+    if items == nil {
+        return Vec::new();
+    }
+    let count: NSUInteger = msg![env; items count];
+    let bounds: CGRect = msg![env; toolbar bounds];
+
+    /// `UIBarButtonSystemItemFlexibleSpace` and `...FixedSpace`.
+    const FLEXIBLE_SPACE: NSInteger = 5;
+    const FIXED_SPACE: NSInteger = 6;
+    /// A toolbar button is at least this wide on a device, and the gap either
+    /// side of the row is about this much again.
+    const MINIMUM_WIDTH: CGFloat = 44.0;
+    const EDGE_INSET: CGFloat = 8.0;
+
+    let mut widths: Vec<(id, CGFloat, bool)> = Vec::new();
+    for index in 0..count {
+        let item: id = msg![env; items objectAtIndex:index];
+        let &UIBarButtonItemHostObject {
+            title,
+            custom_view,
+            system_item,
+            ..
+        } = env.objc.borrow(item);
+
+        if system_item == FLEXIBLE_SPACE {
+            widths.push((item, 0.0, true));
+            continue;
+        }
+        if system_item == FIXED_SPACE {
+            widths.push((item, MINIMUM_WIDTH / 2.0, false));
+            continue;
+        }
+        if custom_view != nil {
+            let frame: CGRect = msg![env; custom_view frame];
+            widths.push((item, frame.size.width.max(MINIMUM_WIDTH), false));
+            continue;
+        }
+        // About ten points per character plus the button's own padding. This is
+        // a guess, and it is why an item's frame here is only good enough to
+        // decide which button a finger is nearest.
+        let characters = if title == nil {
+            0.0
+        } else {
+            let length: NSUInteger = msg![env; title length];
+            length as CGFloat
+        };
+        widths.push((item, (characters * 10.0 + 24.0).max(MINIMUM_WIDTH), false));
+    }
+
+    let fixed_total: CGFloat = widths
+        .iter()
+        .filter(|(_, _, flexible)| !flexible)
+        .map(|(_, width, _)| *width)
+        .sum();
+    let flexible_count = widths.iter().filter(|(_, _, flexible)| *flexible).count();
+    let spare = (bounds.size.width - EDGE_INSET * 2.0 - fixed_total).max(0.0);
+    let per_flexible = if flexible_count > 0 {
+        spare / flexible_count as CGFloat
+    } else {
+        0.0
+    };
+
+    let mut frames = Vec::new();
+    let mut x = bounds.origin.x + EDGE_INSET;
+    for (item, width, flexible) in widths {
+        let width = if flexible { per_flexible } else { width };
+        if !flexible {
+            frames.push((
+                item,
+                CGRect {
+                    origin: CGPoint {
+                        x,
+                        y: bounds.origin.y,
+                    },
+                    size: CGSize {
+                        width,
+                        height: bounds.size.height,
+                    },
+                },
+            ));
+        }
+        x += width;
+    }
+    frames
+}
+
+/// The item a point falls on, if any.
+fn toolbar_item_at_point(env: &mut Environment, toolbar: id, point: CGPoint) -> Option<id> {
+    for (item, frame) in toolbar_item_frames(env, toolbar) {
+        if point.x >= frame.origin.x
+            && point.x < frame.origin.x + frame.size.width
+            && point.y >= frame.origin.y
+            && point.y < frame.origin.y + frame.size.height
+        {
+            return Some(item);
+        }
+    }
+    None
+}
 
 pub const CLASSES: ClassExports = objc_classes! {
 
@@ -462,6 +584,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 @implementation UINavigationBar: UIView
 
++ (id)allocWithZone:(NSZonePtr)_zone {
+    let host_object = Box::<UINavigationBarHostObject>::default();
+    env.objc.alloc_object(this, host_object, &mut env.mem)
+}
+
 // Nothing draws a navigation bar, so no delegate callback is ever sent. The
 // property still has to exist: nibs set it while wiring the interface up, long
 // before anything would push an item onto the bar.
@@ -477,6 +604,65 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (())setTranslucent:(bool)_translucent {
 }
 
+// The stack of navigation items. Nothing here draws them, but an app that
+// pushes one is usually doing it as part of changing screens, and a bar that
+// cannot be pushed onto ends the app in the middle of that — which is how a
+// game's menu button turns into a crash once the button starts working at all.
+//
+// The items are kept rather than dropped so that `-topItem` answers what was
+// last pushed, which is what an app reads back to decide what to show.
+- (())pushNavigationItem:(id)item // UINavigationItem*
+                animated:(bool)_animated {
+    retain(env, item);
+    env.objc
+        .borrow_mut::<UINavigationBarHostObject>(this)
+        .items
+        .push(item);
+}
+- (())pushNavigationItem:(id)item { // UINavigationItem*
+    () = msg![env; this pushNavigationItem:item animated:false];
+}
+- (id)popNavigationItemAnimated:(bool)_animated {
+    let popped = env
+        .objc
+        .borrow_mut::<UINavigationBarHostObject>(this)
+        .items
+        .pop();
+    match popped {
+        Some(item) => {
+            autorelease(env, item)
+        }
+        None => nil,
+    }
+}
+- (id)topItem {
+    env.objc
+        .borrow::<UINavigationBarHostObject>(this)
+        .items
+        .last()
+        .copied()
+        .unwrap_or(nil)
+}
+- (id)backItem {
+    let items = &env.objc.borrow::<UINavigationBarHostObject>(this).items;
+    if items.len() < 2 {
+        return nil;
+    }
+    items[items.len() - 2]
+}
+- (())setItems:(id)_items animated:(bool)_animated {
+    // TODO: replace the whole stack. Nothing reads it back yet beyond the two
+    // accessors above.
+}
+
+- (())dealloc {
+    let items = std::mem::take(&mut env.objc.borrow_mut::<UINavigationBarHostObject>(this).items);
+    for item in items {
+        release(env, item);
+    }
+    msg_super![env; this dealloc]
+}
+
 @end
 
 // UIToolbar was the third most common missing class in a 1501-app survey, in 28
@@ -485,14 +671,43 @@ pub const CLASSES: ClassExports = objc_classes! {
 //
 // So it is a real UIView that holds its items rather than a drawn toolbar. The
 // items round-trip, which is what layout and configuration code reads back;
-// nothing paints them yet, exactly as UINavigationBar above does not paint a
-// navigation bar. A toolbar that is present but blank is a far smaller problem
-// than an app that cannot start.
+// nothing paints them, exactly as UINavigationBar above does not paint a
+// navigation bar.
+//
+// It does, however, *answer* a touch. A toolbar that draws nothing is still a
+// solid rectangle in the view hierarchy, so before this it swallowed every
+// touch that landed on it and the app's buttons were dead — a game whose entire
+// menu is a toolbar could not be started at all, and the player could see the
+// buttons, because the artwork under the bar is the app's own. Working out
+// which item was pressed needs the layout UIKit would have used, which is what
+// [toolbar_item_frames] reconstructs.
 @implementation UIToolbar: UIView
 
 + (id)allocWithZone:(NSZonePtr)_zone {
     let host_object = Box::<UIToolbarHostObject>::default();
     env.objc.alloc_object(this, host_object, &mut env.mem)
+}
+
+// A toolbar built in Interface Builder carries its buttons in the archive, and
+// without reading them the bar comes up empty: the app's own artwork shows
+// buttons, the bar covers them, and nothing can be pressed. That is what a game
+// whose entire menu is a toolbar looks like — a menu that ignores you.
+- (id)initWithCoder:(id)coder {
+    let this: id = msg_super![env; this initWithCoder:coder];
+
+    let items_key = get_static_str(env, "UIItems");
+    let items: id = msg![env; coder decodeObjectForKey:items_key];
+    if items != nil {
+        () = msg![env; this setItems:items];
+    }
+
+    let bar_style_key = get_static_str(env, "UIBarStyle");
+    if msg![env; coder containsValueForKey:bar_style_key] {
+        let bar_style: NSInteger = msg![env; coder decodeIntegerForKey:bar_style_key];
+        () = msg![env; this setBarStyle:bar_style];
+    }
+
+    this
 }
 
 - (id)items {
@@ -529,6 +744,40 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 - (bool)isTranslucent {
     false
+}
+
+// Pressing a toolbar button. UIKit sends the item's action when the touch ends
+// inside the item it started in; this is the same rule, simplified to where the
+// touch ended, because a toolbar item has no highlighted state here to track.
+- (())touchesEnded:(id)touches // NSSet* of UITouch*
+         withEvent:(id)event {
+    let touch: id = msg![env; touches anyObject];
+    if touch == nil {
+        return;
+    }
+    let point: CGPoint = msg![env; touch locationInView:this];
+
+    let Some(item) = toolbar_item_at_point(env, this, point) else {
+        // Nothing there: a toolbar has gaps, and a touch in one is not a
+        // button press. It is also not something to pass up the responder
+        // chain, because on a device the toolbar would have eaten it too.
+        return;
+    };
+
+    let &UIBarButtonItemHostObject { target, action, enabled, .. } = env.objc.borrow(item);
+    if !enabled {
+        return;
+    }
+    let (Some(action), true) = (action, target != nil) else {
+        // An item with no action, or one that expects the responder chain to
+        // find a handler, which is not modelled here.
+        log_dbg!("Toolbar item {:?} pressed, but it has no target and action", item);
+        return;
+    };
+    log_dbg!("Toolbar item {:?} pressed, sending {:?}", item, action.as_str(&env.mem));
+    () = msg_send(env, (target, action, item));
+
+    let _ = event;
 }
 
 - (())dealloc {
@@ -691,10 +940,38 @@ pub const CLASSES: ClassExports = objc_classes! {
 // behaves; tapHLE will never fire them on its own.
 @implementation UIBarButtonItem: UIBarItem
 
-// Bar items come out of nibs already configured, and nothing here draws them,
-// so decoding is accepting the object. The title, target and action are read
-// back from the archive by whatever asks for them, via the accessors below.
-- (id)initWithCoder:(id)_coder {
+// What the archive says about the item. Nothing here draws it, but the title
+// and the system-item kind decide where the item sits when a touch has to be
+// matched to one — a flexible space is not a button and must not be treated as
+// one — and the enabled flag decides whether pressing it does anything. The
+// target and action arrive separately, as a runtime event connection, which is
+// why this can be complete without decoding them.
+- (id)initWithCoder:(id)coder {
+    let title_key = get_static_str(env, "UITitle");
+    let title: id = msg![env; coder decodeObjectForKey:title_key];
+    let title: id = if title == nil { nil } else { msg![env; title copy] };
+
+    let is_system_key = get_static_str(env, "UIIsSystemItem");
+    let is_system_item: bool = msg![env; coder decodeBoolForKey:is_system_key];
+    let system_item: NSInteger = if is_system_item {
+        let system_item_key = get_static_str(env, "UISystemItem");
+        msg![env; coder decodeIntegerForKey:system_item_key]
+    } else {
+        0
+    };
+
+    let enabled_key = get_static_str(env, "UIEnabled");
+    let enabled: bool = if msg![env; coder containsValueForKey:enabled_key] {
+        msg![env; coder decodeBoolForKey:enabled_key]
+    } else {
+        true
+    };
+
+    let host_object = env.objc.borrow_mut::<UIBarButtonItemHostObject>(this);
+    host_object.title = title;
+    host_object.system_item = system_item;
+    host_object.enabled = enabled;
+
     this
 }
 
