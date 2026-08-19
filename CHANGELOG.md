@@ -134,6 +134,12 @@
   changing text is built from, and it was the one that was missing, so a game
   that rewrote a line rather than building a new one stopped there.
 
+- Reading a text file no longer gets slower the further into it a game gets.
+  Every step of reading through text — take the next word, check for this
+  marker, read this number — was copying everything that came after it first,
+  so a game working through a level file did more copying than reading and
+  could spend gigabytes on a file of a few hundred kilobytes.
+
 - Let a game move a folder. Moving a file worked and moving a folder was not
   implemented at all, so a game that keeps a set of files together and puts the
   whole folder into place — the ordinary way to save without risking a
