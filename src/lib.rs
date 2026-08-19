@@ -65,6 +65,7 @@ mod objc;
 pub mod options;
 pub mod paths;
 mod replay;
+pub mod settings;
 mod stack;
 // Not public, for the same reason as `gles`: its host-facing helpers take an
 // Environment. The frontend reads device families and orientations through
