@@ -140,6 +140,11 @@
   held on to every intermediate version. One level load spent eleven gigabytes
   this way; it now spends a fraction of that.
 
+- Stop ending a game when it puts one of its screens in a place further along
+  than it has screens so far. Games that build a screen out of order do this,
+  and the answer is simply to put it on top, which is what the game meant and
+  what a device did. FallDown! ended the moment Play was pressed.
+
 - Hand a game its own text back as bytes, a piece at a time. A game that fills
   a buffer it owns — to build a key, write a file, or send a message — had no
   way to ask for that and stopped when it tried.
