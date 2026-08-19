@@ -33,6 +33,53 @@ this app stays **open**: when the endpoint returns, submit the rating the app
 holds at that moment on the revision tested at that moment, and do not
 back-date it to `e643eb3e`.
 
+## 2026-08-19, later: it plays, and why that is still two stars
+
+On `d387265f`, from a fresh profile, `dev-docs/clickmaps/fieldrunners.json`
+replays the whole way: main menu, Select Your Map, the Grasslands tile,
+Customize with its difficulty and modes, Start, the tutorial overlay, and then
+live play. Round 1 becomes Round 3 and the lives count falls from 20 to 13
+while runners cross, so the loop is running rather than a held frame.
+
+Five general fixes were needed between the menu and that, in this order, each
+one the app's next stop:
+
+- `NSScanner` copied the whole rest of the string on every scan
+  (`fix/scanner-scans-without-copying`).
+- `appendString:` rebuilt the whole string on every append
+  (`fix/mutable-string-appends-in-place`). The two together were most of an
+  11 GB level load.
+- `scanUpToString:` reported success when it had scanned nothing, so the
+  parser's loop never ended — 12.2 million scans at the end of a
+  seven-character string (`fix/scanner-stops-at-the-end`).
+- `NSScanner` had no `scanFloat:` (`feat/scanner-reads-a-decimal-number`).
+- `CFBinaryHeap` did not exist at all, and the level's route-finding is built on
+  it (`feat/core-foundation-binary-heap`), then
+  `getBytes:maxLength:usedLength:encoding:options:range:remainingRange:` was
+  missing for the tap that leaves the tutorial overlay
+  (`feat/foundation-string-get-bytes`).
+
+**It is not three stars, because the playing field does not draw.** The HUD, the
+runners, the overlays and the tower prices all appear, over white. Three stars
+covers rendering, and a game whose field is missing is not there yet.
+
+The next discriminator: the log carries **222** occurrences of
+`No EAGLContext for thread 1! Ignoring OpenGL ES call`, so the app makes GL
+calls from a second thread that has no context of its own, and tapHLE drops
+them. Whether those calls are what draws the field is the thing to establish —
+not assumed — and the way to establish it is an internal EAGL capture rather
+than a window capture. If it is, the work is real: a second context sharing
+textures with the first, or those calls serialised onto the thread that has one.
+
+**A second problem, recorded because it will waste someone's time otherwise:**
+once the app has a save, the route stops working. With
+`Documents/default.sav` present, the Grasslands tap does nothing at all —
+three runs, no change to the frame — and with the sandbox deleted it works
+every time. The clickmap marks every step past the menu as needing a fresh
+profile. A game that cannot be replayed after being played once is its own
+compatibility problem, and nothing is known yet about which of the two paths is
+at fault.
+
 ## Where the other builds in the collection stop
 
 Surveyed at `63119bcf`; the family is eight files and four different frontiers,
