@@ -1,11 +1,13 @@
-# Help a game work in tapHLE
+# Help to make a game compatible with tapHLE
 
 You can use your own coding agent to improve a game. You do not need to know
 how to program.
 
-No one else is required to work on your request. You and your agent lead the
-work. Agents can make mistakes. You stay in control, and you should read the
-agent's summary before you publish anything.
+The reason many people are interested in an emulator like tapHLE is because
+they have specific games that they want to replay. tapHLE is in early stages
+of development, and chances are the app you want won't work right away. By
+utilizing an agentic AI like Claude Code or OpenAI Codex, you can get your
+game working and help contribute to the project for everyone!
 
 ## Before you start
 
@@ -45,11 +47,8 @@ because it looks close. The full rules are in `compatibility/README.md`.
 
 ## Start the work
 
-1. Open a [Start work on a game issue](https://github.com/ephun/tapHLE/issues/new?template=game_target.yml).
-   This helps people avoid doing the same work twice. It does not put the game
-   in a queue for someone else.
-2. Open your tapHLE folder in your coding agent.
-3. Replace the bracketed parts below, then paste the prompt into the agent.
+1. Open your tapHLE folder in your coding agent.
+2. Replace the bracketed parts below, then paste the prompt into the agent.
 
 ```text
 I want to improve tapHLE support for [game title and exact version] on Windows.
@@ -110,10 +109,10 @@ commits and app note later.
 
 ## Record the result in the database
 
-The [compatibility database](https://taphle.ephun.net/compatibility) is the
-public answer to "how well does this game work?" Every rating there comes from
+The [compatibility database](https://taphle.ephun.net/compatibility) is where
+you go to answer "how well does this game work?" Every rating there comes from
 a real tapHLE run on its reported supported host. Recording your result is how
-other people find out the game moved.
+other people find out if your game works.
 
 Record one when the star rating changes, in either direction — a game that got
 worse is worth knowing about too. Do not record one when a rerun just repeats a
