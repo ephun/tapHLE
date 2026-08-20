@@ -698,6 +698,17 @@
   edge you drag to resize the details panel sat on the same two pixels, so
   moving the pointer across it flipped between the two and neither the
   pointer nor the drawing said which one a drag would get.
+- You can now put a game's controller buttons where they belong by looking at
+  the game. Its own **Settings… ▸ Controls** has a **Place controls on the
+  screen…** button, which opens the game's screen as a canvas: press **Show
+  the app's screen** and tapHLE runs the game for a moment, takes one picture
+  and closes it, then you drag a marker onto the button you want and pick
+  which controller button presses it. Nothing is applied until you press Save,
+  so Undo and Cancel really do undo. Setting this up used to mean working out
+  a coordinate by eye and typing `--button-to-touch=A,470,310`.
+- Because a control is now stored as a position on the screen rather than a
+  pixel, the same layout means the same place whichever device a game is
+  emulated as, and however the screen is turned.
 - Settings ▸ Input is now Settings ▸ Controls, and says what each setting does
   to the thing in your hands rather than naming the emulator option behind it.
   The right stick's pointer can be steadied from here at last — smoothing and

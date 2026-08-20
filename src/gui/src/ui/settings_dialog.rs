@@ -112,6 +112,10 @@ pub struct AppDialog {
     /// The settings that apply when this app overrides nothing, shown as the
     /// inherited value beside each row.
     pub inherited: EmulatorSettings,
+    /// Set when somebody asks to place this app's controls on its screen. The
+    /// dialog cannot open the editor itself — it does not own the library —
+    /// so it raises the request and the frontend acts on it.
+    pub open_control_editor: bool,
 }
 
 pub fn show_global(ctx: &egui::Context, dialog: &mut GlobalDialog) -> Outcome {
@@ -175,6 +179,29 @@ pub fn show_app(ctx: &egui::Context, dialog: &mut AppDialog) -> Outcome {
                 let inherited = Some(&dialog.inherited);
                 match dialog.category {
                     Category::Logging => logging_page(ui, &mut dialog.draft, inherited),
+                    Category::Controls => {
+                        // This app's own mapping comes first. It is the thing
+                        // that is per-app; the settings under it describe the
+                        // controller and are the same everywhere, so burying
+                        // the mapping below six tilt sliders would put the
+                        // reason somebody opened this page last.
+                        crate::ui::section(ui, "This app's controls");
+                        // Cloned rather than borrowed: the section reads the
+                        // inherited layout while writing the draft, and the
+                        // rows below need the inherited settings again.
+                        let inherited_layout =
+                            dialog.inherited.controls.clone().unwrap_or_default();
+                        let mut open_editor = dialog.open_control_editor;
+                        app_control_layout(
+                            ui,
+                            &mut dialog.draft,
+                            &inherited_layout,
+                            &mut open_editor,
+                        );
+                        dialog.open_control_editor = open_editor;
+                        ui.add_space(12.0);
+                        controls_page(ui, &mut dialog.draft, Some(&dialog.inherited));
+                    }
                     other => emulator_page(ui, other, &mut dialog.draft, inherited),
                 }
             });
@@ -645,6 +672,52 @@ fn controls_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
                 .on_hover_text(hover);
         });
     }
+}
+
+/// What this app's controller does on its own screen, and the way in.
+///
+/// A summary rather than the editor: where a control sits only means anything
+/// against the app's screen, so placing one belongs on a canvas the shape of
+/// that screen rather than in a list of numbers in a settings panel.
+fn app_control_layout(
+    ui: &mut Ui,
+    draft: &mut EmulatorSettings,
+    inherited: &tapHLE::controls::ControlLayout,
+    open_editor: &mut bool,
+) {
+    let layout = draft.controls.clone().unwrap_or_default();
+
+    if layout.is_empty() {
+        if inherited.is_empty() {
+            caption(
+                ui,
+                "No controller mapping. The app is played with the mouse.",
+            );
+        } else {
+            caption(
+                ui,
+                &format!(
+                    "{} inherited mapping(s). Editing makes a copy for this app.",
+                    inherited.bindings.len()
+                ),
+            );
+        }
+    } else {
+        caption(
+            ui,
+            &format!("{} control(s) set for this app.", layout.bindings.len()),
+        );
+    }
+
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        if ui.button("Place controls on the screen…").clicked() {
+            *open_editor = true;
+        }
+        if !layout.is_empty() && ui.button("Remove them").clicked() {
+            draft.controls = None;
+        }
+    });
 }
 
 /// A quiet line of explanation under a heading.

@@ -7,6 +7,9 @@
 # long they have been played, this user's ratings and window geometry. All of
 # it is local, and the library file names the paths of a personal collection.
 /tapHLE_frontend
+# The settings both programs share. Local to this machine, and its per-app
+# section names apps this person owns.
+/tapHLE_settings.json
 /tapHLE_apps/*
 !/tapHLE_apps/README.txt
 *.ipa

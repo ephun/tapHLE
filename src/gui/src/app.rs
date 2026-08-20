@@ -98,6 +98,7 @@ pub struct Frontend {
 
     global_dialog: Option<GlobalDialog>,
     app_dialog: Option<AppDialog>,
+    control_editor: Option<crate::ui::control_editor::ControlEditor>,
     about: Option<AboutDialog>,
     import_report: Option<ImportReport>,
     crash: Option<CrashNotice>,
@@ -197,6 +198,7 @@ impl Frontend {
             transport,
             global_dialog: None,
             app_dialog: None,
+            control_editor: None,
             about: None,
             import_report: None,
             crash: None,
@@ -250,6 +252,92 @@ impl Frontend {
             }
         }
         file
+    }
+
+    /// Open the control editor for whichever app's settings are showing.
+    ///
+    /// The canvas has to be the shape of the app's own screen, so the device
+    /// family and orientation are resolved here the same way the emulator
+    /// resolves them. An app that says nothing about either gets the iPhone's
+    /// portrait screen, which is what the emulator would give it too.
+    fn open_control_editor(&mut self) {
+        let Some(dialog) = &mut self.app_dialog else {
+            return;
+        };
+        dialog.open_control_editor = false;
+        let entry_id = dialog.entry_id.clone();
+        let title = dialog.title.clone();
+        let draft = dialog.draft.controls.clone().unwrap_or_default();
+        let inherited = dialog.inherited.controls.clone().unwrap_or_default();
+
+        // What the app itself says it runs on, so the canvas is the screen
+        // the emulator will actually use rather than the one preferred.
+        let supported: Vec<tapHLE::controls::GuestDevice> = self
+            .library
+            .find(&entry_id)
+            .map(|entry| {
+                entry
+                    .metadata
+                    .device_families
+                    .iter()
+                    .filter_map(|family| match family.as_str() {
+                        "iPhone" => Some(tapHLE::controls::GuestDevice::iPhone),
+                        "iPad" => Some(tapHLE::controls::GuestDevice::iPad),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let screen = self.effective_settings(&entry_id).guest_screen(&supported);
+
+        self.control_editor = Some(crate::ui::control_editor::ControlEditor::new(
+            entry_id, title, draft, inherited, screen,
+        ));
+    }
+
+    /// Run the app briefly and take one frame, for the editor to draw on.
+    ///
+    /// Its own short-lived process rather than the one Play starts: this is
+    /// not a play session and must not count as one, and the capture has to
+    /// be armed by environment variables set before launch, so an app that is
+    /// already running could not be asked anyway.
+    fn start_control_capture(&mut self) {
+        let Some(editor) = &mut self.control_editor else {
+            return;
+        };
+        editor.wants_capture = false;
+        let entry_id = editor.entry_id.clone();
+
+        let Some(entry) = self.library.find(&entry_id) else {
+            return;
+        };
+        let app_path = entry.path.clone();
+        let missing = entry.missing;
+        if missing {
+            self.note(
+                LogLevel::Error,
+                "That app's file is not where the library expects it, so its                  screen cannot be captured."
+                    .to_string(),
+            );
+            return;
+        }
+        let Some(emulator) = self.emulator_path() else {
+            self.note(
+                LogLevel::Error,
+                "The tapHLE emulator program could not be found. Set its                  location in Settings ▸ Paths."
+                    .to_string(),
+            );
+            return;
+        };
+
+        // The same options a real run would get, so the picture is the screen
+        // somebody will actually see rather than a differently configured one.
+        let arguments = self.effective_settings(&entry_id).to_args();
+        let capture =
+            crate::capture::Capture::start(emulator, app_path, self.data_dir.clone(), arguments);
+        if let Some(editor) = &mut self.control_editor {
+            editor.capturing(capture);
+        }
     }
 
     /// The settings that apply to an app: its own over the global defaults.
@@ -881,6 +969,7 @@ impl Frontend {
                         category: Category::Display,
                         draft: entry.overrides.clone(),
                         inherited: self.settings.emulator.clone(),
+                        open_control_editor: false,
                     });
                 }
             }
@@ -1395,6 +1484,43 @@ impl Frontend {
                     if close {
                         self.global_dialog = None;
                     }
+                }
+            }
+        }
+        // Opened from the per-app Controls page. Handled here rather than
+        // inside the dialog because placing a control needs the app's device
+        // family and orientation, which the dialog does not have.
+        if self
+            .app_dialog
+            .as_ref()
+            .is_some_and(|d| d.open_control_editor)
+        {
+            self.open_control_editor();
+        }
+        if self
+            .control_editor
+            .as_ref()
+            .is_some_and(|e| e.wants_capture)
+        {
+            self.start_control_capture();
+        }
+        if let Some(editor) = &mut self.control_editor {
+            match crate::ui::control_editor::show(ctx, editor) {
+                crate::ui::control_editor::Outcome::Continue => (),
+                crate::ui::control_editor::Outcome::Cancel => self.control_editor = None,
+                crate::ui::control_editor::Outcome::Save => {
+                    let layout = editor.draft.clone();
+                    let for_app = editor.entry_id.clone();
+                    if let Some(dialog) = &mut self.app_dialog {
+                        // The editor names the app it was opened for, and the
+                        // save only lands if that is still the app being
+                        // edited. Writing one app's controls into another's
+                        // would look like the editor had silently lost them.
+                        if dialog.entry_id == for_app {
+                            dialog.draft.controls = (!layout.is_empty()).then_some(layout);
+                        }
+                    }
+                    self.control_editor = None;
                 }
             }
         }

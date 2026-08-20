@@ -41,6 +41,11 @@
 
 use crate::options::{Button, Options};
 use crate::window::{DeviceFamily, DeviceOrientation};
+
+// `window` is private because its helpers take an Environment. These two are
+// plain data — which device, which way up — and a layout cannot be described
+// without them, so they are re-exported here where a layout is defined.
+pub use crate::window::{DeviceFamily as GuestDevice, DeviceOrientation as GuestOrientation};
 use serde::{Deserialize, Serialize};
 
 /// What a mapping does on the guest screen.
