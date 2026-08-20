@@ -283,6 +283,28 @@ mod tests {
         }
     }
 
+    /// The library keys an entry by [AppMetadata::stable_id], and the
+    /// emulator looks a per-app setting up by
+    /// [tapHLE::settings::SettingsFile::app_version_key]. Those two strings
+    /// are built in different crates from the same two fields, and nothing
+    /// but this test makes them agree.
+    ///
+    /// If they ever drift apart the failure is silent and horrible: the
+    /// frontend writes settings under one key, the emulator looks under
+    /// another, finds nothing, and every per-app setting quietly stops
+    /// applying while the interface still shows it as set.
+    #[test]
+    fn the_library_key_matches_the_key_the_emulator_looks_up() {
+        let metadata = metadata_with("Game", "Game", "com.example.game");
+        assert_eq!(
+            metadata.stable_id(),
+            tapHLE::settings::SettingsFile::app_version_key(
+                &metadata.bundle_identifier,
+                &metadata.bundle_version,
+            ),
+        );
+    }
+
     /// Plenty of apps of this era leave `CFBundleDisplayName` empty, and a
     /// library row with no name in it is useless.
     #[test]

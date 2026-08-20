@@ -49,31 +49,38 @@ letting its window vanish.
 
 ### Where settings come from
 
+Everything you set, at either scope, is stored in one file:
+**`tapHLE_settings.json`**, beside the emulator. The frontend writes it and the
+emulator reads it directly, so a run started from a terminal behaves exactly
+like one started from the library.
+
 Options are read in layers, and **a later layer wins**:
 
 | Priority | Layer | What it is |
 | --- | --- | --- |
 | 1 (lowest) | The emulator's own default | Compiled in |
 | 2 | `tapHLE_default_options.txt` | Per-app entries that ship with tapHLE and make particular apps work |
-| 3 | `tapHLE_options.txt` | Your own per-app entries, keyed by the same bundle identifier |
-| 4 (highest) | The command line | Including everything the frontend sets — its global defaults and then its per-app overrides |
+| 3 | Your global settings | `global` in `tapHLE_settings.json` — applies to every app |
+| 4 | Your settings for this app | `apps` in `tapHLE_settings.json` |
+| 5 (highest) | The command line | For a run you start yourself |
 
-Both options files are **per-app**: every line is an app's bundle identifier, a
-colon, and the options for that app. Neither has a global section, so the only
-setting that applies to every app is the frontend's global default, which
-reaches the emulator on the command line.
+An app's own settings can be keyed two ways. `com.example.game` applies to
+every version of that app; `com.example.game@1.2` applies to that build only
+and layers over the first, because two versions of one app can need different
+settings.
 
-So a per-app override in the frontend beats your `tapHLE_options.txt`, which
-beats the shipped per-app defaults, which beat the emulator's own.
-
-A setting you have not decided at some level emits **nothing at all** rather than
-the emulator's default. That matters: emitting a default would silently
+A setting you have not decided at some level emits **nothing at all** rather
+than the emulator's default. That matters: emitting a default would silently
 countermand the shipped per-app entries that make several apps work.
+
+`tapHLE_options.txt` is the older per-app options file. It is still read, just
+after your settings and before the command line, so one you already wrote keeps
+working — but nothing writes it any more and new settings do not go there.
 
 Every option that switches something on has a matching option that switches it
 off — `--windowed` for `--fullscreen`, `--no-landscape-native` for
-`--landscape-native`, and so on. A one-way flag could not be turned back off by a
-later layer, so the off spelling is how you countermand something an earlier
+`--landscape-native`, and so on. A one-way flag could not be turned back off by
+a later layer, so the off spelling is how you countermand something an earlier
 layer turned on.
 
 `OPTIONS_HELP.txt` explains every option in full. It is the same text `--help`

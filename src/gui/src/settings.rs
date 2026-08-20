@@ -97,6 +97,11 @@ impl SortOrder {
 #[serde(default)]
 pub struct FrontendSettings {
     /// Emulator defaults for every app in the library.
+    ///
+    /// Stored in the shared settings file rather than here, for the reason
+    /// given on [crate::library::LibraryEntry::overrides]. Still read from an
+    /// older settings file so an existing set of defaults survives the move.
+    #[serde(default, skip_serializing)]
     pub emulator: EmulatorSettings,
     /// Folders scanned for apps. Empty means the standard `tapHLE_apps`.
     pub library_folders: Vec<PathBuf>,

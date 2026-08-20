@@ -177,6 +177,43 @@ pub fn save<T: Serialize>(file: &str, value: &T) -> Result<(), String> {
     Ok(())
 }
 
+/// Read the settings file the emulator and the frontend share.
+///
+/// This one is not in [DIR]. It sits beside the emulator's own resources
+/// because it belongs to neither program: the frontend writes it and the
+/// emulator reads it directly, so a setting reaches a run whether or not the
+/// run was started from the frontend.
+///
+/// A missing file is a first run, not an error.
+pub fn load_shared_settings() -> Result<tapHLE::settings::SettingsFile, String> {
+    let path = shared_settings_path();
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Default::default());
+        }
+        Err(e) => return Err(format!("Could not read {}: {e}", path.display())),
+    };
+    tapHLE::settings::SettingsFile::from_json(&text)
+        .map_err(|e| format!("Could not parse {}: {e}", path.display()))
+}
+
+/// Write the shared settings file, through a temporary file so an interrupted
+/// write cannot leave a half-written one behind.
+pub fn save_shared_settings(settings: &tapHLE::settings::SettingsFile) -> Result<(), String> {
+    let path = shared_settings_path();
+    let temporary = path.with_extension("json.tmp");
+    std::fs::write(&temporary, settings.to_json())
+        .map_err(|e| format!("Could not write {}: {e}", temporary.display()))?;
+    std::fs::rename(&temporary, &path)
+        .map_err(|e| format!("Could not replace {}: {e}", path.display()))?;
+    Ok(())
+}
+
+pub fn shared_settings_path() -> PathBuf {
+    data_dir().join(tapHLE::paths::SETTINGS_FILE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::looks_like_data_dir;

@@ -119,7 +119,19 @@ pub const RESOURCES_ARE_EXTERNAL_FILES: bool = cfg!(not(target_os = "android"));
 pub const APPS_DIR: &str = "tapHLE_apps";
 
 /// Name of the file intended for the user's own options.
+///
+/// Superseded by [SETTINGS_FILE]. Still read, so that an options file
+/// somebody already wrote keeps working, but nothing writes it any more.
 pub const USER_OPTIONS_FILE: &str = "tapHLE_options.txt";
+
+/// Name of the settings file the emulator and the frontend share.
+///
+/// It belongs to neither program. The frontend writes it and the emulator
+/// reads it, which is what stops the two from disagreeing about what somebody
+/// chose — before this existed the frontend's settings reached the emulator
+/// only as command-line arguments, so a setting the frontend left alone fell
+/// through to a file the frontend never showed.
+pub const SETTINGS_FILE: &str = "tapHLE_settings.json";
 
 /// Name of the directory where tapHLE will store sandboxed app data, e.g.
 /// the `Documents` directory.

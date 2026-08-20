@@ -148,6 +148,93 @@ impl FrameRateLimit {
     }
 }
 
+/// Everything somebody has chosen, at both scopes, as it is stored on disk.
+///
+/// One file, two scopes. `global` applies to every app; `apps` holds
+/// overrides keyed by the app's bundle identifier, the same key
+/// `tapHLE_default_options.txt` uses. Both the emulator and the frontend read
+/// and write this, which is the point: a setting means the same thing to both
+/// programs because there is only one of it.
+#[derive(Clone, Default, PartialEq, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SettingsFile {
+    /// Applies to every app.
+    pub global: EmulatorSettings,
+    /// Overrides for one app, by bundle identifier.
+    pub apps: BTreeMap<String, EmulatorSettings>,
+}
+
+impl SettingsFile {
+    /// The key for settings that apply to every version of an app.
+    pub fn app_key(bundle_identifier: &str) -> String {
+        bundle_identifier.to_string()
+    }
+
+    /// The key for settings that apply to one exact version of an app.
+    ///
+    /// Two versions of one app are separate records in the compatibility
+    /// database and can need different settings, so the frontend keys its
+    /// library this way and the settings file has to be able to express it.
+    pub fn app_version_key(bundle_identifier: &str, bundle_version: &str) -> String {
+        format!("{bundle_identifier}@{bundle_version}")
+    }
+
+    /// The user's settings for one app: their overrides layered over their
+    /// global defaults, most specific last.
+    ///
+    /// An entry keyed by bundle identifier applies to every version of the
+    /// app; one keyed `identifier@version` applies to that version only and
+    /// is layered over the first, so a setting made for the app as a whole is
+    /// still inherited by a version that overrides something else.
+    ///
+    /// This is only the user's half. The shipped per-app defaults in
+    /// `tapHLE_default_options.txt` and the command line are applied around it
+    /// by the emulator; see [USER_SETTINGS_WIN_OVER_SHIPPED_DEFAULTS] for the
+    /// order and why it is that way.
+    pub fn resolve(&self, bundle_identifier: &str, bundle_version: &str) -> EmulatorSettings {
+        let mut resolved = self.global.clone();
+        for key in [
+            Self::app_key(bundle_identifier),
+            Self::app_version_key(bundle_identifier, bundle_version),
+        ] {
+            if let Some(over) = self.apps.get(&key) {
+                resolved = EmulatorSettings::inherit(&resolved, over);
+            }
+        }
+        resolved
+    }
+
+    pub fn from_json(text: &str) -> Result<SettingsFile, String> {
+        serde_json::from_str(text).map_err(|e| e.to_string())
+    }
+
+    pub fn to_json(&self) -> String {
+        // Indented because somebody is expected to be able to open and read
+        // it, the same as the frontend's own files.
+        serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
+    }
+}
+
+/// Whether the user's own settings are applied after the per-app defaults
+/// tapHLE ships, and so win over them.
+///
+/// This is the one ordering choice in the whole chain that is a judgement
+/// call rather than a fact, so it is stated once, here, instead of being
+/// implied by the order of some statements.
+///
+/// `true` keeps the behaviour tapHLE has always had: whatever the user set
+/// beats the shipped default for an app.
+///
+/// `false` would put the shipped per-app defaults last, so that a fix tapHLE
+/// ships for one app survives a blanket preference the user set for
+/// everything. That matters because 57 shipped defaults lock an orientation,
+/// and a single global orientation preference silently breaks all of them.
+/// The user's per-app override still wins either way.
+///
+/// Changing this changes behaviour for existing installs, so it is a
+/// maintainer decision and not something to flip while passing.
+pub const USER_SETTINGS_WIN_OVER_SHIPPED_DEFAULTS: bool = true;
+
 /// Settings that become emulator options. Used both as the global defaults
 /// and as a per-app override.
 #[derive(Clone, Default, PartialEq, Debug, Serialize, Deserialize)]
@@ -409,6 +496,130 @@ mod tests {
             use_host_fonts: Some(false),
             font_choices: BTreeMap::from([("Helvetica".to_string(), "DejaVuSans".to_string())]),
         }
+    }
+
+    /// A per-app override layers over the global settings rather than
+    /// replacing them, so an app that decides one thing still inherits the
+    /// rest. This is the same rule as [EmulatorSettings::inherit]; the test
+    /// exists because [SettingsFile::resolve] is what the emulator actually
+    /// calls, and a resolve that replaced instead of layering would discard
+    /// every global setting the moment an app had any override at all.
+    #[test]
+    fn an_app_override_layers_over_the_global_settings() {
+        let mut file = SettingsFile::default();
+        file.global.fullscreen = Some(true);
+        file.global.deadzone = Some(0.2);
+        file.apps.insert(
+            "com.example.game".to_string(),
+            EmulatorSettings {
+                deadzone: Some(0.5),
+                ..EmulatorSettings::default()
+            },
+        );
+
+        let resolved = file.resolve("com.example.game", "1.0");
+        assert_eq!(
+            resolved.deadzone,
+            Some(0.5),
+            "the app's own value should win"
+        );
+        assert_eq!(
+            resolved.fullscreen,
+            Some(true),
+            "the rest should be inherited"
+        );
+
+        let other = file.resolve("com.example.other", "1.0");
+        assert_eq!(
+            other.deadzone,
+            Some(0.2),
+            "an app with no entry gets the global"
+        );
+    }
+
+    /// A setting made for one version has to layer over the setting made for
+    /// the app as a whole, not replace it. Keying the library by
+    /// identifier-and-version is deliberate — two versions of an app can need
+    /// different settings — so both keys have to be able to coexist.
+    #[test]
+    fn a_version_specific_entry_layers_over_the_whole_app_entry() {
+        let mut file = SettingsFile::default();
+        file.global.print_fps = Some(true);
+        file.apps.insert(
+            "com.example.game".to_string(),
+            EmulatorSettings {
+                fullscreen: Some(true),
+                deadzone: Some(0.3),
+                ..EmulatorSettings::default()
+            },
+        );
+        file.apps.insert(
+            "com.example.game@2.0".to_string(),
+            EmulatorSettings {
+                deadzone: Some(0.9),
+                ..EmulatorSettings::default()
+            },
+        );
+
+        let v2 = file.resolve("com.example.game", "2.0");
+        assert_eq!(v2.deadzone, Some(0.9), "the version's own value wins");
+        assert_eq!(v2.fullscreen, Some(true), "the app-wide value is inherited");
+        assert_eq!(v2.print_fps, Some(true), "so is the global one");
+
+        let v1 = file.resolve("com.example.game", "1.0");
+        assert_eq!(v1.deadzone, Some(0.3), "another version is unaffected");
+    }
+
+    #[test]
+    fn an_app_with_no_entry_gets_the_global_settings() {
+        let mut file = SettingsFile::default();
+        file.global.print_fps = Some(true);
+        assert_eq!(file.resolve("anything", "1.0").print_fps, Some(true));
+    }
+
+    /// The frontend writes this file and the emulator reads it, so a value
+    /// that does not survive the trip is a setting that silently stops
+    /// applying the moment somebody restarts.
+    #[test]
+    fn settings_survive_a_json_round_trip() {
+        let mut file = SettingsFile {
+            global: everything_set(),
+            apps: Default::default(),
+        };
+        file.apps
+            .insert("com.example.game".to_string(), everything_set());
+
+        let json = file.to_json();
+        let back = SettingsFile::from_json(&json).expect("should parse what it wrote");
+        assert_eq!(file, back);
+    }
+
+    /// An empty file, a file with only one scope, and a file with unknown
+    /// keys all have to load. The first two are ordinary states; the third is
+    /// what happens when somebody opens a newer tapHLE's settings in an older
+    /// one, and refusing to load would lose every other setting in the file.
+    #[test]
+    fn a_partial_or_unfamiliar_settings_file_still_loads() {
+        for text in [
+            "{}",
+            r#"{"global": {}}"#,
+            r#"{"apps": {}}"#,
+            r#"{"global": {"fullscreen": true}, "unknown_section": 1}"#,
+            r#"{"global": {"fullscreen": true, "not_a_setting": "x"}}"#,
+        ] {
+            assert!(
+                SettingsFile::from_json(text).is_ok(),
+                "should have loaded: {text}"
+            );
+        }
+        let parsed = SettingsFile::from_json(r#"{"global": {"fullscreen": true}}"#).unwrap();
+        assert_eq!(parsed.global.fullscreen, Some(true));
+    }
+
+    #[test]
+    fn a_malformed_settings_file_is_an_error_rather_than_a_panic() {
+        assert!(SettingsFile::from_json("not json at all").is_err());
+        assert!(SettingsFile::from_json("").is_err());
     }
 
     /// The whole point of this module is that it emits real emulator
