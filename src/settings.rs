@@ -179,6 +179,25 @@ impl SettingsFile {
         format!("{bundle_identifier}@{bundle_version}")
     }
 
+    /// Just this app's own entries, without the global defaults under them.
+    ///
+    /// Needed because the three user-facing layers do not sit together: the
+    /// shipped per-app defaults belong *between* somebody's global
+    /// preferences and their settings for one app, so the two halves have to
+    /// be applied separately rather than merged and applied once.
+    pub fn app_only(&self, bundle_identifier: &str, bundle_version: &str) -> EmulatorSettings {
+        let mut resolved = EmulatorSettings::default();
+        for key in [
+            Self::app_key(bundle_identifier),
+            Self::app_version_key(bundle_identifier, bundle_version),
+        ] {
+            if let Some(over) = self.apps.get(&key) {
+                resolved = EmulatorSettings::inherit(&resolved, over);
+            }
+        }
+        resolved
+    }
+
     /// The user's settings for one app: their overrides layered over their
     /// global defaults, most specific last.
     ///
@@ -215,25 +234,35 @@ impl SettingsFile {
     }
 }
 
-/// Whether the user's own settings are applied after the per-app defaults
-/// tapHLE ships, and so win over them.
+/// Whether a blanket preference beats a fix tapHLE ships for one app.
 ///
-/// This is the one ordering choice in the whole chain that is a judgement
-/// call rather than a fact, so it is stated once, here, instead of being
-/// implied by the order of some statements.
+/// The layers a person sees are their global preferences and their settings
+/// for one app, most specific winning. The per-app defaults tapHLE ships are
+/// per-app too, so they belong with the second kind, not under both:
 ///
-/// `true` keeps the behaviour tapHLE has always had: whatever the user set
-/// beats the shipped default for an app.
+/// ```text
+/// the emulator's own default
+///   the user's global preferences
+///     the per-app defaults tapHLE ships
+///       the user's settings for this app
+///         the command line
+/// ```
 ///
-/// `false` would put the shipped per-app defaults last, so that a fix tapHLE
-/// ships for one app survives a blanket preference the user set for
-/// everything. That matters because 57 shipped defaults lock an orientation,
-/// and a single global orientation preference silently breaks all of them.
-/// The user's per-app override still wins either way.
+/// `false`, which is the order above, is what this is set to. It changed from
+/// `true`, and the reason is concrete rather than tidiness: 57 of the shipped
+/// defaults lock an orientation, because those apps draw wrongly without it.
+/// With `true`, one global orientation preference silently broke all 57 —
+/// and the symptom is an app rendering sideways, which reads as a
+/// compatibility regression rather than as a setting doing its job.
 ///
-/// Changing this changes behaviour for existing installs, so it is a
-/// maintainer decision and not something to flip while passing.
-pub const USER_SETTINGS_WIN_OVER_SHIPPED_DEFAULTS: bool = true;
+/// Nothing becomes unreachable. The user's settings for one app still win
+/// over everything below the command line, so any shipped default can still
+/// be countermanded — deliberately, for the app it concerns, rather than by
+/// accident for every app at once.
+///
+/// Set this back to `true` to restore the older behaviour; it is the only
+/// thing that decides the order.
+pub const USER_SETTINGS_WIN_OVER_SHIPPED_DEFAULTS: bool = false;
 
 /// Settings that become emulator options. Used both as the global defaults
 /// and as a per-app override.
@@ -741,6 +770,69 @@ mod tests {
             EmulatorSettings::default().guest_screen(&[]),
             (320.0, 480.0),
             "an app that declares nothing falls back to the preference"
+        );
+    }
+
+    /// A person's settings for one app must beat the default tapHLE ships
+    /// for that app, whichever way round the two are applied. That is the
+    /// half of the ordering that is not a judgement call: if the shipped
+    /// default won, a setting somebody made deliberately, for that exact app,
+    /// would have no effect and no way to have one.
+    #[test]
+    fn an_apps_own_settings_are_separable_from_the_global_ones() {
+        let mut file = SettingsFile::default();
+        file.global.orientation = Some(OrientationPref::Portrait);
+        file.apps.insert(
+            "com.example.game".to_string(),
+            EmulatorSettings {
+                orientation: Some(OrientationPref::LandscapeRight),
+                ..EmulatorSettings::default()
+            },
+        );
+
+        // The whole thing, as somebody reads it.
+        let both = file.resolve("com.example.game", "1.0");
+        assert_eq!(both.orientation, Some(OrientationPref::LandscapeRight));
+
+        // Just this app's half, which is what gets applied after the shipped
+        // defaults so that it still wins over them.
+        let app_only = file.app_only("com.example.game", "1.0");
+        assert_eq!(app_only.orientation, Some(OrientationPref::LandscapeRight));
+        assert!(
+            file.app_only("com.example.other", "1.0").is_empty(),
+            "an app with no entry of its own contributes nothing at this layer"
+        );
+    }
+
+    /// The reason the shipped defaults are applied over a global preference,
+    /// asserted against the file rather than left as a claim in a comment.
+    ///
+    /// If this number ever falls to nothing, the ordering is worth revisiting
+    /// — it exists to stop one blanket preference silently breaking every app
+    /// that needs a particular orientation to draw correctly.
+    #[test]
+    fn many_shipped_defaults_depend_on_locking_an_orientation() {
+        let shipped = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tapHLE_default_options.txt"
+        ));
+        let locking = shipped
+            .lines()
+            .map(|line| line.split('#').next().unwrap_or("").trim())
+            .filter(|line| line.contains(':'))
+            .filter(|line| {
+                [
+                    "--landscape-left",
+                    "--landscape-right",
+                    "--landscape-native",
+                ]
+                .iter()
+                .any(|flag| line.contains(flag))
+            })
+            .count();
+        assert!(
+            locking >= 40,
+            "only {locking} shipped defaults lock an orientation; if that is              really so, revisit USER_SETTINGS_WIN_OVER_SHIPPED_DEFAULTS"
         );
     }
 

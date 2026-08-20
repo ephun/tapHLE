@@ -717,6 +717,12 @@
 - A game's own settings can now switch cursor steadying back off. It could
   only ever be turned on, so the seven games that ask for it in
   `tapHLE_default_options.txt` were stuck with it.
+- A general setting no longer overrides a fix tapHLE ships for one game. 57
+  games need a particular orientation to draw correctly, and setting one
+  orientation for everything used to quietly break all of them. The order is
+  now least specific to most: your general settings, then what tapHLE ships
+  for that game, then your settings for that game — so you can still
+  countermand anything, for the game it concerns.
 - Settings you change in the window now apply when you run a game from a
   terminal too, and the other way round. Everything you set — the general
   settings and each app's own — is kept in one file, `tapHLE_settings.json`,

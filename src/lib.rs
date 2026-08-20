@@ -385,19 +385,34 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         }
     };
 
+    // Three layers somebody can set, and the shipped defaults sit between the
+    // two halves rather than under both: a blanket preference should not beat
+    // a fix tapHLE ships for one app, but that app's own settings still
+    // should. Which way round is decided once, in
+    // `settings::USER_SETTINGS_WIN_OVER_SHIPPED_DEFAULTS`, with the reasoning.
+    let mut control_layout = None;
     if settings::USER_SETTINGS_WIN_OVER_SHIPPED_DEFAULTS {
         apply_shipped_defaults(&mut options)?;
-    }
-
-    let mut control_layout = None;
-    if let Some(ref user_settings) = user_settings {
-        let resolved = user_settings.resolve(app_id, bundle.bundle_version());
-        apply_settings(&resolved, "your settings", &mut options)?;
-        control_layout = resolved.controls.clone();
-    }
-
-    if !settings::USER_SETTINGS_WIN_OVER_SHIPPED_DEFAULTS {
+        if let Some(ref user_settings) = user_settings {
+            let resolved = user_settings.resolve(app_id, bundle.bundle_version());
+            apply_settings(&resolved, "your settings", &mut options)?;
+            control_layout = resolved.controls.clone();
+        }
+    } else {
+        if let Some(ref user_settings) = user_settings {
+            apply_settings(&user_settings.global, "your general settings", &mut options)?;
+        }
         apply_shipped_defaults(&mut options)?;
+        if let Some(ref user_settings) = user_settings {
+            let for_app = user_settings.app_only(app_id, bundle.bundle_version());
+            apply_settings(&for_app, "your settings for this app", &mut options)?;
+            // Resolved across both halves, because a layout set generally is
+            // still a layout this app should get if it sets none of its own.
+            control_layout = user_settings
+                .resolve(app_id, bundle.bundle_version())
+                .controls
+                .clone();
+        }
     }
 
     // The superseded options file. Read after the settings file so that

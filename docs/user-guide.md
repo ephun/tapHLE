@@ -59,10 +59,17 @@ Options are read in layers, and **a later layer wins**:
 | Priority | Layer | What it is |
 | --- | --- | --- |
 | 1 (lowest) | The emulator's own default | Compiled in |
-| 2 | `tapHLE_default_options.txt` | Per-app entries that ship with tapHLE and make particular apps work |
-| 3 | Your global settings | `global` in `tapHLE_settings.json` — applies to every app |
+| 2 | Your global settings | `global` in `tapHLE_settings.json` — applies to every app |
+| 3 | `tapHLE_default_options.txt` | Per-app entries that ship with tapHLE and make particular apps work |
 | 4 | Your settings for this app | `apps` in `tapHLE_settings.json` |
 | 5 (highest) | The command line | For a run you start yourself |
+
+**The more specific setting wins.** A setting tapHLE ships for one app beats
+your general preference, because it is usually there to stop that app drawing
+wrongly — 57 apps lock an orientation this way, and a single global
+orientation preference would otherwise break all of them at once. Your own
+settings for an app still beat everything, so you can always countermand a
+shipped default for the app it concerns.
 
 An app's own settings can be keyed two ways. `com.example.game` applies to
 every version of that app; `com.example.game@1.2` applies to that build only
