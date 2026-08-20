@@ -281,6 +281,17 @@ pub struct EmulatorSettings {
     /// control for each one, and it is checked by the emulator's own parser
     /// before a run starts.
     pub extra_arguments: Option<String>,
+    /// What the controller does on this app's touchscreen.
+    ///
+    /// Not an argument like the rest: its coordinates are fractions of the
+    /// guest screen, and the screen is not known until the device family and
+    /// orientation are settled, so the emulator applies it separately rather
+    /// than through [EmulatorSettings::to_args]. A per-app layout replaces an
+    /// inherited one wholesale rather than merging target by target, because
+    /// half of one layout mixed with half of another is not a layout anybody
+    /// designed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controls: Option<crate::controls::ControlLayout>,
 }
 
 impl EmulatorSettings {
@@ -328,6 +339,7 @@ impl EmulatorSettings {
             preferred_languages,
             log_modules,
             extra_arguments,
+            controls,
             use_host_fonts,
         )
     }
@@ -495,6 +507,23 @@ mod tests {
             extra_arguments: Some("--headless".to_string()),
             use_host_fonts: Some(false),
             font_choices: BTreeMap::from([("Helvetica".to_string(), "DejaVuSans".to_string())]),
+            controls: Some(crate::controls::ControlLayout {
+                targets: vec![crate::controls::Target {
+                    id: "jump".to_string(),
+                    kind: crate::controls::TargetKind::Touch,
+                    geometry: crate::controls::Geometry {
+                        x: 0.88,
+                        y: 0.79,
+                        width: 0.0,
+                        height: 0.0,
+                    },
+                    label: Some("Jump".to_string()),
+                }],
+                bindings: vec![crate::controls::Binding {
+                    source: crate::controls::Source::Button(crate::options::Button::A),
+                    target: "jump".to_string(),
+                }],
+            }),
         }
     }
 
