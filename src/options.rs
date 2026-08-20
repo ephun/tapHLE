@@ -7,6 +7,7 @@
 
 use crate::gles::GLESImplementation;
 use crate::window::{DeviceFamily, DeviceOrientation};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -17,7 +18,10 @@ pub const OPTIONS_HELP: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/OPTIONS_HELP.txt"));
 
 /// Game controller button for `--button-to-touch=` option.
-#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
+///
+/// Serialised by name rather than by index, so a stored control layout means
+/// the same button on a controller that enumerates its buttons differently.
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Button {
     DPadLeft,
     DPadUp,

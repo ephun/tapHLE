@@ -252,6 +252,46 @@ fn generate_binary_load_order(graph: &[BinaryDependencyNode]) -> Result<Vec<usiz
 static ENVIRONMENT_INSTANCE_EXISTS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// Which device an app is emulated as.
+///
+/// Extracted so that the control layout can be converted into guest pixels
+/// before the environment exists: a layout's coordinates are fractions of the
+/// guest screen, and the screen depends on which device was chosen, so both
+/// places have to choose it the same way or a mapping lands somewhere else.
+///
+/// `complain` is false for the early call, which is only sizing a screen and
+/// would otherwise log the same warning twice.
+pub fn choose_device_family(
+    bundle: &bundle::Bundle,
+    override_family: Option<DeviceFamily>,
+    complain: bool,
+) -> DeviceFamily {
+    let device_family_array = bundle.device_family_array();
+    match device_family_array.len() {
+        // iPhone only or iPad only
+        1 => {
+            let only_supported = device_family_array[0];
+            if let Some(dfo) = override_family {
+                if dfo != only_supported && complain {
+                    log!("Warning: User-defined {:?} device family override is not supported by the app! ignoring", dfo);
+                }
+            }
+            only_supported
+        }
+        // iPhone and iPad
+        2 => {
+            if let Some(dfo) = override_family {
+                assert!(device_family_array.contains(&dfo));
+                dfo
+            } else {
+                assert!(device_family_array.contains(&DeviceFamily::iPhone));
+                DeviceFamily::iPhone
+            }
+        }
+        _ => unreachable!(),
+    }
+}
+
 impl Environment {
     /// Loads the binary and sets up the emulator.
     pub fn new(
@@ -325,31 +365,7 @@ impl Environment {
             }
         }
 
-        let device_family_override = options.device_family;
-        let device_family_array = bundle.device_family_array();
-        let device_family = match device_family_array.len() {
-            // iPhone only or iPad only
-            1 => {
-                let only_supported = device_family_array[0];
-                if let Some(dfo) = device_family_override {
-                    if dfo != only_supported {
-                        log!("Warning: User-defined {:?} device family override is not supported by the app! ignoring", dfo);
-                    }
-                }
-                only_supported
-            }
-            // iPhone and iPad
-            2 => {
-                if let Some(dfo) = device_family_override {
-                    assert!(device_family_array.contains(&dfo));
-                    dfo
-                } else {
-                    assert!(device_family_array.contains(&DeviceFamily::iPhone));
-                    DeviceFamily::iPhone
-                }
-            }
-            _ => unreachable!(),
-        };
+        let device_family = choose_device_family(&bundle, options.device_family, true);
         log!("{:?} device family is chosen.", device_family);
         options.device_family = Some(device_family);
 

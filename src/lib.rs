@@ -39,6 +39,7 @@ mod abi;
 pub mod app_bundle;
 mod audio;
 mod bundle;
+pub mod controls;
 mod cpu;
 mod debug;
 mod dyld;
@@ -388,9 +389,11 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         apply_shipped_defaults(&mut options)?;
     }
 
+    let mut control_layout = None;
     if let Some(ref user_settings) = user_settings {
         let resolved = user_settings.resolve(app_id, bundle.bundle_version());
         apply_settings(&resolved, "your settings", &mut options)?;
+        control_layout = resolved.controls.clone();
     }
 
     if !settings::USER_SETTINGS_WIN_OVER_SHIPPED_DEFAULTS {
@@ -409,6 +412,30 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
             err
         ),
     }
+    // The control layout is applied here, after the settings that carry it
+    // and before the command line, so that the layers stay in the order the
+    // rest of the options are in. It is separate from them because its
+    // coordinates are fractions of the guest screen, and the screen is only
+    // known once the device family and orientation have been decided — which
+    // they now have, by every layer that gets a say before the command line.
+    if let Some(layout) = control_layout {
+        if !layout.is_empty() {
+            let family = environment::choose_device_family(&bundle, options.device_family, false);
+            let screen = controls::guest_screen(
+                family,
+                options.initial_orientation,
+                options.landscape_native,
+            );
+            echo!(
+                "Applying {} control mapping(s) for a {}x{} screen",
+                layout.bindings.len(),
+                screen.0,
+                screen.1
+            );
+            layout.apply_to(&mut options, screen);
+        }
+    }
+
     echo!();
 
     // Apply command-line options
