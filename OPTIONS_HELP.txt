@@ -185,8 +185,9 @@ Game controller options:
         button).
 
     --stabilize-virtual-cursor=...
+    --no-stabilize-virtual-cursor
         Apply motion smoothing and a sticky radius to the virtual cursor
-        (controlled by the right analog stick).
+        (controlled by the right analog stick), or switch that back off.
 
         Some apps are very sensitive to small finger movements and will always
         register an attempted "tap" as a scrolling gesture if the finger moves

@@ -87,6 +87,28 @@ layer turned on.
 prints — the file is the source, compiled into the binary — so the two can never
 disagree.
 
+### Controls
+
+**Settings ▸ Controls** covers how your controller behaves: the analog dead
+zone, how far the left stick tilts the device, and how much the right stick's
+virtual cursor is steadied.
+
+The virtual cursor is a pointer the right stick moves around the app's screen;
+pressing the stick or the right shoulder button taps. Some apps of this era
+treat the smallest movement during a tap as a drag, which makes their menus
+almost unusable with a stick. **Steady the cursor** exists for that: smoothing
+softens sharp movements, and the hold-still radius ignores movement below a few
+pixels so a tap stays a tap. The radius is not drawn on screen.
+
+Tilting deserves a note. Apps that steer by tilting read an accelerometer, and
+a desktop has none, so the left stick stands in for it — and you can always
+tilt by holding the right mouse button and moving. Several racing games are
+written for a device held tipped towards you, which is what the resting angles
+are for.
+
+**Where each button touches the screen is not here.** That is a fact about one
+app's layout, so it lives in that app's own **Settings… ▸ Controls**.
+
 ### One option worth knowing about
 
 `--landscape-native` fixes landscape apps that render sideways or clipped. Some

@@ -30,7 +30,7 @@ pub enum Category {
     General,
     Display,
     Graphics,
-    Input,
+    Controls,
     Fonts,
     System,
     Logging,
@@ -43,7 +43,7 @@ impl Category {
             Category::General => "General",
             Category::Display => "Display",
             Category::Graphics => "Graphics",
-            Category::Input => "Input",
+            Category::Controls => "Controls",
             Category::Fonts => "Fonts",
             Category::System => "System",
             Category::Logging => "Logging",
@@ -56,7 +56,7 @@ impl Category {
         Category::General,
         Category::Display,
         Category::Graphics,
-        Category::Input,
+        Category::Controls,
         Category::Fonts,
         Category::System,
         Category::Logging,
@@ -68,7 +68,7 @@ impl Category {
     pub const PER_APP: &'static [Category] = &[
         Category::Display,
         Category::Graphics,
-        Category::Input,
+        Category::Controls,
         Category::Fonts,
         Category::System,
         Category::Logging,
@@ -353,7 +353,7 @@ fn emulator_page(
     match category {
         Category::Display => display_page(ui, draft, inherited),
         Category::Graphics => graphics_page(ui, draft, inherited),
-        Category::Input => input_page(ui, draft, inherited),
+        Category::Controls => controls_page(ui, draft, inherited),
         Category::Fonts => fonts_page(ui, draft, inherited),
         Category::System => system_page(ui, draft, inherited),
         _ => (),
@@ -532,18 +532,20 @@ fn graphics_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
     );
 }
 
-fn input_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {
-    crate::ui::section(ui, "Game controller");
-    optional_row(
-        ui,
-        "Analog stick tilt",
-        &mut draft.analog_stick_tilt,
-        true,
-        inherited.map(|i| describe(&i.analog_stick_tilt, |v| on_off(*v))),
-        |ui, value| {
-            ui.checkbox(value, "Sticks tilt the device");
-        },
-    );
+/// How a person drives the emulated device.
+///
+/// Grouped by the physical thing somebody is holding rather than by which
+/// emulator option each setting happens to be, because "my stick is too
+/// twitchy" is a thought about a controller, not about a deadzone.
+///
+/// What each control does *on the app's screen* is not here. That is per-app —
+/// a touch target only means something against one app's layout — and lives in
+/// that app's own settings.
+fn controls_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {
+    caption(ui, "Where each button touches the screen is set per app.");
+    ui.add_space(6.0);
+
+    crate::ui::section(ui, "Analog sticks");
     optional_row(
         ui,
         "Dead zone",
@@ -551,36 +553,123 @@ fn input_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Emul
         0.1,
         inherited.map(|i| describe(&i.deadzone, |v| format!("{v}"))),
         |ui, value| {
-            ui.add(egui::Slider::new(value, 0.0..=1.0).fixed_decimals(2));
+            ui.add(egui::Slider::new(value, 0.0..=1.0).fixed_decimals(2))
+                .on_hover_text("How far a stick moves before tapHLE notices it.");
         },
     );
 
-    crate::ui::section(ui, "Tilt range");
-    for (label, field, default) in [
-        ("Horizontal range", &mut draft.x_tilt_range, 60.0f32),
-        ("Vertical range", &mut draft.y_tilt_range, 60.0),
+    crate::ui::section(ui, "Virtual cursor");
+    caption(ui, "The right stick moves a pointer. Press it to tap.");
+    optional_row(
+        ui,
+        "Steady it",
+        &mut draft.virtual_cursor_stabilization,
+        (0.1, 10.0),
+        inherited.map(|i| {
+            describe(&i.virtual_cursor_stabilization, |(s, r)| {
+                format!("{s}s, {r}px")
+            })
+        }),
+        |ui, value| {
+            ui.vertical(|ui| {
+                slider_row(ui, "Smoothing", |ui| {
+                    ui.add(
+                        egui::Slider::new(&mut value.0, 0.0..=0.5)
+                            .fixed_decimals(2)
+                            .suffix(" s"),
+                    )
+                    .on_hover_text("Softens sharp movement. Costs response.");
+                });
+                slider_row(ui, "Ignore movement under", |ui| {
+                    ui.add(
+                        egui::Slider::new(&mut value.1, 0.0..=40.0)
+                            .fixed_decimals(0)
+                            .suffix(" px"),
+                    )
+                    .on_hover_text("Keeps a tap from being read as a drag.");
+                });
+            });
+        },
+    );
+
+    crate::ui::section(ui, "Tilting the device");
+    caption(
+        ui,
+        "A desktop has no accelerometer, so a stick stands in for it.",
+    );
+    caption(ui, "You can also tilt by holding the right mouse button.");
+    optional_row(
+        ui,
+        "Tilt with the left stick",
+        &mut draft.analog_stick_tilt,
+        true,
+        inherited.map(|i| describe(&i.analog_stick_tilt, |v| on_off(*v))),
+        |ui, value| {
+            ui.checkbox(value, "The left stick tilts the device")
+                .on_hover_text("Turn off to leave the stick free for the app.");
+        },
+    );
+    for (label, field, default, hover) in [
+        (
+            "Sideways range",
+            &mut draft.x_tilt_range,
+            60.0f32,
+            "How far it tilts left and right at full stick.",
+        ),
+        (
+            "Forward range",
+            &mut draft.y_tilt_range,
+            60.0,
+            "How far it tilts towards and away from you.",
+        ),
     ] {
         optional_row(ui, label, field, default, None, |ui, value| {
-            ui.add(egui::Slider::new(value, 0.0..=180.0).suffix("°"));
+            ui.add(egui::Slider::new(value, 0.0..=180.0).suffix("°"))
+                .on_hover_text(hover);
         });
     }
-    for (label, field) in [
-        ("Horizontal offset", &mut draft.x_tilt_offset),
-        ("Vertical offset", &mut draft.y_tilt_offset),
+    for (label, field, hover) in [
+        (
+            "Sideways resting angle",
+            &mut draft.x_tilt_offset,
+            "Where level is. Usually zero.",
+        ),
+        (
+            "Forward resting angle",
+            &mut draft.y_tilt_offset,
+            "Racing games often expect the device tipped towards you.",
+        ),
     ] {
         optional_row(ui, label, field, 0.0f32, None, |ui, value| {
-            ui.add(egui::Slider::new(value, -90.0..=90.0).suffix("°"));
+            ui.add(egui::Slider::new(value, -90.0..=90.0).suffix("°"))
+                .on_hover_text(hover);
         });
     }
+}
+
+/// A quiet line of explanation under a heading.
+fn caption(ui: &mut Ui, text: &str) {
     ui.label(
-        egui::RichText::new(
-            "Touch and button mapping options exist on the command line but \
-             have no controls here yet. Use the extra arguments box under \
-             System until they do.",
-        )
-        .small()
-        .color(theme::LIGHT.text_dim),
+        egui::RichText::new(text)
+            .small()
+            .color(theme::LIGHT.text_dim),
     );
+}
+
+/// A slider with its name in front of it, for when several sit inside one row
+/// and the row's own label cannot say which is which.
+fn slider_row(ui: &mut Ui, label: &str, slider: impl FnOnce(&mut Ui)) {
+    ui.horizontal(|ui| {
+        ui.add_sized(
+            [150.0, ui.spacing().interact_size.y],
+            egui::Label::new(
+                egui::RichText::new(label)
+                    .small()
+                    .color(theme::LIGHT.text_dim),
+            ),
+        );
+        slider(ui);
+    });
 }
 
 /// What tapHLE draws when an app asks for one of the iPhone's fonts.
