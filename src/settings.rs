@@ -255,6 +255,13 @@ pub struct EmulatorSettings {
     pub y_tilt_range: Option<f32>,
     pub x_tilt_offset: Option<f32>,
     pub y_tilt_offset: Option<f32>,
+    /// Motion smoothing for the right stick's virtual cursor, in seconds, and
+    /// a radius in guest pixels inside which movement is ignored.
+    ///
+    /// One setting rather than two, because the emulator takes them as one
+    /// option and half of it has no meaning: `--stabilize-virtual-cursor`
+    /// wants both numbers or neither.
+    pub virtual_cursor_stabilization: Option<(f32, f32)>,
     pub network_access: Option<bool>,
     pub direct_memory_access: Option<bool>,
     pub error_popup: Option<bool>,
@@ -333,6 +340,7 @@ impl EmulatorSettings {
             y_tilt_range,
             x_tilt_offset,
             y_tilt_offset,
+            virtual_cursor_stabilization,
             network_access,
             direct_memory_access,
             error_popup,
@@ -427,6 +435,12 @@ impl EmulatorSettings {
         {
             args.push(format!("--preferred-languages={languages}"));
         }
+        match self.virtual_cursor_stabilization {
+            Some((smoothing, sticky)) => {
+                args.push(format!("--stabilize-virtual-cursor={smoothing},{sticky}"))
+            }
+            None => (),
+        }
         flag(
             &mut args,
             self.use_host_fonts,
@@ -499,6 +513,7 @@ mod tests {
             y_tilt_range: Some(45.0),
             x_tilt_offset: Some(5.0),
             y_tilt_offset: Some(-5.0),
+            virtual_cursor_stabilization: Some((0.1, 10.0)),
             network_access: Some(true),
             direct_memory_access: Some(false),
             error_popup: Some(false),

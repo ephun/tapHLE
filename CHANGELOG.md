@@ -698,6 +698,14 @@
   edge you drag to resize the details panel sat on the same two pixels, so
   moving the pointer across it flipped between the two and neither the
   pointer nor the drawing said which one a drag would get.
+- Settings ▸ Input is now Settings ▸ Controls, and says what each setting does
+  to the thing in your hands rather than naming the emulator option behind it.
+  The right stick's pointer can be steadied from here at last — smoothing and
+  a hold-still radius, which stop a tap being read as a drag in menus that are
+  fussy about it. Those two existed only on the command line before.
+- A game's own settings can now switch cursor steadying back off. It could
+  only ever be turned on, so the seven games that ask for it in
+  `tapHLE_default_options.txt` were stuck with it.
 - Settings you change in the window now apply when you run a game from a
   terminal too, and the other way round. Everything you set — the general
   settings and each app's own — is kept in one file, `tapHLE_settings.json`,

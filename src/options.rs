@@ -303,6 +303,12 @@ impl Options {
                     "Invalid sticky radius for --stabilize-virtual-cursor=".to_string()
                 })?;
             self.stabilize_virtual_cursor = Some((smoothing_strength, sticky_radius));
+        } else if arg == "--no-stabilize-virtual-cursor" {
+            // The off spelling exists for the same reason every boolean option
+            // has one: seven apps switch stabilisation on in
+            // tapHLE_default_options.txt, and without this nothing a later
+            // layer said could turn it back off again.
+            self.stabilize_virtual_cursor = None;
         } else if let Some(value) = arg.strip_prefix("--gles1=") {
             self.gles1_implementation = Some(
                 GLESImplementation::from_short_name(value)
