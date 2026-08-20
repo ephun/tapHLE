@@ -327,11 +327,79 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         }
         Ok(())
     }
-    let default_options_path = paths::DEFAULT_OPTIONS_FILE;
-    match paths::ResourceFile::open(default_options_path) {
-        Ok(mut file) => apply_options(file.get(), default_options_path, &mut options, app_id)?,
-        Err(err) => echo!("Warning: Could not open {}: {}", default_options_path, err),
+    // Applying the user's own settings, from whichever sources exist. Every
+    // one of these is optional, and a missing one is normal rather than an
+    // error: a fresh install has no settings file, and somebody who never
+    // opened the frontend has no per-app overrides.
+    fn apply_settings(
+        settings: &settings::EmulatorSettings,
+        source: &str,
+        options: &mut options::Options,
+    ) -> Result<(), String> {
+        let args = settings.to_args();
+        if args.is_empty() {
+            return Ok(());
+        }
+        echo!(
+            "Using settings from {} for this app: {}",
+            source,
+            args.join(" ")
+        );
+        for arg in args {
+            match options.parse_argument(&arg) {
+                Ok(true) => (),
+                Ok(false) => return Err(format!("Unknown option {arg:?}")),
+                Err(err) => return Err(format!("Invalid option {arg:?}: {err}")),
+            }
+        }
+        Ok(())
     }
+
+    let settings_path = paths::user_data_base_path().join(paths::SETTINGS_FILE);
+    let user_settings = match std::fs::read_to_string(&settings_path) {
+        Ok(text) => match settings::SettingsFile::from_json(&text) {
+            Ok(file) => Some(file),
+            Err(err) => {
+                // A malformed settings file must not stop an app from running.
+                // Say so loudly and carry on with the defaults, because the
+                // alternative is that one bad character makes tapHLE unusable
+                // until somebody finds and edits a JSON file by hand.
+                echo!("Warning: ignoring {}: {}", settings_path.display(), err);
+                None
+            }
+        },
+        Err(_) => None,
+    };
+
+    // The order below is the whole precedence chain, and it reads top to
+    // bottom as lowest priority to highest.
+    let default_options_path = paths::DEFAULT_OPTIONS_FILE;
+    let apply_shipped_defaults = |options: &mut options::Options| -> Result<(), String> {
+        match paths::ResourceFile::open(default_options_path) {
+            Ok(mut file) => apply_options(file.get(), default_options_path, options, app_id),
+            Err(err) => {
+                echo!("Warning: Could not open {}: {}", default_options_path, err);
+                Ok(())
+            }
+        }
+    };
+
+    if settings::USER_SETTINGS_WIN_OVER_SHIPPED_DEFAULTS {
+        apply_shipped_defaults(&mut options)?;
+    }
+
+    if let Some(ref user_settings) = user_settings {
+        let resolved = user_settings.resolve(app_id, bundle.bundle_version());
+        apply_settings(&resolved, "your settings", &mut options)?;
+    }
+
+    if !settings::USER_SETTINGS_WIN_OVER_SHIPPED_DEFAULTS {
+        apply_shipped_defaults(&mut options)?;
+    }
+
+    // The superseded options file. Read after the settings file so that
+    // somebody who still keeps one is not surprised by it being ignored, and
+    // before the command line, which is where it always sat.
     let user_options_path = paths::user_data_base_path().join(paths::USER_OPTIONS_FILE);
     match std::fs::File::open(&user_options_path) {
         Ok(file) => apply_options(file, user_options_path.display(), &mut options, app_id)?,

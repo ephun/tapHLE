@@ -698,6 +698,15 @@
   edge you drag to resize the details panel sat on the same two pixels, so
   moving the pointer across it flipped between the two and neither the
   pointer nor the drawing said which one a drag would get.
+- Settings you change in the window now apply when you run a game from a
+  terminal too, and the other way round. Everything you set — the general
+  settings and each app's own — is kept in one file, `tapHLE_settings.json`,
+  which the emulator reads for itself. Before this the window kept its
+  settings privately and passed them to the emulator as command-line
+  arguments, so anything you had not explicitly set fell through to
+  `tapHLE_options.txt`, a file the window never showed you, and the same game
+  could behave differently depending on how you started it. Your existing
+  settings move across the first time you open the window.
 - `--deadzone` now rejects a value outside 0 to 1 with a message that says so.
   It was being checked as though it were an angle, so anything from -360 to 360
   was accepted: a negative one crashed tapHLE the moment a stick moved, and one

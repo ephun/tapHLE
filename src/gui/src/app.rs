@@ -139,6 +139,24 @@ impl Frontend {
         let mut library: Library = report_load(&log, storage::LIBRARY_FILE);
         library.mark_missing();
 
+        // The shared settings file is the store; the fields still read out of
+        // settings.json and library.json are only there to carry an existing
+        // install into it. Where the shared file has an answer it wins, and
+        // where it does not the older value stays and gets written out on the
+        // first save.
+        let mut settings = settings;
+        match storage::load_shared_settings() {
+            Ok(shared) => {
+                if shared != Default::default() {
+                    settings.emulator = shared.global.clone();
+                    for entry in library.entries.iter_mut() {
+                        entry.overrides = shared.apps.get(&entry.id).cloned().unwrap_or_default();
+                    }
+                }
+            }
+            Err(e) => logstore::note(&log, LogLevel::Warning, e),
+        }
+
         for note in notes {
             logstore::note(&log, LogLevel::Warning, note);
         }
@@ -215,6 +233,23 @@ impl Frontend {
             sender: self.background.0.clone(),
             repaint: self.repaint.clone(),
         }
+    }
+
+    /// The in-memory settings, in the shape they are stored in.
+    ///
+    /// Built rather than kept, so there is no second copy to fall out of step
+    /// with what the interface is editing.
+    fn shared_settings(&self) -> tapHLE::settings::SettingsFile {
+        let mut file = tapHLE::settings::SettingsFile {
+            global: self.settings.emulator.clone(),
+            ..Default::default()
+        };
+        for entry in &self.library.entries {
+            if !entry.overrides.is_empty() {
+                file.apps.insert(entry.id.clone(), entry.overrides.clone());
+            }
+        }
+        file
     }
 
     /// The settings that apply to an app: its own over the global defaults.
@@ -570,6 +605,7 @@ impl Frontend {
             return;
         }
         self.last_save = Instant::now();
+        let shared_settings_dirty = self.dirty.library || self.dirty.settings;
         if self.dirty.library {
             if let Err(e) = storage::save(storage::LIBRARY_FILE, &self.library) {
                 self.note(LogLevel::Warning, e);
@@ -581,6 +617,14 @@ impl Frontend {
                 self.note(LogLevel::Warning, e);
             }
             self.dirty.settings = false;
+        }
+        // Written whenever either scope changed, because both scopes live in
+        // the one file: a per-app override is a library edit and a default is
+        // a settings edit, and either one makes the file out of date.
+        if shared_settings_dirty {
+            if let Err(e) = storage::save_shared_settings(&self.shared_settings()) {
+                self.note(LogLevel::Warning, e);
+            }
         }
         if self.dirty.state {
             if let Err(e) = storage::save(storage::STATE_FILE, &self.state) {
@@ -720,6 +764,14 @@ impl Frontend {
             );
             return;
         };
+        // The emulator reads the shared settings file itself, so a run gets
+        // these settings whether it was started here or from a terminal. It
+        // has to be on disk before the child starts, and saving is otherwise
+        // throttled, so a setting changed a moment ago would not have landed.
+        if let Err(e) = storage::save_shared_settings(&self.shared_settings()) {
+            self.note(LogLevel::Warning, e);
+        }
+
         let data_dir = self.data_dir.clone();
         let result = self.launcher.launch(launcher::LaunchRequest {
             emulator: &emulator,
@@ -727,7 +779,11 @@ impl Frontend {
             entry_id,
             app_name: &title,
             app_path: &path,
-            arguments: &settings.to_args(),
+            // Deliberately no settings here. Passing them as arguments is
+            // what used to make the frontend's settings invisible to a
+            // command-line run, and made an unset one fall through to a file
+            // the frontend never showed.
+            arguments: &[],
             environment: &settings.to_env(),
         });
         match result {

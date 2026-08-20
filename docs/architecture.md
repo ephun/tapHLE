@@ -265,6 +265,37 @@ An unset setting emits **no argument at all**. Emitting the emulator's default
 instead would silently countermand the per-app entries in
 `tapHLE_default_options.txt`, and those entries are what makes several apps work.
 
+The type itself lives in the emulator, as `tapHLE::settings::EmulatorSettings`,
+not in the frontend. Both programs have to agree about what a setting is, and
+two definitions of one type is how they stop agreeing.
+
+### One store, read by both programs
+
+`tapHLE_settings.json` holds `global` and `apps`, and belongs to neither
+program: the frontend writes it, the emulator reads it directly at startup.
+
+It replaced an arrangement where the frontend kept its settings in
+`tapHLE_frontend/settings.json` and `library.json` and handed them to the
+emulator as command-line arguments, while the emulator separately read
+`tapHLE_default_options.txt` and `tapHLE_options.txt` underneath. The two
+systems met only at argv, and because an unset setting emits no argument, a
+setting the frontend left alone fell through to a file the frontend never
+showed. A run started from a terminal and the same run started from the library
+could resolve differently.
+
+Two consequences worth keeping:
+
+- **The frontend saves before it launches.** Saving is otherwise throttled, and
+  the emulator reads the file rather than an argument list, so a setting
+  changed a moment before pressing Play has to be on disk first.
+- **The per-app key is `bundle identifier@bundle version`**, the same string
+  the library uses for an entry. `AppMetadata::stable_id` and
+  `SettingsFile::app_version_key` build it in different crates from the same
+  two fields, and a test in `metadata.rs` is what keeps them identical — if
+  they drifted, the frontend would write settings under one key and the
+  emulator would look under another, and every per-app setting would quietly
+  stop applying while still appearing set.
+
 This is why the emulator gained an off spelling for every boolean option —
 `--windowed`, `--portrait`, `--no-landscape-native` and the rest. A one-way flag
 cannot be turned back off by a later layer, so without them a per-app override

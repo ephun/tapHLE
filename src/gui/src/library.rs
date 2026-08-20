@@ -40,6 +40,14 @@ pub struct LibraryEntry {
     pub play_count: u32,
     pub favorite: bool,
     /// Settings that apply to this app only. Anything unset is inherited.
+    ///
+    /// Held here while the frontend is running, but stored in the settings
+    /// file both programs share rather than in this one, so that a run
+    /// started from a terminal gets the same settings as one started from the
+    /// library. Still *read* from an older library file, which is what
+    /// carries an existing library's overrides into the shared file the first
+    /// time it is saved.
+    #[serde(default, skip_serializing)]
     pub overrides: EmulatorSettings,
     /// This machine's own rating. Never sent anywhere.
     pub local_rating: LocalRating,
