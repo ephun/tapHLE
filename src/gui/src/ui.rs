@@ -14,6 +14,7 @@
 //! once keeps every one of those cases out of the interface code.
 
 pub mod chrome;
+pub mod control_editor;
 pub mod details;
 pub mod dialogs;
 pub mod library_view;

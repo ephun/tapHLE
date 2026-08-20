@@ -25,6 +25,7 @@
 #![windows_subsystem = "windows"]
 
 mod app;
+mod capture;
 mod compat;
 mod http;
 mod launcher;

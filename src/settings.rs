@@ -352,6 +352,48 @@ impl EmulatorSettings {
         )
     }
 
+    /// The guest screen these settings imply, for placing a control layout.
+    ///
+    /// The mapping from a stored preference to the emulator's own idea of a
+    /// device and an orientation lives here rather than in the frontend, so
+    /// that the canvas somebody drags a control onto is the same shape as the
+    /// screen the emulator will convert it against. Two copies of this would
+    /// drift, and the symptom would be controls landing slightly wrong.
+    ///
+    /// An app that says nothing gets the iPhone's portrait screen, which is
+    /// what the emulator defaults to as well.
+    pub fn guest_screen(&self, app_supports: &[crate::controls::GuestDevice]) -> (f32, f32) {
+        use crate::controls::{GuestDevice, GuestOrientation};
+        // Clamped to what the app itself declares, the same way the emulator
+        // clamps it: an app that supports only one device gets that one,
+        // whatever the preference says, and the preference only decides
+        // between the two when the app supports both.
+        //
+        // Without this the canvas can be a different size from the screen the
+        // emulator will actually convert against — an iPad preference over an
+        // iPhone-only app makes it 768x1024 here and 320x480 there — and
+        // every control lands somewhere else. Nothing about that failure
+        // looks like a units bug; it looks like the app ignoring its buttons.
+        let preferred = match self.device_family {
+            Some(DeviceFamilyPref::IPad) => GuestDevice::iPad,
+            _ => GuestDevice::iPhone,
+        };
+        let family = match app_supports {
+            [] => preferred,
+            [only] => *only,
+            supported if supported.contains(&preferred) => preferred,
+            [first, ..] => *first,
+        };
+        let (orientation, landscape_native) = match self.orientation {
+            Some(OrientationPref::LandscapeLeft) => (GuestOrientation::LandscapeLeft, false),
+            Some(OrientationPref::LandscapeRight) => (GuestOrientation::LandscapeRight, false),
+            Some(OrientationPref::UpsideDown) => (GuestOrientation::PortraitUpsideDown, false),
+            Some(OrientationPref::LandscapeNative) => (GuestOrientation::Portrait, true),
+            _ => (GuestOrientation::Portrait, false),
+        };
+        crate::controls::guest_screen(family, orientation, landscape_native)
+    }
+
     /// The command-line arguments these settings ask for.
     pub fn to_args(&self) -> Vec<String> {
         let mut args: Vec<String> = Vec::new();
@@ -664,6 +706,42 @@ mod tests {
     fn a_malformed_settings_file_is_an_error_rather_than_a_panic() {
         assert!(SettingsFile::from_json("not json at all").is_err());
         assert!(SettingsFile::from_json("").is_err());
+    }
+
+    /// An app that supports only one device gets that one, whatever the
+    /// preference says. The emulator clamps the same way, and a canvas sized
+    /// from an unclamped preference would be a different screen from the one
+    /// the emulator converts against — an iPad preference over an iPhone-only
+    /// app is 768x1024 against 320x480, so every control lands 2.4 times too
+    /// far out.
+    #[test]
+    fn the_guest_screen_is_clamped_to_what_the_app_supports() {
+        use crate::controls::GuestDevice;
+        let ipad_preferred = EmulatorSettings {
+            device_family: Some(DeviceFamilyPref::IPad),
+            ..EmulatorSettings::default()
+        };
+
+        assert_eq!(
+            ipad_preferred.guest_screen(&[GuestDevice::iPhone]),
+            (320.0, 480.0),
+            "an iPhone-only app ignores an iPad preference"
+        );
+        assert_eq!(
+            ipad_preferred.guest_screen(&[GuestDevice::iPhone, GuestDevice::iPad]),
+            (768.0, 1024.0),
+            "an app supporting both follows the preference"
+        );
+        assert_eq!(
+            EmulatorSettings::default().guest_screen(&[GuestDevice::iPad]),
+            (768.0, 1024.0),
+            "an iPad-only app is an iPad even with no preference"
+        );
+        assert_eq!(
+            EmulatorSettings::default().guest_screen(&[]),
+            (320.0, 480.0),
+            "an app that declares nothing falls back to the preference"
+        );
     }
 
     /// The whole point of this module is that it emits real emulator
