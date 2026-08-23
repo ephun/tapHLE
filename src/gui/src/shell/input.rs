@@ -23,6 +23,15 @@ use sdl2::mouse::MouseButton;
 /// other program on the desktop.
 const LINE_HEIGHT: f32 = 50.0;
 
+/// The modifier keys held right now.
+///
+/// Read once a frame by the shell rather than remembered from the last key
+/// event. Remembered, a Ctrl-click only counted as one when the Ctrl went
+/// down in the same frame as the click.
+pub fn modifiers_now(keyboard: &sdl2::keyboard::KeyboardUtil) -> Modifiers {
+    modifiers(keyboard.mod_state())
+}
+
 /// What the shell has to act on rather than egui.
 #[derive(Default)]
 pub struct Consumed {
@@ -32,6 +41,10 @@ pub struct Consumed {
     pub wants_paste: bool,
     /// The window's own geometry changed, so egui's copy of it is stale.
     pub geometry_changed: bool,
+    /// The window gained or lost the focus, if it changed at all. The shell
+    /// keeps it, because egui is told the focus every frame and not only on
+    /// the frame it changed.
+    pub focus: Option<bool>,
 }
 
 fn modifiers(state: Mod) -> Modifiers {
@@ -62,11 +75,11 @@ pub fn absorb(event: &SdlEvent, input: &mut RawInput, consumed: &mut Consumed) {
         SdlEvent::Window { win_event, .. } => match win_event {
             WindowEvent::Close => consumed.close_requested = true,
             WindowEvent::FocusGained => {
-                input.focused = true;
+                consumed.focus = Some(true);
                 input.events.push(Event::WindowFocused(true));
             }
             WindowEvent::FocusLost => {
-                input.focused = false;
+                consumed.focus = Some(false);
                 input.events.push(Event::WindowFocused(false));
             }
             WindowEvent::Leave => input.events.push(Event::PointerGone),
@@ -132,8 +145,10 @@ pub fn absorb(event: &SdlEvent, input: &mut RawInput, consumed: &mut Consumed) {
             ..
         } => {
             let pressed = matches!(event, SdlEvent::KeyDown { .. });
+            // This event's own modifiers rather than the shell's live
+            // reading, because they are the ones held when the key went
+            // down, and the two differ for the modifier key itself.
             let state = modifiers(*keymod);
-            input.modifiers = state;
             // Copy, cut and paste are egui events of their own rather than
             // key presses, because only the shell can reach the clipboard.
             if pressed && state.command {
@@ -312,6 +327,36 @@ mod tests {
             input.events,
             vec![Event::PointerMoved(Pos2::new(350.0, 175.0))]
         );
+    }
+
+    /// A pointer button carries whatever modifiers the frame started with,
+    /// so a Ctrl-click is one even when the Ctrl went down frames earlier.
+    #[test]
+    fn a_click_carries_the_modifiers_the_frame_started_with() {
+        let mut input = RawInput::default();
+        input.modifiers = Modifiers {
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        };
+        let mut consumed = Consumed::default();
+        absorb(
+            &SdlEvent::MouseButtonDown {
+                timestamp: 0,
+                window_id: 0,
+                which: 0,
+                mouse_btn: MouseButton::Left,
+                clicks: 1,
+                x: 10,
+                y: 20,
+            },
+            &mut input,
+            &mut consumed,
+        );
+        let Event::PointerButton { modifiers, .. } = input.events[0] else {
+            panic!("expected a pointer button, got {:?}", input.events[0]);
+        };
+        assert!(modifiers.ctrl);
     }
 
     /// Closing is the shell's business. egui is told the window wants to go

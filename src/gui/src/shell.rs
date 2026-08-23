@@ -167,12 +167,18 @@ pub fn run<A: Application>(
         let mut raw = egui::RawInput {
             time: Some(started.elapsed().as_secs_f64()),
             max_texture_side: Some(painter.max_texture_side()),
-            focused: viewport.focused.unwrap_or(true),
+            // Read live rather than remembered from the last key event, so a
+            // Ctrl-click is one whenever the Ctrl is down.
+            modifiers: input::modifiers_now(&sdl.keyboard()),
             ..Default::default()
         };
         for event in pending.drain(..).chain(event_pump.poll_iter()) {
             input::absorb(&event, &mut raw, &mut consumed);
         }
+        if let Some(focused) = consumed.focus {
+            viewport.focused = Some(focused);
+        }
+        raw.focused = viewport.focused.unwrap_or(true);
         if consumed.geometry_changed {
             read_geometry(&window, borders, &mut viewport);
         }
