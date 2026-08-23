@@ -135,7 +135,7 @@ struct Dirty {
 }
 
 impl Frontend {
-    pub fn new(cc: &eframe::CreationContext<'_>, data_dir: PathBuf, notes: Vec<String>) -> Self {
+    pub fn new(egui_ctx: &egui::Context, data_dir: PathBuf, notes: Vec<String>) -> Self {
         let log = logstore::new_shared();
         let settings: FrontendSettings = report_load(&log, storage::SETTINGS_FILE);
         let state: UiState = report_load(&log, storage::STATE_FILE);
@@ -176,7 +176,7 @@ impl Frontend {
         if let Ok(mut store) = log.lock() {
             store.set_capacity(settings.log_capacity);
         }
-        theme::apply(&cc.egui_ctx, settings.ui_zoom);
+        theme::apply(egui_ctx, settings.ui_zoom);
 
         let transport: Arc<dyn Transport> = Arc::new(CurlTransport);
         let mut frontend = Frontend {
@@ -207,7 +207,7 @@ impl Frontend {
             report: None,
             confirmation: None,
             background: channel(),
-            repaint: cc.egui_ctx.clone(),
+            repaint: egui_ctx.clone(),
             library_revision: 0,
             order_cache: Vec::new(),
             group_cache: Vec::new(),
@@ -1297,8 +1297,8 @@ fn report_load_or_default<T: serde::de::DeserializeOwned + Default>(file: &str) 
     storage::load(file).unwrap_or_default()
 }
 
-impl eframe::App for Frontend {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+impl crate::shell::Application for Frontend {
+    fn update(&mut self, ctx: &egui::Context) {
         self.drain_background(ctx);
         self.collect_dropped_files(ctx);
         self.collect_finished_runs();
@@ -1441,7 +1441,7 @@ impl eframe::App for Frontend {
         }
     }
 
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+    fn on_exit(&mut self) {
         self.launcher.stop_all();
         self.save_if_due(true);
     }

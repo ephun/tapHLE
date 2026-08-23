@@ -27,6 +27,7 @@
 mod app;
 mod platform;
 mod run;
+mod shell;
 mod state;
 mod ui;
 
@@ -40,41 +41,24 @@ const DEFAULT_SIZE: [f32; 2] = [1120.0, 720.0];
 /// Below this the details panel and the library cannot both be useful.
 const MINIMUM_SIZE: [f32; 2] = [720.0, 440.0];
 
-fn main() -> eframe::Result<()> {
+fn main() -> Result<(), String> {
     let (data_dir, notes) = platform::storage::locate_data_dir();
     install_panic_hook();
 
     let state: state::settings::UiState =
         platform::storage::load(platform::storage::STATE_FILE).unwrap_or_default();
-    let mut viewport = egui::ViewportBuilder::default()
-        .with_title("tapHLE")
-        .with_app_id("net.ephun.tapHLE")
-        .with_inner_size(state.window_size.unwrap_or(DEFAULT_SIZE))
-        .with_min_inner_size(MINIMUM_SIZE);
-    if let Some(position) = state.window_position {
-        // Only restored when it lands somewhere plausible: a saved position
-        // from a monitor that is no longer attached would put the window
-        // where it cannot be reached.
-        if position[0] > -20_000.0 && position[1] > -20_000.0 {
-            viewport = viewport.with_position(position);
-        }
-    }
-    if state.maximized {
-        viewport = viewport.with_maximized(true);
-    }
-    if let Some(icon) = load_window_icon() {
-        viewport = viewport.with_icon(icon);
-    }
+    let settings = shell::WindowSettings {
+        title: "tapHLE".to_string(),
+        size: state.window_size.unwrap_or(DEFAULT_SIZE),
+        minimum_size: MINIMUM_SIZE,
+        position: state.window_position,
+        maximized: state.maximized,
+        icon: load_window_icon(),
+    };
 
-    eframe::run_native(
-        "tapHLE",
-        eframe::NativeOptions {
-            viewport,
-            vsync: true,
-            ..Default::default()
-        },
-        Box::new(move |cc| Ok(Box::new(app::Frontend::new(cc, data_dir, notes)))),
-    )
+    shell::run(settings, move |ctx| {
+        app::Frontend::new(ctx, data_dir, notes)
+    })
 }
 
 /// The project's own icon, used for the window and the taskbar.
@@ -82,7 +66,7 @@ fn main() -> eframe::Result<()> {
 /// It is read from the `res` folder beside the program when there is one, and
 /// otherwise from the repository, so a build tree and an installed copy both
 /// find it. A missing icon is not worth failing over.
-fn load_window_icon() -> Option<egui::IconData> {
+fn load_window_icon() -> Option<(Vec<u8>, u32, u32)> {
     let candidates = [
         platform::storage::data_dir().join("res/icon.png"),
         std::path::PathBuf::from("res/icon.png"),
@@ -94,11 +78,7 @@ fn load_window_icon() -> Option<egui::IconData> {
     // second one: it also reads the CgBI variant of PNG that Apple's tools
     // produce, which is what app icons are.
     let bitmap = tapHLE::app_bundle::decode_image(&bytes).ok()?;
-    Some(egui::IconData {
-        rgba: bitmap.rgba,
-        width: bitmap.width,
-        height: bitmap.height,
-    })
+    Some((bitmap.rgba, bitmap.width, bitmap.height))
 }
 
 /// Record a panic where it can be read afterwards.

@@ -163,8 +163,9 @@ Source is the `tapHLE_gui` package in `src/gui`.
 
 ### Why egui
 
-Drawn with [egui](https://github.com/emilk/egui) through `eframe`, with `rfd` for
-file dialogs and message boxes.
+Drawn with [egui](https://github.com/emilk/egui), with `rfd` for file dialogs
+and message boxes. The window, the event loop and the input come from SDL
+rather than from `eframe` — see [The shell](#the-shell) below.
 
 The requirement that decided it is that the three things carrying this interface
 are custom-drawn in *every* toolkit:
@@ -185,9 +186,9 @@ Against that, egui is pure Rust and builds with `cargo build` on every desktop
 platform with nothing installed beyond what tapHLE already needs; is high-DPI
 correct by construction, because it lays out in points and the backend supplies
 the scale factor; handles drag-and-drop, multiple windows and a resizable panel
-layout; runs on Android and iOS through the same `winit` backend, which matters
-for the direction the project has taken; and draws through OpenGL, which the
-emulator already requires.
+layout; runs on a phone as well as a desktop, which matters for the direction
+the project has taken; and draws through OpenGL, which the emulator already
+requires.
 
 What it costs is the thing to be honest about: **egui draws its own widgets, so a
 button is not a Windows button.** The frontend narrows that gap deliberately
@@ -201,6 +202,56 @@ would be most obvious and most annoying.
 A native menu bar through `muda` is the one further step worth considering. It
 was not taken because it introduces a platform-specific event path for a part of
 the interface that is not the reason anyone opens the program.
+
+### The shell
+
+egui draws an interface and knows nothing about windows. Something has to open
+one, hand egui the input, paint the triangles it returns and act on what it
+asks for afterwards. `src/gui/src/shell.rs` is that, and `eframe` was that
+before it.
+
+**SDL, not winit.** The emulator already opens an SDL window with a GL context
+on every platform tapHLE targets, iOS and Android included, and `android/` is
+already an `SDLActivity`. One window system for the whole product means one
+input, lifecycle and graphics layer rather than one for the desktop and a
+different one per phone — and `eframe` is a desktop and web framework whose
+mobile story is not one to build a release on. It also means that when the
+frontend and the emulator become one process there is one event loop to merge
+rather than two.
+
+`shell::Application` is the entire contract, and it is the shape `eframe::App`
+had: `update(&egui::Context)` once a frame, `on_exit` at the end. Nothing above
+the shell knows SDL is there.
+
+Three things about SDL's coordinates cost a day between them, and all three are
+now stated in the code where they bite:
+
+- **A pointer arrives in points, not pixels.** SDL reports mouse positions in
+  the same units as the window's own size. Scaling them by the display factor
+  as well put every click a row above the icon it was made on.
+- **A border is reported in pixels.** `SDL_GetWindowBordersSize` does not
+  follow the same convention as `SDL_GetWindowPosition`, so mixing them moved
+  the window up by the height of its own title bar on every run.
+- **SDL positions the client area**, while the position worth remembering is
+  the frame's, which is why the border is measured at all.
+
+**Waking the loop.** `Context::request_repaint` from a background thread does
+not produce an SDL event, so the shell registers a custom event and pushes one
+from egui's repaint callback. Without it the window sleeps until the next input
+and finished background work appears whenever the pointer next moves.
+
+**Typing.** SDL sends no text at all until `SDL_StartTextInput`, and starting
+it is also what raises the on-screen keyboard on a touch device. The shell
+follows `Context::wants_keyboard_input`, so it is on exactly while egui has a
+field to type into.
+
+**What the shell does not do yet.** `eframe` enables AccessKit by default, so
+the frontend used to report its widget tree to a screen reader and no longer
+does. egui still produces the tree behind its `accesskit` feature; what is
+missing is the per-platform adapter `eframe` supplied, which has to be wired
+into the shell before tapHLE can claim to be usable without sight. This is a
+real regression against the `eframe` frontend rather than something SDL
+prevents, and it is owed before the first release.
 
 Electron was never a candidate.
 

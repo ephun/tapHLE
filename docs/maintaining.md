@@ -275,7 +275,8 @@ dev-scripts/make-macos-bundle.sh \
 Not attempted as a package. The frontend's dependencies are the obstacle to be
 aware of rather than the emulator's:
 
-- `eframe` needs X11 or Wayland development libraries at build time;
+- SDL needs X11 or Wayland development libraries at build time, for the
+  frontend's window as well as the emulator's;
 - `rfd` uses GTK 3 by default for its dialogs. Its `xdg-portal` feature is the
   alternative and avoids the GTK dependency, at the cost of needing an async
   runtime;
