@@ -8,7 +8,7 @@
 //! Everything here is machine-local: which apps this computer knows about,
 //! how long they have been played, what this user set. None of it is a
 //! compatibility claim, and none of it is meant to be shared — that
-//! distinction is why the local star rating in [crate::compat] never
+//! distinction is why the local star rating in [crate::state::compat] never
 //! overwrites a database rating.
 //!
 //! The files live in a `tapHLE_frontend` directory beside `tapHLE_sandbox`

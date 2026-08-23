@@ -19,11 +19,11 @@
 
 use egui::{Id, Ui};
 
-use crate::settings::{
+use crate::state::settings::{
     DeviceFamilyPref, EmulatorSettings, FrameRateLimit, FrontendSettings, Gles1Pref,
     OrientationPref,
 };
-use crate::theme;
+use crate::ui::theme;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Category {
@@ -185,7 +185,7 @@ pub fn show_app(ctx: &egui::Context, dialog: &mut AppDialog) -> Outcome {
                         // controller and are the same everywhere, so burying
                         // the mapping below six tilt sliders would put the
                         // reason somebody opened this page last.
-                        crate::ui::section(ui, "This app's controls");
+                        crate::ui::widgets::section(ui, "This app's controls");
                         // Cloned rather than borrowed: the section reads the
                         // inherited layout while writing the draft, and the
                         // rows below need the inherited settings again.
@@ -483,7 +483,7 @@ fn emulator_page(
 }
 
 fn display_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {
-    crate::ui::section(ui, "Window");
+    crate::ui::widgets::section(ui, "Window");
     switch_row(
         ui,
         "Start in full screen",
@@ -518,7 +518,7 @@ fn display_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Em
         .color(theme::LIGHT.text_dim),
     );
 
-    crate::ui::section(ui, "Device");
+    crate::ui::widgets::section(ui, "Device");
     optional_row(
         ui,
         "Emulated device",
@@ -565,7 +565,7 @@ fn display_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Em
 }
 
 fn graphics_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {
-    crate::ui::section(ui, "Renderer");
+    crate::ui::widgets::section(ui, "Renderer");
     optional_row(
         ui,
         "OpenGL ES 1.1 backend",
@@ -600,7 +600,7 @@ fn graphics_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
         "Hides this computer's OpenGL errors from the app.",
     );
 
-    crate::ui::section(ui, "Frame rate");
+    crate::ui::widgets::section(ui, "Frame rate");
     optional_row(
         ui,
         "Frame rate limit",
@@ -659,7 +659,7 @@ fn controls_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
     caption(ui, "Where each button touches the screen is set per app.");
     ui.add_space(6.0);
 
-    crate::ui::section(ui, "Analog sticks");
+    crate::ui::widgets::section(ui, "Analog sticks");
     optional_row(
         ui,
         "Dead zone",
@@ -672,7 +672,7 @@ fn controls_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
         },
     );
 
-    crate::ui::section(ui, "Virtual cursor");
+    crate::ui::widgets::section(ui, "Virtual cursor");
     caption(ui, "The right stick moves a pointer. Press it to tap.");
     // Two sliders, so a block rather than a row: on one line the second
     // slider's label sits 150 pixels right of "Steady it" and reads as a
@@ -707,7 +707,7 @@ fn controls_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
         },
     );
 
-    crate::ui::section(ui, "Tilting the device");
+    crate::ui::widgets::section(ui, "Tilting the device");
     caption(
         ui,
         "A desktop has no accelerometer, so a stick stands in for it.",
@@ -958,7 +958,7 @@ fn font_row(
 }
 
 fn system_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {
-    crate::ui::section(ui, "Behaviour");
+    crate::ui::widgets::section(ui, "Behaviour");
     switch_row(
         ui,
         "Network access",
@@ -990,7 +990,7 @@ fn system_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Emu
         },
     );
 
-    crate::ui::section(ui, "Advanced");
+    crate::ui::widgets::section(ui, "Advanced");
     switch_row(
         ui,
         "Direct memory access",
@@ -1024,7 +1024,7 @@ fn system_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Emu
 }
 
 fn logging_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {
-    crate::ui::section(ui, "Emulator tracing");
+    crate::ui::widgets::section(ui, "Emulator tracing");
     optional_row(
         ui,
         "Verbose modules",
@@ -1051,7 +1051,7 @@ fn logging_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Em
 }
 
 fn frontend_logging_page(ui: &mut Ui, draft: &mut FrontendSettings) {
-    crate::ui::section(ui, "Log panel");
+    crate::ui::widgets::section(ui, "Log panel");
     ui.checkbox(
         &mut draft.reveal_log_on_crash,
         "Open the log panel when a run ends badly",
@@ -1079,7 +1079,7 @@ fn frontend_logging_page(ui: &mut Ui, draft: &mut FrontendSettings) {
 }
 
 fn general_page(ui: &mut Ui, draft: &mut FrontendSettings) {
-    crate::ui::section(ui, "Interface");
+    crate::ui::widgets::section(ui, "Interface");
     ui.horizontal(|ui| {
         ui.add_sized(
             [150.0, 18.0],
@@ -1106,7 +1106,7 @@ fn general_page(ui: &mut Ui, draft: &mut FrontendSettings) {
         "Developer mode: keep the log panel open and show extra tools",
     );
 
-    crate::ui::section(ui, "Updates");
+    crate::ui::widgets::section(ui, "Updates");
     ui.checkbox(
         &mut draft.check_for_updates,
         "Check GitHub for a newer tapHLE at startup",
@@ -1122,26 +1122,30 @@ fn general_page(ui: &mut Ui, draft: &mut FrontendSettings) {
 }
 
 fn paths_page(ui: &mut Ui, draft: &mut FrontendSettings) {
-    crate::ui::section(ui, "tapHLE");
-    let data_dir = crate::storage::data_dir();
-    crate::ui::field(ui, "Installation", &crate::storage::display_path(&data_dir));
-    crate::ui::field(
+    crate::ui::widgets::section(ui, "tapHLE");
+    let data_dir = crate::platform::storage::data_dir();
+    crate::ui::widgets::field(
+        ui,
+        "Installation",
+        &crate::platform::storage::display_path(&data_dir),
+    );
+    crate::ui::widgets::field(
         ui,
         "Frontend files",
-        &crate::storage::display_path(&crate::storage::frontend_dir()),
+        &crate::platform::storage::display_path(&crate::platform::storage::frontend_dir()),
     );
-    crate::ui::field(
+    crate::ui::widgets::field(
         ui,
         "Saved app data",
-        &crate::storage::display_path(&data_dir.join(tapHLE::paths::SANDBOX_DIR)),
+        &crate::platform::storage::display_path(&data_dir.join(tapHLE::paths::SANDBOX_DIR)),
     );
 
-    crate::ui::section(ui, "Emulator");
+    crate::ui::widgets::section(ui, "Emulator");
     ui.horizontal(|ui| {
         let text = draft
             .emulator_path
             .as_ref()
-            .map(|p| crate::storage::display_path(p))
+            .map(|p| crate::platform::storage::display_path(p))
             .unwrap_or_else(|| "found automatically".to_string());
         ui.add_sized(
             [150.0, 18.0],
@@ -1164,7 +1168,7 @@ fn paths_page(ui: &mut Ui, draft: &mut FrontendSettings) {
         }
     });
 
-    crate::ui::section(ui, "Library folders");
+    crate::ui::widgets::section(ui, "Library folders");
     ui.label(
         egui::RichText::new("Rescanning looks in these folders. tapHLE_apps is always included.")
             .small()
@@ -1177,8 +1181,10 @@ fn paths_page(ui: &mut Ui, draft: &mut FrontendSettings) {
                 remove = Some(index);
             }
             ui.add(
-                egui::Label::new(egui::RichText::new(crate::storage::display_path(folder)).small())
-                    .truncate(),
+                egui::Label::new(
+                    egui::RichText::new(crate::platform::storage::display_path(folder)).small(),
+                )
+                .truncate(),
             );
         });
     }

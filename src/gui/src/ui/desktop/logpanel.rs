@@ -20,15 +20,17 @@
 //!
 //! *It must keep receiving while collapsed.* Nothing in this file is
 //! connected to whether the panel is shown: the lines land in
-//! [crate::logstore] as they arrive, from the reader threads, and this only
+//! [crate::state::logstore] as they arrive, from the reader threads, and this
+//! only
 //! ever reads them. Collapsing the panel stops it being drawn and does
 //! nothing else.
 
 use egui::{Sense, Ui, Vec2};
 
-use crate::logstore::{LogLevel, LogStore};
-use crate::theme;
-use crate::ui::{self, Action};
+use crate::state::logstore::{LogLevel, LogStore};
+use crate::state::Action;
+use crate::ui::theme;
+use crate::ui::widgets;
 
 /// What the panel is showing, and what is selected in it.
 pub struct LogView {
@@ -107,7 +109,7 @@ impl LogView {
         )
     }
 
-    fn matches(&self, line: &crate::logstore::LogLine, run_ids: &[u64]) -> bool {
+    fn matches(&self, line: &crate::state::logstore::LogLine, run_ids: &[u64]) -> bool {
         if !self.level_allowed(line.level) {
             return false;
         }
@@ -200,7 +202,7 @@ impl LogView {
                 continue;
             };
             if self.show_timestamps {
-                text.push_str(&crate::timefmt::format_clock(line.millis));
+                text.push_str(&crate::state::timefmt::format_clock(line.millis));
                 text.push(' ');
             }
             text.push_str(line.level.marker());
@@ -249,10 +251,10 @@ fn toolbar(ui: &mut Ui, view: &mut LogView, store: &LogStore, actions: &mut Vec<
 
         ui.add_space(6.0);
         let (icon_rect, _) = ui.allocate_exact_size(Vec2::splat(13.0), Sense::hover());
-        ui::draw_icon(
+        widgets::draw_icon(
             ui.painter(),
             icon_rect,
-            ui::Icon::Search,
+            widgets::Icon::Search,
             theme::LIGHT.text_dim,
         );
         ui.add(
@@ -314,7 +316,7 @@ fn toolbar(ui: &mut Ui, view: &mut LogView, store: &LogStore, actions: &mut Vec<
                 .on_hover_text("Stop updating the view. Output is still recorded.");
             ui.checkbox(&mut view.follow_tail, "Follow");
             ui.checkbox(&mut view.show_timestamps, "Times")
-                .on_hover_text(if crate::timefmt::times_are_utc() {
+                .on_hover_text(if crate::state::timefmt::times_are_utc() {
                     "Show the time each line arrived (UTC on this platform)"
                 } else {
                     "Show the time each line arrived"
@@ -423,7 +425,7 @@ fn rows(ui: &mut Ui, view: &mut LogView, store: &LogStore) {
             };
             if view.show_timestamps {
                 put(
-                    &crate::timefmt::format_clock(line.millis),
+                    &crate::state::timefmt::format_clock(line.millis),
                     palette.text_dim,
                     8.0,
                 );
@@ -433,7 +435,7 @@ fn rows(ui: &mut Ui, view: &mut LogView, store: &LogStore) {
             }
             // With more than one app's output in view, say which is which.
             if !view.only_selected_app {
-                if let crate::logstore::LogOrigin::Run { .. } = &line.origin {
+                if let crate::state::logstore::LogOrigin::Run { .. } = &line.origin {
                     put(line.origin.label(), palette.accent, 6.0);
                 }
             }
@@ -460,7 +462,7 @@ fn rows(ui: &mut Ui, view: &mut LogView, store: &LogStore) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logstore::{LogOrigin, LogStore};
+    use crate::state::logstore::{LogOrigin, LogStore};
 
     fn store_with(lines: &[&str]) -> LogStore {
         let mut store = LogStore::default();

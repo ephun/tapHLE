@@ -18,9 +18,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::compat::{DatabaseSnapshot, LocalRating};
-use crate::metadata::{self, AppMetadata, ReadApp};
-use crate::settings::{EmulatorSettings, SortOrder};
+use crate::state::compat::{DatabaseSnapshot, LocalRating};
+use crate::state::metadata::{self, AppMetadata, ReadApp};
+use crate::state::settings::{EmulatorSettings, SortOrder};
 
 /// One app in the library.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -225,7 +225,7 @@ impl Library {
             path: canonical,
             metadata: read.metadata,
             icon_cache,
-            added: crate::timefmt::now_seconds(),
+            added: crate::state::timefmt::now_seconds(),
             ..Default::default()
         });
         ImportOutcome::Added { id, warnings }
@@ -236,7 +236,7 @@ impl Library {
         if let Some(entry) = self.find_mut(id) {
             entry.play_seconds += seconds;
             entry.play_count += 1;
-            entry.last_played = Some(crate::timefmt::now_seconds());
+            entry.last_played = Some(crate::state::timefmt::now_seconds());
         }
     }
 }
@@ -306,7 +306,7 @@ pub fn scan_folder(folder: &Path) -> Result<Vec<PathBuf>, String> {
 
 /// The folders scanned when the library is refreshed.
 pub fn default_folders() -> Vec<PathBuf> {
-    vec![crate::storage::data_dir().join(tapHLE::paths::APPS_DIR)]
+    vec![crate::platform::storage::data_dir().join(tapHLE::paths::APPS_DIR)]
 }
 
 /// What the library view is showing, in order.
@@ -598,7 +598,7 @@ mod tests {
     #[test]
     fn compatibility_sorting_falls_back_to_the_database() {
         let library = library_of(vec![entry("Low", "com.low"), entry("High", "com.high")]);
-        let database = crate::compat::parse_snapshot(
+        let database = crate::state::compat::parse_snapshot(
             r#"{"apps":[
                 {"app_id":1,"name":"Low","rating":1,
                  "extra":{"bundle_identifier":"com.low"},"url":"/a/1"},
@@ -624,7 +624,7 @@ mod tests {
         let mut low = entry("Low", "com.low");
         low.local_rating.stars = Some(5);
         let library = library_of(vec![low, entry("High", "com.high")]);
-        let database = crate::compat::parse_snapshot(
+        let database = crate::state::compat::parse_snapshot(
             r#"{"apps":[{"app_id":2,"name":"High","rating":4,
                  "extra":{"bundle_identifier":"com.high"},"url":"/a/2"}]}"#,
             0,

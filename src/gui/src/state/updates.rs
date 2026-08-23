@@ -29,7 +29,7 @@
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::http::Transport;
+use crate::platform::http::Transport;
 
 pub const REPOSITORY: &str = "ephun/tapHLE";
 pub const RELEASES_API_URL: &str = "https://api.github.com/repos/ephun/tapHLE/releases";

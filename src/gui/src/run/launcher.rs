@@ -23,7 +23,8 @@
 //!   accepts, so the two interfaces cannot drift apart;
 //! * relaunching costs nothing, which is the whole developer loop.
 //!
-//! On Windows the child is created with no console (see [crate::process]), so
+//! On Windows the child is created with no console (see
+//! [crate::platform::process]), so
 //! nothing flashes on screen.
 
 use std::io::{BufRead, BufReader};
@@ -32,8 +33,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::logstore::{self, LogLevel, LogOrigin, SharedLog};
-use crate::process;
+use crate::platform::process;
+use crate::state::logstore::{self, LogLevel, LogOrigin, SharedLog};
 
 /// How a run ended.
 #[derive(Clone, Debug, PartialEq)]
@@ -335,7 +336,7 @@ pub fn explain_outcome(outcome: &RunOutcome, app: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logstore::{self, LogLevel};
+    use crate::state::logstore::{self, LogLevel};
 
     /// A stand-in for the emulator: a program every machine has, which
     /// prints something and exits with a status we choose.

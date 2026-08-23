@@ -25,20 +25,10 @@
 #![windows_subsystem = "windows"]
 
 mod app;
-mod capture;
-mod compat;
-mod http;
-mod launcher;
-mod library;
-mod logstore;
-mod metadata;
-mod process;
-mod settings;
-mod storage;
-mod theme;
-mod timefmt;
+mod platform;
+mod run;
+mod state;
 mod ui;
-mod updates;
 
 use std::io::Write;
 
@@ -51,10 +41,11 @@ const DEFAULT_SIZE: [f32; 2] = [1120.0, 720.0];
 const MINIMUM_SIZE: [f32; 2] = [720.0, 440.0];
 
 fn main() -> eframe::Result<()> {
-    let (data_dir, notes) = storage::locate_data_dir();
+    let (data_dir, notes) = platform::storage::locate_data_dir();
     install_panic_hook();
 
-    let state: settings::UiState = storage::load(storage::STATE_FILE).unwrap_or_default();
+    let state: state::settings::UiState =
+        platform::storage::load(platform::storage::STATE_FILE).unwrap_or_default();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("tapHLE")
         .with_app_id("net.ephun.tapHLE")
@@ -93,7 +84,7 @@ fn main() -> eframe::Result<()> {
 /// find it. A missing icon is not worth failing over.
 fn load_window_icon() -> Option<egui::IconData> {
     let candidates = [
-        storage::data_dir().join("res/icon.png"),
+        platform::storage::data_dir().join("res/icon.png"),
         std::path::PathBuf::from("res/icon.png"),
     ];
     let bytes = candidates
@@ -123,16 +114,16 @@ fn install_panic_hook() {
             "tapHLE frontend panicked: {info}\n{}\n",
             std::backtrace::Backtrace::force_capture()
         );
-        if let Ok(dir) = storage::ensure_frontend_dir() {
+        if let Ok(dir) = platform::storage::ensure_frontend_dir() {
             if let Ok(mut file) = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open(dir.join(storage::LOG_FILE))
+                .open(dir.join(platform::storage::LOG_FILE))
             {
                 let _ = writeln!(
                     file,
                     "{} {message}",
-                    timefmt::format_datetime(timefmt::now_seconds())
+                    state::timefmt::format_datetime(state::timefmt::now_seconds())
                 );
             }
         }
@@ -142,8 +133,8 @@ fn install_panic_hook() {
             .set_description(format!(
                 "The tapHLE frontend has stopped.\n\n{info}\n\nDetails were written \
                  to {}/{}.",
-                storage::DIR,
-                storage::LOG_FILE
+                platform::storage::DIR,
+                platform::storage::LOG_FILE
             ))
             .show();
         previous(info);

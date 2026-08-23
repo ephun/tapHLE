@@ -20,26 +20,28 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::compat::{self, CompatibilityProvider, DatabaseSnapshot, ReportDraft, TapHledbProvider};
-use crate::http::{CurlTransport, Transport};
-use crate::launcher::{self, Launcher};
-use crate::library::{self, ImportOutcome, Library, ScanResult, VersionGroup, ViewFilter};
-use crate::logstore::{self, LogLevel, SharedLog};
-use crate::metadata::AppIcon;
-use crate::settings::{EmulatorSettings, FrontendSettings, UiState};
-use crate::storage;
-use crate::theme;
-use crate::timefmt;
-use crate::ui::chrome::ChromeContext;
-use crate::ui::details::DetailsContext;
-use crate::ui::dialogs::{
+use crate::platform::http::{CurlTransport, Transport};
+use crate::platform::storage;
+use crate::run::launcher::{self, Launcher};
+use crate::state::compat::{
+    self, CompatibilityProvider, DatabaseSnapshot, ReportDraft, TapHledbProvider,
+};
+use crate::state::library::{self, ImportOutcome, Library, ScanResult, VersionGroup, ViewFilter};
+use crate::state::logstore::{self, LogLevel, SharedLog};
+use crate::state::metadata::AppIcon;
+use crate::state::settings::{EmulatorSettings, FrontendSettings, UiState};
+use crate::state::timefmt;
+use crate::state::updates::{self, GitHubReleaseProvider, ReleaseProvider, UpdateStatus};
+use crate::state::Action;
+use crate::ui::desktop::chrome::ChromeContext;
+use crate::ui::desktop::details::DetailsContext;
+use crate::ui::desktop::dialogs::{
     AboutDialog, AboutInfo, Confirmation, CrashNotice, ImportReport, ReportDialog,
 };
-use crate::ui::library_view::LibraryContext;
-use crate::ui::logpanel::LogView;
-use crate::ui::settings_dialog::{AppDialog, Category, GlobalDialog, Outcome};
-use crate::ui::Action;
-use crate::updates::{self, GitHubReleaseProvider, ReleaseProvider, UpdateStatus};
+use crate::ui::desktop::library_view::LibraryContext;
+use crate::ui::desktop::logpanel::LogView;
+use crate::ui::desktop::settings_dialog::{AppDialog, Category, GlobalDialog, Outcome};
+use crate::ui::theme;
 
 /// A result from a worker thread.
 enum Background {
@@ -98,7 +100,7 @@ pub struct Frontend {
 
     global_dialog: Option<GlobalDialog>,
     app_dialog: Option<AppDialog>,
-    control_editor: Option<crate::ui::control_editor::ControlEditor>,
+    control_editor: Option<crate::ui::desktop::control_editor::ControlEditor>,
     about: Option<AboutDialog>,
     import_report: Option<ImportReport>,
     crash: Option<CrashNotice>,
@@ -290,7 +292,7 @@ impl Frontend {
             .unwrap_or_default();
         let screen = self.effective_settings(&entry_id).guest_screen(&supported);
 
-        self.control_editor = Some(crate::ui::control_editor::ControlEditor::new(
+        self.control_editor = Some(crate::ui::desktop::control_editor::ControlEditor::new(
             entry_id, title, draft, inherited, screen,
         ));
     }
@@ -336,7 +338,12 @@ impl Frontend {
         // The same options a real run would get, so the picture is the screen
         // somebody will actually see rather than a differently configured one.
         let arguments = self.effective_settings(&entry_id).to_args();
-        match crate::capture::Capture::start(emulator, app_path, self.data_dir.clone(), arguments) {
+        match crate::run::capture::Capture::start(
+            emulator,
+            app_path,
+            self.data_dir.clone(),
+            arguments,
+        ) {
             Ok(capture) => {
                 if let Some(editor) = &mut self.control_editor {
                     editor.capturing(capture);
@@ -397,8 +404,8 @@ impl Frontend {
         std::thread::spawn(move || {
             let mut rebuilt = 0_usize;
             for (id, name, path) in wanted {
-                let cached = crate::metadata::read_icon_cache(&dir, &name).is_some();
-                let Some(icon) = crate::metadata::icon_or_rebuild(&dir, &name, &path) else {
+                let cached = crate::state::metadata::read_icon_cache(&dir, &name).is_some();
+                let Some(icon) = crate::state::metadata::icon_or_rebuild(&dir, &name, &path) else {
                     continue;
                 };
                 if !cached {
@@ -618,7 +625,7 @@ impl Frontend {
     }
 
     /// Every version of the app the selection is in, newest first.
-    fn versions_of_selection(&self) -> Vec<&crate::library::LibraryEntry> {
+    fn versions_of_selection(&self) -> Vec<&crate::state::library::LibraryEntry> {
         let Some(entry) = self.selected_entry() else {
             return Vec::new();
         };
@@ -640,7 +647,7 @@ impl Frontend {
             .unwrap_or_else(|| vec![entry])
     }
 
-    fn selected_entry(&self) -> Option<&crate::library::LibraryEntry> {
+    fn selected_entry(&self) -> Option<&crate::state::library::LibraryEntry> {
         let id = self.state.selected_app.as_deref()?;
         self.library.find(id)
     }
@@ -1049,13 +1056,14 @@ impl Frontend {
                         LogLevel::Warning,
                         format!("{} does not exist yet.", path.display()),
                     );
-                } else if let Err(e) = crate::process::open_in_desktop(&path.display().to_string())
+                } else if let Err(e) =
+                    crate::platform::process::open_in_desktop(&path.display().to_string())
                 {
                     self.note(LogLevel::Warning, e);
                 }
             }
             Action::OpenUrl(url) => {
-                if let Err(e) = crate::process::open_in_desktop(&url) {
+                if let Err(e) = crate::platform::process::open_in_desktop(&url) {
                     self.note(LogLevel::Warning, e);
                 }
             }
@@ -1313,17 +1321,17 @@ impl eframe::App for Frontend {
         egui::TopBottomPanel::top("menu-bar")
             .frame(chrome_frame(2))
             .show(ctx, |ui| {
-                crate::ui::chrome::menu_bar(ui, &context, &mut actions);
+                crate::ui::desktop::chrome::menu_bar(ui, &context, &mut actions);
             });
         egui::TopBottomPanel::top("toolbar")
             .frame(chrome_frame(3))
             .show(ctx, |ui| {
-                crate::ui::chrome::toolbar(ui, &context, &mut search, &mut actions);
+                crate::ui::desktop::chrome::toolbar(ui, &context, &mut search, &mut actions);
             });
         egui::TopBottomPanel::bottom("status-bar")
             .frame(chrome_frame(2))
             .show(ctx, |ui| {
-                crate::ui::chrome::status_bar(ui, &context, &mut actions);
+                crate::ui::desktop::chrome::status_bar(ui, &context, &mut actions);
             });
 
         if self.state.log_panel_visible {
@@ -1344,7 +1352,7 @@ impl eframe::App for Frontend {
                 )
                 .show(ctx, |ui| {
                     if let Ok(store) = self.log.lock() {
-                        crate::ui::logpanel::show(
+                        crate::ui::desktop::logpanel::show(
                             ui,
                             &mut self.log_view,
                             &store,
@@ -1380,7 +1388,7 @@ impl eframe::App for Frontend {
                     database_available: self.database_available,
                     versions: self.versions_of_selection(),
                 };
-                crate::ui::details::show(ui, &details, &mut actions);
+                crate::ui::desktop::details::show(ui, &details, &mut actions);
             });
         let details_width = details_response.response.rect.width();
         if (details_width - self.state.details_panel_width).abs() > 1.0 {
@@ -1412,7 +1420,7 @@ impl eframe::App for Frontend {
                     view,
                     library_is_empty,
                 };
-                crate::ui::library_view::show(ui, &context, &mut actions);
+                crate::ui::desktop::library_view::show(ui, &context, &mut actions);
             });
 
         self.search = search;
@@ -1480,7 +1488,7 @@ impl Frontend {
 
     fn show_dialogs(&mut self, ctx: &egui::Context, actions: &mut Vec<Action>) {
         if let Some(dialog) = &mut self.global_dialog {
-            match crate::ui::settings_dialog::show_global(ctx, dialog) {
+            match crate::ui::desktop::settings_dialog::show_global(ctx, dialog) {
                 Outcome::Continue => (),
                 Outcome::Cancel => self.global_dialog = None,
                 outcome => {
@@ -1511,10 +1519,10 @@ impl Frontend {
             self.start_control_capture();
         }
         if let Some(editor) = &mut self.control_editor {
-            match crate::ui::control_editor::show(ctx, editor) {
-                crate::ui::control_editor::Outcome::Continue => (),
-                crate::ui::control_editor::Outcome::Cancel => self.control_editor = None,
-                crate::ui::control_editor::Outcome::Save => {
+            match crate::ui::desktop::control_editor::show(ctx, editor) {
+                crate::ui::desktop::control_editor::Outcome::Continue => (),
+                crate::ui::desktop::control_editor::Outcome::Cancel => self.control_editor = None,
+                crate::ui::desktop::control_editor::Outcome::Save => {
                     let layout = editor.draft.clone();
                     let for_app = editor.entry_id.clone();
                     if let Some(dialog) = &mut self.app_dialog {
@@ -1531,7 +1539,7 @@ impl Frontend {
             }
         }
         if let Some(dialog) = &mut self.app_dialog {
-            match crate::ui::settings_dialog::show_app(ctx, dialog) {
+            match crate::ui::desktop::settings_dialog::show_app(ctx, dialog) {
                 Outcome::Continue => (),
                 Outcome::Cancel => self.app_dialog = None,
                 outcome => {
@@ -1550,33 +1558,33 @@ impl Frontend {
         if self.about.is_some() {
             let info = self.about_info();
             if let Some(dialog) = &mut self.about {
-                crate::ui::dialogs::show_about(ctx, dialog, &info, actions);
+                crate::ui::desktop::dialogs::show_about(ctx, dialog, &info, actions);
                 if !dialog.open {
                     self.about = None;
                 }
             }
         }
         if let Some(report) = &mut self.import_report {
-            crate::ui::dialogs::show_import_report(ctx, report);
+            crate::ui::desktop::dialogs::show_import_report(ctx, report);
             if !report.open {
                 self.import_report = None;
             }
         }
         if let Some(notice) = &mut self.crash {
-            crate::ui::dialogs::show_crash(ctx, notice, actions);
+            crate::ui::desktop::dialogs::show_crash(ctx, notice, actions);
             if !notice.open {
                 self.crash = None;
             }
         }
         if let Some(dialog) = &mut self.report {
             let limitation = TapHledbProvider::new(self.transport.clone()).submission_limitation();
-            crate::ui::dialogs::show_report(ctx, dialog, limitation, actions);
+            crate::ui::desktop::dialogs::show_report(ctx, dialog, limitation, actions);
             if !dialog.open {
                 self.report = None;
             }
         }
         if let Some(confirmation) = &mut self.confirmation {
-            crate::ui::dialogs::show_confirmation(ctx, confirmation, actions);
+            crate::ui::desktop::dialogs::show_confirmation(ctx, confirmation, actions);
             if !confirmation.open {
                 self.confirmation = None;
             }

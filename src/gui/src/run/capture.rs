@@ -116,7 +116,7 @@ impl Capture {
             .env("TAPHLE_FRAME_CAPTURE_OUTPUT", &output)
             .stdout(std::process::Stdio::from(log))
             .stderr(std::process::Stdio::from(log_err));
-        crate::process::without_console(&mut command);
+        crate::platform::process::without_console(&mut command);
 
         let child = command.spawn().map_err(|e| {
             // Only ever this directory, by the path just built. Never a

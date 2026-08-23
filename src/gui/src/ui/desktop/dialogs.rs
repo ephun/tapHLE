@@ -14,11 +14,12 @@
 
 use egui::{Id, Ui};
 
-use crate::compat::ReportDraft;
-use crate::library::ImportOutcome;
-use crate::theme;
-use crate::ui::{self, Action};
-use crate::updates::UpdateStatus;
+use crate::state::compat::ReportDraft;
+use crate::state::library::ImportOutcome;
+use crate::state::updates::UpdateStatus;
+use crate::state::Action;
+use crate::ui::theme;
+use crate::ui::widgets;
 
 /// What the About window shows, gathered where it is known rather than here.
 pub struct AboutInfo {
@@ -95,7 +96,7 @@ pub fn show_about(
         theme::hairline(ui);
         ui.add_space(6.0);
 
-        crate::ui::settings_dialog::page(ui, 540.0, |ui| match dialog.tab {
+        crate::ui::desktop::settings_dialog::page(ui, 540.0, |ui| match dialog.tab {
             AboutTab::About => about_tab(ui, actions),
             AboutTab::Build => build_tab(ui, info, actions),
             AboutTab::Credits => credits_tab(ui, actions),
@@ -206,26 +207,26 @@ fn about_tab(ui: &mut Ui, actions: &mut Vec<Action>) {
         link(
             ui,
             "Compatibility database",
-            crate::compat::DATABASE_WEB_URL,
+            crate::state::compat::DATABASE_WEB_URL,
             actions,
         );
     });
 }
 
 fn build_tab(ui: &mut Ui, info: &AboutInfo, actions: &mut Vec<Action>) {
-    ui::field(ui, "Version", &info.version);
-    ui::field(ui, "Package version", &info.cargo_version);
-    ui::field(ui, "Build", info.build_profile);
-    ui::field(ui, "Platform", &info.platform);
+    widgets::field(ui, "Version", &info.version);
+    widgets::field(ui, "Package version", &info.cargo_version);
+    widgets::field(ui, "Build", info.build_profile);
+    widgets::field(ui, "Platform", &info.platform);
     for (label, value) in &info.build_details {
-        ui::field(ui, label, value);
+        widgets::field(ui, label, value);
     }
     ui.add_space(8.0);
-    ui::section(ui, "Services");
-    ui::field(ui, "Network", &info.transport);
-    ui::field(ui, "Ratings", &info.compatibility_source);
-    ui::field(ui, "Update source", &info.update_source);
-    ui::field(ui, "Updates", &info.update.summary());
+    widgets::section(ui, "Services");
+    widgets::field(ui, "Network", &info.transport);
+    widgets::field(ui, "Ratings", &info.compatibility_source);
+    widgets::field(ui, "Update source", &info.update_source);
+    widgets::field(ui, "Updates", &info.update.summary());
     ui.label(
         egui::RichText::new(info.update.detail())
             .small()
@@ -358,7 +359,10 @@ pub struct ImportReport {
 }
 
 impl ImportReport {
-    pub fn from_outcomes(outcomes: &[ImportOutcome], library: &crate::library::Library) -> Self {
+    pub fn from_outcomes(
+        outcomes: &[ImportOutcome],
+        library: &crate::state::library::Library,
+    ) -> Self {
         let mut report = ImportReport {
             open: true,
             outcomes: Vec::new(),
@@ -398,7 +402,7 @@ pub fn show_import_report(ctx: &egui::Context, report: &mut ImportReport) {
         ui.label(summary);
         ui.add_space(6.0);
         theme::hairline(ui);
-        crate::ui::settings_dialog::page(ui, 460.0, |ui| {
+        crate::ui::desktop::settings_dialog::page(ui, 460.0, |ui| {
             for line in &report.outcomes {
                 ui.label(line);
             }
@@ -436,7 +440,7 @@ pub fn show_crash(ctx: &egui::Context, notice: &mut CrashNotice, actions: &mut V
         ui.label(&notice.explanation);
         if !notice.excerpt.trim().is_empty() {
             ui.add_space(8.0);
-            ui::section(ui, "Last output");
+            widgets::section(ui, "Last output");
             ui.add(
                 egui::TextEdit::multiline(&mut notice.excerpt.as_str())
                     .font(egui::TextStyle::Monospace)
@@ -496,7 +500,7 @@ pub fn show_report(
         theme::hairline(ui);
         ui.add_space(6.0);
 
-        crate::ui::settings_dialog::page(ui, 580.0, |ui| {
+        crate::ui::desktop::settings_dialog::page(ui, 580.0, |ui| {
             match (
                 &dialog.draft.existing_entry,
                 dialog.draft.database_consulted,
@@ -536,13 +540,13 @@ pub fn show_report(
                 }
             }
 
-            ui::section(ui, "Rating");
-            if let Some(new_rating) = ui::star_picker(ui, dialog.stars) {
+            widgets::section(ui, "Rating");
+            if let Some(new_rating) = widgets::star_picker(ui, dialog.stars) {
                 dialog.stars = new_rating;
                 dialog.draft.stars = new_rating;
             }
 
-            ui::section(ui, "Notes");
+            widgets::section(ui, "Notes");
             if ui
                 .add(
                     egui::TextEdit::multiline(&mut dialog.notes)
@@ -555,7 +559,7 @@ pub fn show_report(
                 dialog.draft.notes = dialog.notes.clone();
             }
 
-            ui::section(ui, "Report contents");
+            widgets::section(ui, "Report contents");
             ui.checkbox(&mut dialog.include_log, "Include the recent log output");
             let text = report_text(dialog);
             ui.add(
@@ -580,7 +584,9 @@ pub fn show_report(
                 actions.push(Action::CopyText(report_text(dialog)));
             }
             if ui.button("Open the Database").clicked() {
-                actions.push(Action::OpenUrl(crate::compat::DATABASE_WEB_URL.to_string()));
+                actions.push(Action::OpenUrl(
+                    crate::state::compat::DATABASE_WEB_URL.to_string(),
+                ));
             }
             if ui
                 .button("Save my rating")
@@ -668,7 +674,7 @@ pub fn show_confirmation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::Library;
+    use crate::state::library::Library;
 
     /// A clean import needs no dialog; the apps appearing is the feedback.
     /// Anything unexpected does need one.

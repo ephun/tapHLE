@@ -18,7 +18,7 @@
 //! [Transport] is a trait so a linked-in client can replace this later
 //! without either caller changing.
 
-use crate::process;
+use crate::platform::process;
 use std::process::{Command, Stdio};
 
 pub struct Response {
