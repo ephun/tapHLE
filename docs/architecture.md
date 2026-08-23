@@ -56,8 +56,24 @@ it is clean — the run returns, the environment drops, `main` finishes.
 which is also how it carries the app's status to the command line. That works
 for a program whose job is done. It will not work for the frontend, which has
 to keep running after a game closes, so this has to be found before the two
-share a process. Suspects are the static destructors of dynarmic, SDL and
-OpenAL Soft, none of which had ever run after a guest had executed.
+share a process.
+
+What is known so far:
+
+- **Returning from `main` is fine until an `Environment` has existed.**
+  `--copyright` and `--dump=symbols --headless` both return normally and exit
+  0. Whatever aborts needs a run to have happened.
+- **It is not the run, and not the environment's own teardown.** Traced: `run`
+  returns, `Drop for Environment` completes, `main` returns `Ok`, and the abort
+  comes after all of that.
+- Suspects are therefore the static destructors of the statically linked
+  dynarmic, SDL and OpenAL Soft, none of which had ever run after a guest had
+  executed. The `static` feature is what links them that way, so building
+  without it is the next discriminator to try.
+
+It reproduces in about twenty seconds without a window on anybody's desktop:
+replay a one-step clickmap with `--replay-quit`, which injects an ordinary quit
+once the step settles.
 
 `tapHLE-gui` is the desktop frontend — app library, details panel, settings,
 integrated log. It launches `tapHLE` as a child process with the same arguments
