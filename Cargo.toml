@@ -43,6 +43,9 @@ static = ["sdl2/bundled", "sdl2/static-link", "tapHLE_openal_soft_wrapper/static
 
 [workspace.dependencies]
 cc = "1.0.83"
+# Declared for the workspace because the emulator and the frontend both open
+# an SDL window, and two declarations could drift to two different SDLs.
+sdl2 = { git = "https://github.com/touchHLE/rust-sdl2", tag = "touchHLE-3", features = ["hidapi"] }
 cmake = "0.1.49"
 gl_generator = "0.14.0"
 
@@ -83,7 +86,7 @@ encoding_rs = "0.8.35"
 # Their URL is provenance, not product branding.
 # The HIDAPI feature is enabled because rust-sdl2 hides the SDL2 sensor features
 # behind this, but the actual HIDAPI is not used by tapHLE (see window.rs).
-sdl2 = { git = "https://github.com/touchHLE/rust-sdl2", tag = "touchHLE-3", features = ["hidapi"] }
+sdl2 = { workspace = true }
 sdl2-sys = { git = "https://github.com/touchHLE/rust-sdl2", tag = "touchHLE-3" }
 tapHLE_dynarmic_wrapper = { path = "src/cpu/dynarmic_wrapper" }
 tapHLE_gl_bindings = { path = "src/gles/gl_bindings" }

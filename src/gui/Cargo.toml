@@ -21,11 +21,14 @@ path = "src/main.rs"
 # in docs/architecture.md.
 tapHLE = { path = "../.." }
 tapHLE_version = { path = "../version" }
-# eframe brings the window, the event loop and the OpenGL painter; egui draws
-# the interface. Default features are kept so the winit/glutin stack is
-# configured the way upstream tests it, including AccessKit for screen readers.
-eframe = "0.33"
+# egui draws the interface. The window, the event loop and the input come from
+# SDL rather than from eframe, because SDL is what the emulator already uses
+# on all five platforms and what android/ is already built around. See
+# src/shell.rs.
 egui = "0.33"
+egui_glow = "0.33"
+glow = "0.16"
+sdl2 = { workspace = true }
 # Native file pickers and message boxes. This is the one place where a system
 # control is unambiguously better than a drawn one.
 rfd = "0.15"
