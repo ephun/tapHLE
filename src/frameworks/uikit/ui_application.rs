@@ -549,11 +549,6 @@ pub(super) fn UIApplicationMain(
 
     // FIXME: There are more messages we should send.
 
-    // TODO: It might be nicer to return from this function (even though it's
-    // conceptually noreturn) and set some global flag that changes how the
-    // execution works from this point onwards, though the only real advantages
-    // would be a prettier backtrace and maybe the quit button not having to
-    // panic.
     let run_loop: id = msg_class![env; NSRunLoop mainRunLoop];
     let _: () = msg![env; run_loop run];
 }
@@ -608,7 +603,9 @@ pub(super) fn exit(env: &mut Environment) {
         let _: () = msg![env; pool drain];
     };
 
-    std::process::exit(0);
+    // Ends the run rather than the process: the frontend is in this process
+    // too, and a game closing must not close the window that launched it.
+    env.exit_run(0);
 }
 
 /// App life-cycle notifications
