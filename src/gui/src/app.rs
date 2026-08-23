@@ -295,7 +295,10 @@ impl Frontend {
         ));
     }
 
-    /// Run the app briefly and take one frame, for the editor to draw on.
+    /// Run the app so the editor can take a picture of it to draw on.
+    ///
+    /// The app stays up until somebody asks for the picture, because only
+    /// they can tell a title card from the screen they want to map.
     ///
     /// Its own short-lived process rather than the one Play starts: this is
     /// not a play session and must not count as one, and the capture has to
@@ -333,10 +336,13 @@ impl Frontend {
         // The same options a real run would get, so the picture is the screen
         // somebody will actually see rather than a differently configured one.
         let arguments = self.effective_settings(&entry_id).to_args();
-        let capture =
-            crate::capture::Capture::start(emulator, app_path, self.data_dir.clone(), arguments);
-        if let Some(editor) = &mut self.control_editor {
-            editor.capturing(capture);
+        match crate::capture::Capture::start(emulator, app_path, self.data_dir.clone(), arguments) {
+            Ok(capture) => {
+                if let Some(editor) = &mut self.control_editor {
+                    editor.capturing(capture);
+                }
+            }
+            Err(e) => self.note(LogLevel::Error, e),
         }
     }
 

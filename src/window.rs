@@ -137,17 +137,111 @@ pub enum FingerId {
     Touch(i64),
     VirtualCursor,
     ButtonToTouch(crate::options::Button),
+    KeyToTouch(crate::options::Key),
     StickToTouch,
     DpadToTouch,
+    KeyDpadToTouch,
 }
 pub type Coords = (f32, f32);
 
+/// Which way a D-pad is being held, and whether that is currently touching.
+///
+/// There are two of these: one for a controller's D-pad and one for the four
+/// keys standing in for it. They behave identically, so the behaviour lives
+/// here rather than being written out twice in the event loop.
+#[derive(Default)]
 struct DpadState {
     left: bool,
     right: bool,
     up: bool,
     down: bool,
     active: bool,
+}
+
+/// Which way one of a D-pad's four directions points.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum Direction {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+impl DpadState {
+    fn hold(&mut self, direction: Direction, pressed: bool) {
+        match direction {
+            Direction::Left => self.left = pressed,
+            Direction::Right => self.right = pressed,
+            Direction::Up => self.up = pressed,
+            Direction::Down => self.down = pressed,
+        }
+    }
+
+    /// The touch the currently held directions imply, within `region`.
+    ///
+    /// A held direction moves the touch half the region from its centre, so
+    /// holding two adjacent directions gives a diagonal — which is the whole
+    /// reason a game wants a D-pad mapped to a region rather than to a point.
+    /// `None` means nothing is held and nothing was, so there is nothing to
+    /// report.
+    fn touch(&mut self, (x, y, w, h): (f32, f32, f32, f32)) -> Option<(TouchPhase, Coords)> {
+        let mut dx = 0.0;
+        let mut dy = 0.0;
+        if self.left {
+            dx -= 0.5 * w;
+        }
+        if self.right {
+            dx += 0.5 * w;
+        }
+        if self.up {
+            dy -= 0.5 * h;
+        }
+        if self.down {
+            dy += 0.5 * h;
+        }
+        let coords = (x + w * 0.5 + dx, y + h * 0.5 + dy);
+        let any_held = self.left || self.right || self.up || self.down;
+        match (self.active, any_held) {
+            (false, true) => {
+                self.active = true;
+                Some((TouchPhase::Down, coords))
+            }
+            (true, true) => Some((TouchPhase::Move, coords)),
+            (true, false) => {
+                self.active = false;
+                Some((TouchPhase::Up, coords))
+            }
+            (false, false) => None,
+        }
+    }
+}
+
+/// Which of a key D-pad's four directions a key is, if it is one of them.
+fn key_direction(dpad: crate::options::KeyDpad, key: crate::options::Key) -> Option<Direction> {
+    // Written as a chain rather than a match because the directions are
+    // values chosen by whoever made the layout, not patterns.
+    if key == dpad.up {
+        Some(Direction::Up)
+    } else if key == dpad.down {
+        Some(Direction::Down)
+    } else if key == dpad.left {
+        Some(Direction::Left)
+    } else if key == dpad.right {
+        Some(Direction::Right)
+    } else {
+        None
+    }
+}
+
+/// Whether this key has been pointed at anything on the guest screen.
+///
+/// Checked before the key is treated as a control, so an unmapped key still
+/// reaches the app as text.
+fn key_is_mapped(options: &Options, key: crate::options::Key) -> bool {
+    options.key_to_touch.contains_key(&key)
+        || options
+            .key_dpad_to_touch
+            .is_some_and(|(dpad, _)| key_direction(dpad, key).is_some())
 }
 
 #[derive(Debug)]
@@ -176,7 +270,8 @@ pub enum Event {
     TextInput(TextInputEvent),
 }
 
-/// Which part of a touch [Window::inject_touch] should queue.
+/// Which part of a touch to queue: what [Window::inject_touch] is being asked
+/// for, and what a change in held D-pad directions comes to.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum TouchPhase {
     Down,
@@ -259,6 +354,10 @@ pub struct Window {
     controller_ctx: sdl2::GameControllerSubsystem,
     controllers: Vec<sdl2::controller::GameController>,
     dpad_state: DpadState,
+    /// The same, for the four keys that can stand in for a D-pad. Separate
+    /// state so a controller and a keyboard do not overwrite each other's
+    /// held directions when both are mapped.
+    key_dpad_state: DpadState,
     stick_active: bool,
     _sensor_ctx: sdl2::SensorSubsystem,
     accelerometer: Option<sdl2::sensor::Sensor>,
@@ -416,13 +515,8 @@ impl Window {
             landscape_native,
             controller_ctx,
             controllers: Vec::new(),
-            dpad_state: DpadState {
-                left: false,
-                right: false,
-                up: false,
-                down: false,
-                active: false,
-            },
+            dpad_state: DpadState::default(),
+            key_dpad_state: DpadState::default(),
             stick_active: false,
             _sensor_ctx: sensor_ctx,
             accelerometer,
@@ -591,69 +685,26 @@ impl Window {
                         continue;
                     };
                     // Called whenever a DPad direction is pressed or released
-                    if (button == crate::options::Button::DPadLeft
-                        || button == crate::options::Button::DPadUp
-                        || button == crate::options::Button::DPadRight
-                        || button == crate::options::Button::DPadDown)
-                        && options.dpad_to_touch.is_some()
+                    let dpad_direction = match button {
+                        crate::options::Button::DPadLeft => Some(Direction::Left),
+                        crate::options::Button::DPadRight => Some(Direction::Right),
+                        crate::options::Button::DPadUp => Some(Direction::Up),
+                        crate::options::Button::DPadDown => Some(Direction::Down),
+                        _ => None,
+                    };
+                    if let (Some(direction), Some(region)) = (dpad_direction, options.dpad_to_touch)
                     {
-                        let Some((x, y, w, h)) = options.dpad_to_touch else {
-                            unreachable!();
-                        };
-
-                        // Update held state
                         let pressed = matches!(event, E::ControllerButtonDown { .. });
-                        match button {
-                            crate::options::Button::DPadLeft => self.dpad_state.left = pressed,
-                            crate::options::Button::DPadRight => self.dpad_state.right = pressed,
-                            crate::options::Button::DPadUp => self.dpad_state.up = pressed,
-                            crate::options::Button::DPadDown => self.dpad_state.down = pressed,
-                            _ => unreachable!(),
-                        }
-
-                        // Compute center
-                        let cx = x + w * 0.5;
-                        let cy = y + h * 0.5;
-
-                        // Compute combined delta
-                        let mut dx = 0.0;
-                        let mut dy = 0.0;
-
-                        if self.dpad_state.left {
-                            dx -= 0.5 * w;
-                        }
-                        if self.dpad_state.right {
-                            dx += 0.5 * w;
-                        }
-                        if self.dpad_state.up {
-                            dy -= 0.5 * h;
-                        }
-                        if self.dpad_state.down {
-                            dy += 0.5 * h;
-                        }
-
-                        // Final coords: center + movement
-                        let coords = self.transform_input_coords((cx + dx, cy + dy), true);
-
-                        // Send TouchDown if any dpad is held, TouchUp if none
-                        let any_held = self.dpad_state.left
-                            || self.dpad_state.right
-                            || self.dpad_state.up
-                            || self.dpad_state.down;
-
-                        if !self.dpad_state.active && any_held {
-                            // New touch
-                            self.dpad_state.active = true;
-                            Event::TouchesDown(HashMap::from([(FingerId::DpadToTouch, coords)]))
-                        } else if self.dpad_state.active && any_held {
-                            // Move existing touch
-                            Event::TouchesMove(HashMap::from([(FingerId::DpadToTouch, coords)]))
-                        } else if self.dpad_state.active && !any_held {
-                            // Release touch
-                            self.dpad_state.active = false;
-                            Event::TouchesUp(HashMap::from([(FingerId::DpadToTouch, coords)]))
-                        } else {
+                        self.dpad_state.hold(direction, pressed);
+                        let Some((phase, coords)) = self.dpad_state.touch(region) else {
                             continue;
+                        };
+                        let coords = self.transform_input_coords(coords, true);
+                        let touches = HashMap::from([(FingerId::DpadToTouch, coords)]);
+                        match phase {
+                            TouchPhase::Down => Event::TouchesDown(touches),
+                            TouchPhase::Move => Event::TouchesMove(touches),
+                            TouchPhase::Up => Event::TouchesUp(touches),
                         }
                     } else {
                         let Some(&(x, y)) = options.button_to_touch.get(&button) else {
@@ -826,6 +877,61 @@ impl Window {
                     // the event but it's stuck in the queue.
                     echo!("F12 pressed, EnterDebugger event queued.");
                     Event::EnterDebugger
+                }
+                // Keyboard mappings come before text input and after F12.
+                // F12 is the debugger and stays reserved; a key somebody has
+                // deliberately pointed at a place on the screen should do
+                // that rather than be typed, even when it is Return.
+                E::KeyDown {
+                    keycode: Some(keycode),
+                    repeat,
+                    ..
+                }
+                | E::KeyUp {
+                    keycode: Some(keycode),
+                    repeat,
+                    ..
+                } if crate::options::Key::from_keycode(keycode)
+                    .is_some_and(|key| key_is_mapped(options, key)) =>
+                {
+                    // Holding a key makes SDL send it again and again. Only
+                    // the first press starts a touch; every repeat after it
+                    // would start another one in the same place.
+                    if repeat {
+                        continue;
+                    }
+                    let key = crate::options::Key::from_keycode(keycode).unwrap();
+                    let pressed = matches!(event, E::KeyDown { .. });
+                    let as_dpad = options
+                        .key_dpad_to_touch
+                        .and_then(|(dpad, region)| key_direction(dpad, key).map(|d| (d, region)));
+                    match as_dpad {
+                        Some((direction, region)) => {
+                            self.key_dpad_state.hold(direction, pressed);
+                            let Some((phase, coords)) = self.key_dpad_state.touch(region) else {
+                                continue;
+                            };
+                            let coords = self.transform_input_coords(coords, true);
+                            let touches = HashMap::from([(FingerId::KeyDpadToTouch, coords)]);
+                            match phase {
+                                TouchPhase::Down => Event::TouchesDown(touches),
+                                TouchPhase::Move => Event::TouchesMove(touches),
+                                TouchPhase::Up => Event::TouchesUp(touches),
+                            }
+                        }
+                        None => {
+                            let Some(&(x, y)) = options.key_to_touch.get(&key) else {
+                                continue;
+                            };
+                            let coords = self.transform_input_coords((x, y), true);
+                            let touches = HashMap::from([(FingerId::KeyToTouch(key), coords)]);
+                            if pressed {
+                                Event::TouchesDown(touches)
+                            } else {
+                                Event::TouchesUp(touches)
+                            }
+                        }
+                    }
                 }
                 E::KeyDown {
                     keycode: Some(sdl2::keyboard::Keycode::Backspace),
@@ -1649,7 +1755,72 @@ pub fn get_preferred_country_codes(env: &mut Environment) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{sdl2_orientation_hint, DeviceOrientation};
+    use super::{
+        key_direction, key_is_mapped, sdl2_orientation_hint, DeviceOrientation, Direction,
+        DpadState, TouchPhase,
+    };
+    use crate::options::{Key, KeyDpad, Options};
+
+    const REGION: (f32, f32, f32, f32) = (10.0, 20.0, 40.0, 60.0);
+
+    /// The centre of the region, which is where a D-pad touch sits with
+    /// nothing held.
+    const CENTRE: (f32, f32) = (30.0, 50.0);
+
+    /// A D-pad's whole reason for mapping to a region rather than a point is
+    /// that two directions at once give a diagonal. Getting this wrong is not
+    /// a crash: it is a game that will not steer.
+    #[test]
+    fn holding_two_directions_gives_a_diagonal() {
+        let mut dpad = DpadState::default();
+        dpad.hold(Direction::Up, true);
+        assert_eq!(
+            dpad.touch(REGION),
+            Some((TouchPhase::Down, (CENTRE.0, CENTRE.1 - 30.0)))
+        );
+        dpad.hold(Direction::Right, true);
+        assert_eq!(
+            dpad.touch(REGION),
+            Some((TouchPhase::Move, (CENTRE.0 + 20.0, CENTRE.1 - 30.0)))
+        );
+    }
+
+    /// The touch has to end when the last direction is let go, and nothing
+    /// may be reported while none is held — a stray touch at the centre of
+    /// the region would read as a tap the person never made.
+    #[test]
+    fn a_dpad_touch_ends_when_everything_is_released() {
+        let mut dpad = DpadState::default();
+        assert_eq!(dpad.touch(REGION), None, "nothing held, nothing to report");
+        dpad.hold(Direction::Left, true);
+        assert!(matches!(dpad.touch(REGION), Some((TouchPhase::Down, _))));
+        dpad.hold(Direction::Left, false);
+        assert_eq!(dpad.touch(REGION), Some((TouchPhase::Up, CENTRE)));
+        assert_eq!(dpad.touch(REGION), None);
+    }
+
+    /// An unmapped key has to stay unmapped, or every key an app wanted as
+    /// text would be swallowed by the control code instead.
+    #[test]
+    fn only_mapped_keys_are_treated_as_controls() {
+        let mut options = Options::default();
+        assert!(!key_is_mapped(&options, Key::Space));
+
+        options.key_to_touch.insert(Key::Space, (1.0, 2.0));
+        assert!(key_is_mapped(&options, Key::Space));
+        assert!(!key_is_mapped(&options, Key::A));
+
+        let wasd = KeyDpad {
+            up: Key::W,
+            down: Key::S,
+            left: Key::A,
+            right: Key::D,
+        };
+        options.key_dpad_to_touch = Some((wasd, REGION));
+        assert!(key_is_mapped(&options, Key::A));
+        assert_eq!(key_direction(wasd, Key::A), Some(Direction::Left));
+        assert_eq!(key_direction(wasd, Key::Space), None);
+    }
 
     /// The landscape mapping is inverted on purpose: the hint names the
     /// content orientation, not the way the device is held. It is easy to

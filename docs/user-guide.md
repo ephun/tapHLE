@@ -114,7 +114,21 @@ written for a device held tipped towards you, which is what the resting angles
 are for.
 
 **Where each button touches the screen is not here.** That is a fact about one
-app's layout, so it lives in that app's own **Settings… ▸ Controls**.
+app's layout, so it lives in that app's own **Settings… ▸ Controls**, under
+**Place controls on the screen…**. That opens the app's screen as a canvas:
+press **Show the app's screen** and the app starts in its own window, play it
+to whatever screen you want to map, then press **Take the picture**. Nothing is
+on a timer — the app stays up until you ask — because only you can tell a title
+card from the screen the controls belong on. Then drag a marker onto the app's
+own button and choose what presses it.
+
+You do not need a controller. A control can be bound to a key instead: select
+it, press **Press a key**, and press the key you want. For movement, a stick
+zone can be driven by the arrow keys or by W, A, S and D — hold two at once for
+a diagonal, the same as a D-pad. A key bound this way stops being typed into
+the app, so leave alone anything an app reads as text. F12 always opens the
+debugger and cannot be bound. From a terminal these are `--key-to-touch=` and
+`--key-dpad-to-touch=`.
 
 ### One option worth knowing about
 

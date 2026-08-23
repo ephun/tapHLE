@@ -21,7 +21,7 @@
 use crate::theme;
 use egui::{Color32, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use tapHLE::controls::{Binding, ControlLayout, Geometry, Source, Target, TargetKind};
-use tapHLE::options::Button;
+use tapHLE::options::{Button, Key, KeyDpad};
 
 /// Every button a layout can bind, in the order the emulator lists them.
 const BUTTONS: &[Button] = &[
@@ -57,7 +57,156 @@ fn source_name(source: Source) -> String {
         Source::Button(button) => button_name(button).to_string(),
         Source::Dpad => "D-pad".to_string(),
         Source::LeftStick => "Left stick".to_string(),
+        Source::Key(key) => format!("{} key", key_name(key)),
+        Source::KeyDpad(dpad) => match dpad {
+            ARROW_KEYS => "Arrow keys".to_string(),
+            WASD => "W A S D".to_string(),
+            other => format!(
+                "{} {} {} {}",
+                key_name(other.up),
+                key_name(other.left),
+                key_name(other.down),
+                key_name(other.right),
+            ),
+        },
     }
+}
+
+/// What a key is called on the keyboard somebody is looking at, rather than
+/// what it is called in a settings file.
+fn key_name(key: Key) -> String {
+    match key {
+        Key::Left => "←".to_string(),
+        Key::Right => "→".to_string(),
+        Key::Up => "↑".to_string(),
+        Key::Down => "↓".to_string(),
+        Key::Return => "Enter".to_string(),
+        Key::Backquote => "`".to_string(),
+        Key::LeftBracket => "[".to_string(),
+        Key::RightBracket => "]".to_string(),
+        Key::Backslash => "\\".to_string(),
+        Key::Semicolon => ";".to_string(),
+        Key::Quote => "'".to_string(),
+        Key::Comma => ",".to_string(),
+        Key::Period => ".".to_string(),
+        Key::Slash => "/".to_string(),
+        Key::Minus => "-".to_string(),
+        Key::Equals => "=".to_string(),
+        // The digits are `Num0`..`Num9` so they can be enum variants; nobody
+        // calls the 1 key "Num1".
+        other => other.name().trim_start_matches("Num").to_string(),
+    }
+}
+
+/// The two arrangements every game with keyboard movement uses. Offered as
+/// whole choices because that is how somebody thinks of them — "the arrow
+/// keys", not four separate bindings they have to get right in order.
+const ARROW_KEYS: KeyDpad = KeyDpad {
+    up: Key::Up,
+    down: Key::Down,
+    left: Key::Left,
+    right: Key::Right,
+};
+const WASD: KeyDpad = KeyDpad {
+    up: Key::W,
+    down: Key::S,
+    left: Key::A,
+    right: Key::D,
+};
+
+/// The key somebody just pressed, if the editor is listening for one.
+///
+/// egui reports the modifiers separately from the keys, because for its own
+/// widgets they are modifiers rather than keys. Here they are keys like any
+/// other — a game that wants Shift to fire wants Shift to fire — so they are
+/// read back out of the modifier state.
+fn pressed_key(ctx: &egui::Context) -> Option<Key> {
+    ctx.input(|i| {
+        for event in &i.events {
+            if let egui::Event::Key {
+                key, pressed: true, ..
+            } = event
+            {
+                if let Some(key) = from_egui_key(*key) {
+                    return Some(key);
+                }
+            }
+        }
+        if i.modifiers.shift {
+            return Some(Key::Shift);
+        }
+        if i.modifiers.ctrl {
+            return Some(Key::Ctrl);
+        }
+        if i.modifiers.alt {
+            return Some(Key::Alt);
+        }
+        None
+    })
+}
+
+fn from_egui_key(key: egui::Key) -> Option<Key> {
+    use egui::Key as E;
+    Some(match key {
+        E::A => Key::A,
+        E::B => Key::B,
+        E::C => Key::C,
+        E::D => Key::D,
+        E::E => Key::E,
+        E::F => Key::F,
+        E::G => Key::G,
+        E::H => Key::H,
+        E::I => Key::I,
+        E::J => Key::J,
+        E::K => Key::K,
+        E::L => Key::L,
+        E::M => Key::M,
+        E::N => Key::N,
+        E::O => Key::O,
+        E::P => Key::P,
+        E::Q => Key::Q,
+        E::R => Key::R,
+        E::S => Key::S,
+        E::T => Key::T,
+        E::U => Key::U,
+        E::V => Key::V,
+        E::W => Key::W,
+        E::X => Key::X,
+        E::Y => Key::Y,
+        E::Z => Key::Z,
+        E::Num0 => Key::Num0,
+        E::Num1 => Key::Num1,
+        E::Num2 => Key::Num2,
+        E::Num3 => Key::Num3,
+        E::Num4 => Key::Num4,
+        E::Num5 => Key::Num5,
+        E::Num6 => Key::Num6,
+        E::Num7 => Key::Num7,
+        E::Num8 => Key::Num8,
+        E::Num9 => Key::Num9,
+        E::ArrowLeft => Key::Left,
+        E::ArrowRight => Key::Right,
+        E::ArrowUp => Key::Up,
+        E::ArrowDown => Key::Down,
+        E::Space => Key::Space,
+        E::Enter => Key::Return,
+        E::Tab => Key::Tab,
+        E::Backspace => Key::Backspace,
+        E::Comma => Key::Comma,
+        E::Period => Key::Period,
+        E::Slash => Key::Slash,
+        E::Semicolon => Key::Semicolon,
+        E::Quote => Key::Quote,
+        E::OpenBracket => Key::LeftBracket,
+        E::CloseBracket => Key::RightBracket,
+        E::Backslash => Key::Backslash,
+        E::Minus => Key::Minus,
+        E::Equals => Key::Equals,
+        E::Backtick => Key::Backquote,
+        // Escape cancels the listening rather than binding, so it is not
+        // here, and neither is anything the emulator cannot map.
+        _ => return None,
+    })
 }
 
 #[derive(PartialEq, Eq)]
@@ -96,6 +245,11 @@ pub struct ControlEditor {
     backdrop: Option<egui::TextureHandle>,
     capture: Option<crate::capture::Capture>,
     capture_error: Option<String>,
+    /// Set while the editor is waiting for a key press to bind.
+    listening: bool,
+    /// True only on the frame listening began, so a modifier somebody happened
+    /// to be holding when they clicked is not taken as the key they meant.
+    listening_started: bool,
     /// Raised when somebody asks for a screen. The editor cannot launch the
     /// emulator itself — it does not know where it is or what arguments this
     /// app needs — so the frontend does it.
@@ -123,6 +277,8 @@ impl ControlEditor {
             backdrop: None,
             capture: None,
             capture_error: None,
+            listening: false,
+            listening_started: false,
             wants_capture: false,
         }
     }
@@ -187,9 +343,10 @@ impl ControlEditor {
             return;
         };
         match capture.poll() {
-            crate::capture::Progress::Working => {
-                // The worker is on another thread, so nothing would otherwise
-                // wake the interface when the frame lands.
+            crate::capture::Progress::Running | crate::capture::Progress::Taking => {
+                // Nothing else would wake the interface: the app closing, or
+                // the frame landing, are both changes on disk rather than
+                // input events.
                 ctx.request_repaint_after(std::time::Duration::from_millis(250));
             }
             crate::capture::Progress::Ready(frame) => {
@@ -290,6 +447,38 @@ pub fn show(ctx: &egui::Context, editor: &mut ControlEditor) -> Outcome {
     outcome
 }
 
+/// Where a newly placed control sits, as a fraction of the guest screen.
+///
+/// A touch is a point, so it is simply where the click landed. A stick zone
+/// is a circle centred on it: the thing a zone stands for is a thumb sweeping
+/// a stick, which reaches every direction equally, so a shape with a long
+/// axis says something about the control that is not true.
+///
+/// Round has to mean round in guest pixels, not in fractions. A quarter of
+/// each axis — what this used to be — is a circle only on a square screen; on
+/// a 320 by 480 phone it came out as an 80 by 120 oval. So the diameter is a
+/// quarter of the shorter side, converted into each axis separately.
+///
+/// Split out of [canvas] so the shape can be checked without a window.
+fn placed_geometry(placing: Placing, at: (f32, f32), screen: (f32, f32)) -> Geometry {
+    let (guest_w, guest_h) = screen;
+    let (width, height) = match placing {
+        Placing::StickZone => {
+            let diameter = 0.25 * guest_w.min(guest_h);
+            (diameter / guest_w, diameter / guest_h)
+        }
+        _ => (0.0, 0.0),
+    };
+    // Clamped so a zone dropped near an edge stays on the screen. A target
+    // outside it can never be touched, and it is what the layout stores.
+    Geometry {
+        x: (at.0 - width / 2.0).clamp(0.0, 1.0 - width),
+        y: (at.1 - height / 2.0).clamp(0.0, 1.0 - height),
+        width,
+        height,
+    }
+}
+
 /// The guest screen, and the controls sitting on it.
 fn canvas(ui: &mut Ui, editor: &mut ControlEditor) {
     let (guest_w, guest_h) = editor.screen;
@@ -345,12 +534,11 @@ fn canvas(ui: &mut Ui, editor: &mut ControlEditor) {
                         target.geometry.height * rect.height(),
                     ),
                 );
-                painter.rect_stroke(
-                    zone,
-                    4.0,
+                painter.add(egui::Shape::ellipse_stroke(
+                    zone.center(),
+                    zone.size() / 2.0,
                     Stroke::new(1.0_f32, Color32::from_gray(90)),
-                    egui::StrokeKind::Inside,
-                );
+                ));
             }
         }
     }
@@ -359,20 +547,14 @@ fn canvas(ui: &mut Ui, editor: &mut ControlEditor) {
     if editor.placing != Placing::Nothing {
         if let Some(at) = response.interact_pointer_pos() {
             if response.clicked() {
-                let g = Geometry {
-                    x: ((at.x - rect.left()) / rect.width()).clamp(0.0, 1.0),
-                    y: ((at.y - rect.top()) / rect.height()).clamp(0.0, 1.0),
-                    width: if editor.placing == Placing::StickZone {
-                        0.25
-                    } else {
-                        0.0
-                    },
-                    height: if editor.placing == Placing::StickZone {
-                        0.25
-                    } else {
-                        0.0
-                    },
-                };
+                let g = placed_geometry(
+                    editor.placing,
+                    (
+                        ((at.x - rect.left()) / rect.width()).clamp(0.0, 1.0),
+                        ((at.y - rect.top()) / rect.height()).clamp(0.0, 1.0),
+                    ),
+                    editor.screen,
+                );
                 let (kind, stem, source) = match editor.placing {
                     Placing::StickZone => (TargetKind::StickZone, "stick", Source::LeftStick),
                     _ => (TargetKind::Touch, "touch", Source::Button(Button::A)),
@@ -428,13 +610,16 @@ fn canvas(ui: &mut Ui, editor: &mut ControlEditor) {
                 );
             }
             TargetKind::StickZone => {
-                painter.rect_filled(hit, 6.0, accent.linear_multiply(0.22));
-                painter.rect_stroke(
-                    hit,
-                    6.0,
+                painter.add(egui::Shape::ellipse_filled(
+                    hit.center(),
+                    hit.size() / 2.0,
+                    accent.linear_multiply(0.22),
+                ));
+                painter.add(egui::Shape::ellipse_stroke(
+                    hit.center(),
+                    hit.size() / 2.0,
                     Stroke::new(if selected { 2.0_f32 } else { 1.0_f32 }, accent),
-                    egui::StrokeKind::Inside,
-                );
+                ));
             }
         }
 
@@ -444,13 +629,48 @@ fn canvas(ui: &mut Ui, editor: &mut ControlEditor) {
                 None => target.id.clone(),
             }
         });
-        painter.text(
-            hit.center(),
-            egui::Align2::CENTER_CENTER,
+        // Some captions are long — "Left shoulder", "Arrow keys", or whatever
+        // somebody types into Name — and a touch marker is thirty pixels
+        // across. Laid out as one unwrapped line the caption ran out of its
+        // marker and off the edge of the canvas, so it is wrapped to a width
+        // the marker can carry and then held inside the screen it labels.
+        let wrap = match target.kind {
+            TargetKind::Touch => 84.0,
+            TargetKind::StickZone => hit.width().max(60.0),
+        };
+        let galley = painter.layout(
             caption,
             egui::FontId::proportional(11.0),
             Color32::WHITE,
+            wrap,
         );
+        let size = galley.size();
+        // Under a touch marker rather than across it: a circle that small
+        // cannot hold two lines, and hiding the app's own button is the one
+        // thing this caption must not do. A zone is big enough to hold it.
+        let top = match target.kind {
+            TargetKind::Touch => hit.bottom(),
+            TargetKind::StickZone => hit.center().y - size.y / 2.0,
+        };
+        let caption_at = Pos2::new(
+            (hit.center().x - size.x / 2.0).clamp(
+                rect.left() + 2.0,
+                (rect.right() - size.x - 2.0).max(rect.left() + 2.0),
+            ),
+            top.clamp(
+                rect.top() + 2.0,
+                (rect.bottom() - size.y - 2.0).max(rect.top() + 2.0),
+            ),
+        );
+        // The caption now sits on the app's own screenshot rather than on the
+        // marker's tint, and white on whatever is underneath is not always
+        // readable.
+        painter.rect_filled(
+            Rect::from_min_size(caption_at, size).expand2(Vec2::new(3.0, 1.0)),
+            3.0,
+            Color32::from_black_alpha(150),
+        );
+        painter.galley(caption_at, galley, Color32::WHITE);
 
         if let Some(pointer) = response.interact_pointer_pos() {
             if hit.contains(pointer) {
@@ -488,11 +708,34 @@ fn canvas(ui: &mut Ui, editor: &mut ControlEditor) {
 /// The properties of whatever is selected, and the way to add something.
 fn inspector(ui: &mut Ui, editor: &mut ControlEditor) {
     crate::ui::section(ui, "The app's screen");
-    if editor.capture.is_some() {
+    // Three states, and only the middle one is new: nothing running, the app
+    // running while somebody gets it to the screen they want, and the wait
+    // for the frame after they have asked for it.
+    let running = editor.capture.as_ref().is_some_and(|c| c.can_take());
+    let taking = editor.capture.as_ref().is_some_and(|c| !c.can_take());
+    let mut take = false;
+    let mut stop = false;
+    if running {
+        caption_dim(
+            ui,
+            "The app is running in its own window. Play it to the screen you \
+             want to map, then take the picture.",
+        );
+        ui.horizontal(|ui| {
+            take = ui
+                .button("Take the picture")
+                .on_hover_text("Uses the next frame the app draws.")
+                .clicked();
+            stop = ui
+                .button("Stop")
+                .on_hover_text("Closes the app without taking anything.")
+                .clicked();
+        });
+    } else if taking {
         ui.horizontal(|ui| {
             ui.spinner();
             ui.label(
-                egui::RichText::new("Starting the app and taking a picture…")
+                egui::RichText::new("Taking the picture…")
                     .small()
                     .color(theme::LIGHT.text_dim),
             );
@@ -507,7 +750,8 @@ fn inspector(ui: &mut Ui, editor: &mut ControlEditor) {
             if ui
                 .button(label)
                 .on_hover_text(
-                    "Runs the app briefly, takes one frame, and closes it.                      This does not count as playing it.",
+                    "Runs the app in its own window until you take a \
+                     picture. This does not count as playing it.",
                 )
                 .clicked()
             {
@@ -520,6 +764,19 @@ fn inspector(ui: &mut Ui, editor: &mut ControlEditor) {
                 "Without it you are placing controls on an empty screen.",
             );
         }
+    }
+    if take {
+        if let Some(capture) = &mut editor.capture {
+            if let Err(e) = capture.take_now() {
+                editor.capture_error = Some(e);
+                editor.capture = None;
+            }
+        }
+    }
+    if stop {
+        // Dropping it is what closes the app: the capture owns the process.
+        editor.capture = None;
+        editor.capture_error = None;
     }
     if let Some(error) = &editor.capture_error {
         ui.label(
@@ -602,20 +859,10 @@ fn inspector(ui: &mut Ui, editor: &mut ControlEditor) {
             .unwrap_or_else(|| "None".to_string());
         egui::ComboBox::from_id_salt("control-source")
             .selected_text(shown)
-            .show_ui(ui, |ui| match kind {
-                TargetKind::Touch => {
-                    for &button in BUTTONS {
-                        let source = Source::Button(button);
-                        if ui
-                            .selectable_label(current_source == Some(source), button_name(button))
-                            .clicked()
-                        {
-                            new_source = Some(source);
-                        }
-                    }
-                }
-                TargetKind::StickZone => {
-                    for source in [Source::LeftStick, Source::Dpad] {
+            .show_ui(ui, |ui| {
+                let mut group = |ui: &mut Ui, name: &str, sources: &[Source]| {
+                    caption_dim(ui, name);
+                    for &source in sources {
                         if ui
                             .selectable_label(current_source == Some(source), source_name(source))
                             .clicked()
@@ -623,9 +870,65 @@ fn inspector(ui: &mut Ui, editor: &mut ControlEditor) {
                             new_source = Some(source);
                         }
                     }
+                };
+                match kind {
+                    TargetKind::Touch => {
+                        let buttons: Vec<Source> =
+                            BUTTONS.iter().map(|&b| Source::Button(b)).collect();
+                        group(ui, "Controller", &buttons);
+                        // A key that is already bound stays on the list, so
+                        // the combo shows what this control does rather than
+                        // showing nothing chosen for a binding that exists.
+                        // Any other key is bound by pressing it.
+                        if let Some(source @ Source::Key(_)) = current_source {
+                            group(ui, "Keyboard", &[source]);
+                        }
+                    }
+                    TargetKind::StickZone => {
+                        group(ui, "Controller", &[Source::LeftStick, Source::Dpad]);
+                        group(
+                            ui,
+                            "Keyboard",
+                            &[Source::KeyDpad(ARROW_KEYS), Source::KeyDpad(WASD)],
+                        );
+                    }
                 }
             });
+        if kind == TargetKind::Touch {
+            let label = if editor.listening {
+                "Press a key…"
+            } else {
+                "Press a key"
+            };
+            if ui
+                .add(egui::Button::selectable(editor.listening, label))
+                .on_hover_text("Binds this control to a key on your keyboard.")
+                .clicked()
+            {
+                editor.listening = !editor.listening;
+                editor.listening_started = editor.listening;
+            }
+        }
     });
+
+    if editor.listening {
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            editor.listening = false;
+        } else if !editor.listening_started {
+            if let Some(key) = pressed_key(ui.ctx()) {
+                editor.listening = false;
+                new_source = Some(Source::Key(key));
+            }
+        }
+        editor.listening_started = false;
+    }
+    if editor.listening {
+        ui.label(
+            egui::RichText::new("Listening. Press a key, or Escape to give up.")
+                .small()
+                .color(theme::LIGHT.accent),
+        );
+    }
 
     ui.add_space(6.0);
     ui.label(
@@ -748,4 +1051,119 @@ fn caption_dim(ui: &mut Ui, text: &str) {
             .small()
             .color(theme::LIGHT.text_dim),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The picker shows these names, so two keys sharing one would put two
+    /// identical entries on the list with no way to tell them apart.
+    #[test]
+    fn every_key_has_a_name_of_its_own() {
+        let mut seen = std::collections::HashSet::new();
+        for &key in Key::ALL {
+            let name = key_name(key);
+            assert!(!name.is_empty(), "{key:?} has no name");
+            assert!(seen.insert(name.clone()), "two keys called {name}");
+        }
+    }
+
+    /// The number row is `Num0`..`Num9` because those have to be enum
+    /// variants. Showing that spelling to somebody would be nonsense.
+    #[test]
+    fn the_number_row_is_shown_as_digits() {
+        assert_eq!(key_name(Key::Num1), "1");
+        assert_eq!(key_name(Key::Num0), "0");
+    }
+
+    /// The two familiar arrangements are named rather than spelled out, and
+    /// anything else falls back to listing its four keys.
+    #[test]
+    fn a_key_dpad_is_named_when_it_is_one_somebody_recognises() {
+        assert_eq!(source_name(Source::KeyDpad(ARROW_KEYS)), "Arrow keys");
+        assert_eq!(source_name(Source::KeyDpad(WASD)), "W A S D");
+        let odd = KeyDpad {
+            up: Key::I,
+            down: Key::K,
+            left: Key::J,
+            right: Key::L,
+        };
+        assert_eq!(source_name(Source::KeyDpad(odd)), "I J K L");
+    }
+
+    /// Every key the editor can bind has to be one the person can actually
+    /// press, or the button would be offering something unreachable.
+    #[test]
+    fn the_keys_egui_reports_are_keys_the_emulator_knows() {
+        for (from, expect) in [
+            (egui::Key::Space, Key::Space),
+            (egui::Key::Enter, Key::Return),
+            (egui::Key::ArrowLeft, Key::Left),
+            (egui::Key::OpenBracket, Key::LeftBracket),
+            (egui::Key::Backtick, Key::Backquote),
+            (egui::Key::Num7, Key::Num7),
+            (egui::Key::W, Key::W),
+        ] {
+            assert_eq!(from_egui_key(from), Some(expect), "{from:?}");
+        }
+        // Escape gives up listening rather than binding, and a function key
+        // is not something the emulator can map.
+        assert_eq!(from_egui_key(egui::Key::Escape), None);
+        assert_eq!(from_egui_key(egui::Key::F12), None);
+    }
+
+    /// Only a press starts a touch. The rest of the editor assumes a source
+    /// fits its target, so the two lists it offers have to agree with what
+    /// the emulator will actually do with them.
+    #[test]
+    fn the_offered_sources_fit_the_target_they_are_offered_for() {
+        for &button in BUTTONS {
+            assert_eq!(Source::Button(button).drives(), TargetKind::Touch);
+        }
+        for source in [
+            Source::LeftStick,
+            Source::Dpad,
+            Source::KeyDpad(ARROW_KEYS),
+            Source::KeyDpad(WASD),
+        ] {
+            assert_eq!(source.drives(), TargetKind::StickZone);
+        }
+        assert_eq!(Source::Key(Key::Space).drives(), TargetKind::Touch);
+    }
+
+    /// A stick zone stands for a thumb sweeping a circle, so a new one has to
+    /// be round on whatever shape of screen the app has. Equal fractions of
+    /// the two axes are not round: on a 320 by 480 screen they are an 80 by
+    /// 120 oval, and on an iPad in landscape a different oval again.
+    #[test]
+    fn a_new_stick_zone_is_a_circle_on_any_screen() {
+        for screen in [(320.0, 480.0), (480.0, 320.0), (768.0, 1024.0)] {
+            let g = placed_geometry(Placing::StickZone, (0.5, 0.5), screen);
+            let (w, h) = (g.width * screen.0, g.height * screen.1);
+            assert!((w - h).abs() < 0.01, "{screen:?}: {w} by {h} pixels");
+            // Centred on the click rather than hanging below and right of it,
+            // which is what a corner-anchored rectangle did.
+            assert!((g.x + g.width / 2.0 - 0.5).abs() < 0.001, "{g:?}");
+            assert!((g.y + g.height / 2.0 - 0.5).abs() < 0.001, "{g:?}");
+        }
+    }
+
+    /// Centring a zone on the click puts half of it past the edge when the
+    /// click is at one. A target off the screen can never be touched.
+    #[test]
+    fn a_stick_zone_placed_at_an_edge_stays_on_the_screen() {
+        for at in [(0.0, 0.0), (1.0, 1.0), (0.0, 1.0), (1.0, 0.0)] {
+            let g = placed_geometry(Placing::StickZone, at, (320.0, 480.0));
+            assert!(g.is_on_screen(), "{at:?}: {g:?}");
+        }
+    }
+
+    /// A touch is a point, so it goes exactly where it was put and carries no
+    /// region at all.
+    #[test]
+    fn a_new_touch_is_the_point_that_was_clicked() {
+        let g = placed_geometry(Placing::Touch, (0.25, 0.75), (320.0, 480.0));
+        assert_eq!((g.x, g.y, g.width, g.height), (0.25, 0.75, 0.0, 0.0));
+    }
 }

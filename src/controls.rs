@@ -39,7 +39,7 @@
 //! Absolute coordinates were not a mistake at the time — they are exactly what
 //! a command line should take — but they cannot be the stored form.
 
-use crate::options::{Button, Options};
+use crate::options::{Button, Key, KeyDpad, Options};
 use crate::window::{DeviceFamily, DeviceOrientation};
 
 // `window` is private because its helpers take an Environment. These two are
@@ -128,6 +128,34 @@ pub enum Source {
     Dpad,
     /// The left analog stick.
     LeftStick,
+    /// A single key on this computer's keyboard.
+    Key(Key),
+    /// Four keys used as a D-pad, as a two-axis input.
+    KeyDpad(KeyDpad),
+}
+
+impl Source {
+    /// Whether this is something a keyboard provides.
+    ///
+    /// Only used to group a list of sources for somebody choosing one. A
+    /// layout does not care, and nothing stops a keyboard and a controller
+    /// driving the same target.
+    pub fn is_keyboard(self) -> bool {
+        matches!(self, Source::Key(_) | Source::KeyDpad(_))
+    }
+
+    /// What kind of target this can drive.
+    ///
+    /// A button is a press, so it can only be a [TargetKind::Touch]; a D-pad
+    /// or a stick is two axes, so it can only be a [TargetKind::StickZone].
+    /// Pairing them the other way round says something the input code has no
+    /// way to do.
+    pub fn drives(self) -> TargetKind {
+        match self {
+            Source::Button(_) | Source::Key(_) => TargetKind::Touch,
+            Source::Dpad | Source::LeftStick | Source::KeyDpad(_) => TargetKind::StickZone,
+        }
+    }
 }
 
 /// What drives a target.
@@ -205,6 +233,12 @@ impl ControlLayout {
                 (Source::LeftStick, TargetKind::StickZone) => {
                     options.stick_to_touch = Some((x, y, width, height));
                 }
+                (Source::Key(key), TargetKind::Touch) => {
+                    options.key_to_touch.insert(key, (x, y));
+                }
+                (Source::KeyDpad(dpad), TargetKind::StickZone) => {
+                    options.key_dpad_to_touch = Some((dpad, (x, y, width, height)));
+                }
                 // A button pointed at a region, or a stick pointed at a
                 // point, is a layout that says something the input code has
                 // no way to do. Skipped rather than approximated, because
@@ -242,9 +276,37 @@ impl ControlLayout {
             });
         }
 
+        let mut keys: Vec<_> = options.key_to_touch.iter().collect();
+        keys.sort_by_key(|(key, _)| key.name());
+        for (key, &(x, y)) in keys {
+            // Prefixed so a key can never collide with a button of the same
+            // name — `A` is both a controller button and a letter.
+            let id = format!("key-{}", key.name());
+            layout.targets.push(Target {
+                id: id.clone(),
+                kind: TargetKind::Touch,
+                geometry: Geometry::from_pixels((x, y, 0.0, 0.0), screen),
+                label: None,
+            });
+            layout.bindings.push(Binding {
+                source: Source::Key(*key),
+                target: id,
+            });
+        }
+
         for (id, source, region) in [
             ("dpad", Source::Dpad, options.dpad_to_touch),
             ("left-stick", Source::LeftStick, options.stick_to_touch),
+            (
+                "key-dpad",
+                options
+                    .key_dpad_to_touch
+                    .map(|(dpad, _)| Source::KeyDpad(dpad))
+                    // Never read: the region below is `None` in the same
+                    // breath, so the loop skips this row entirely.
+                    .unwrap_or(Source::Dpad),
+                options.key_dpad_to_touch.map(|(_, region)| region),
+            ),
         ] {
             if let Some(region) = region {
                 layout.targets.push(Target {
@@ -309,6 +371,70 @@ mod tests {
         assert_eq!(after.button_to_touch, before.button_to_touch);
         assert_eq!(after.stick_to_touch, before.stick_to_touch);
         assert_eq!(after.dpad_to_touch, before.dpad_to_touch);
+    }
+
+    /// Keyboard mappings go through the same conversion as controller ones,
+    /// so they have to come back out unchanged too. A drift here would move
+    /// every key mapping the first time an editor opened a layout.
+    #[test]
+    fn keyboard_mappings_survive_a_round_trip() {
+        let wasd = KeyDpad {
+            up: Key::W,
+            down: Key::S,
+            left: Key::A,
+            right: Key::D,
+        };
+        let mut before = Options::default();
+        before.key_to_touch.insert(Key::Space, (240.0, 160.0));
+        before.key_to_touch.insert(Key::Shift, (40.0, 300.0));
+        before.key_dpad_to_touch = Some((wasd, (10.0, 10.0, 50.0, 50.0)));
+
+        let layout = ControlLayout::from_options(&before, LANDSCAPE_IPHONE);
+        let mut after = Options::default();
+        layout.apply_to(&mut after, LANDSCAPE_IPHONE);
+
+        assert_eq!(after.key_to_touch, before.key_to_touch);
+        assert_eq!(after.key_dpad_to_touch, before.key_dpad_to_touch);
+    }
+
+    /// A key and a controller button can be called the same thing — `A` is
+    /// both — so their targets must not collide. If they did, whichever came
+    /// second would silently take the first one's place on the screen.
+    #[test]
+    fn a_key_and_a_button_of_the_same_name_stay_apart() {
+        let mut options = Options::default();
+        options.button_to_touch.insert(Button::A, (100.0, 100.0));
+        options.key_to_touch.insert(Key::A, (200.0, 200.0));
+
+        let layout = ControlLayout::from_options(&options, LANDSCAPE_IPHONE);
+        assert_eq!(layout.targets.len(), 2);
+        assert_eq!(layout.bindings.len(), 2);
+
+        let mut after = Options::default();
+        layout.apply_to(&mut after, LANDSCAPE_IPHONE);
+        assert_eq!(after.button_to_touch[&Button::A], (100.0, 100.0));
+        assert_eq!(after.key_to_touch[&Key::A], (200.0, 200.0));
+    }
+
+    /// Every source can drive exactly one kind of target. Pairing them the
+    /// other way round is a layout the input code cannot carry out, and it is
+    /// what stops an editor offering a stick where only a press will do.
+    #[test]
+    fn each_source_drives_one_kind_of_target() {
+        assert_eq!(Source::Button(Button::A).drives(), TargetKind::Touch);
+        assert_eq!(Source::Key(Key::Space).drives(), TargetKind::Touch);
+        assert_eq!(Source::Dpad.drives(), TargetKind::StickZone);
+        assert_eq!(Source::LeftStick.drives(), TargetKind::StickZone);
+        let wasd = KeyDpad {
+            up: Key::W,
+            down: Key::S,
+            left: Key::A,
+            right: Key::D,
+        };
+        assert_eq!(Source::KeyDpad(wasd).drives(), TargetKind::StickZone);
+        assert!(Source::Key(Key::Space).is_keyboard());
+        assert!(Source::KeyDpad(wasd).is_keyboard());
+        assert!(!Source::Button(Button::A).is_keyboard());
     }
 
     /// A fraction has to mean the same place on a bigger screen. This is what

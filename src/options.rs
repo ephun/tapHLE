@@ -35,6 +35,84 @@ pub enum Button {
     LeftShoulder,
 }
 
+/// A key on this computer's own keyboard, for `--key-to-touch=`.
+///
+/// Its own list rather than SDL's whole keycode space, for two reasons. A
+/// stored layout should be text somebody can read and edit, and an editor
+/// should be able to offer exactly the keys that can be bound instead of
+/// several hundred codes including ones no keyboard has.
+///
+/// The two modifier keys of a pair are one key here. Nobody means "the right
+/// Shift specifically", and a layout that said so would quietly do nothing on
+/// a keyboard with one Shift.
+macro_rules! keys {
+    ($($variant:ident => $($keycode:ident)|+ ,)*) => {
+        #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
+        pub enum Key {
+            $($variant,)*
+        }
+
+        impl Key {
+            /// Every key that can be bound, in the order a list should offer
+            /// them.
+            pub const ALL: &'static [Key] = &[$(Key::$variant,)*];
+
+            /// What this key is called in options files and settings.
+            pub fn name(self) -> &'static str {
+                match self {
+                    $(Key::$variant => stringify!($variant),)*
+                }
+            }
+
+            pub fn from_name(name: &str) -> Option<Key> {
+                match name {
+                    $(stringify!($variant) => Some(Key::$variant),)*
+                    _ => None,
+                }
+            }
+
+            /// The key SDL has just reported, if it is one that can be bound.
+            pub fn from_keycode(keycode: sdl2::keyboard::Keycode) -> Option<Key> {
+                use sdl2::keyboard::Keycode as K;
+                match keycode {
+                    $($(K::$keycode)|+ => Some(Key::$variant),)*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+keys! {
+    A => A, B => B, C => C, D => D, E => E, F => F, G => G, H => H, I => I,
+    J => J, K => K, L => L, M => M, N => N, O => O, P => P, Q => Q, R => R,
+    S => S, T => T, U => U, V => V, W => W, X => X, Y => Y, Z => Z,
+    Num0 => Num0, Num1 => Num1, Num2 => Num2, Num3 => Num3, Num4 => Num4,
+    Num5 => Num5, Num6 => Num6, Num7 => Num7, Num8 => Num8, Num9 => Num9,
+    Left => Left, Right => Right, Up => Up, Down => Down,
+    Space => Space, Return => Return, Escape => Escape, Tab => Tab,
+    Backspace => Backspace,
+    Shift => LShift | RShift,
+    Ctrl => LCtrl | RCtrl,
+    Alt => LAlt | RAlt,
+    Comma => Comma, Period => Period, Slash => Slash, Semicolon => Semicolon,
+    Quote => Quote, LeftBracket => LeftBracket, RightBracket => RightBracket,
+    Backslash => Backslash, Minus => Minus, Equals => Equals,
+    Backquote => Backquote,
+}
+
+/// Four keys standing in for a D-pad.
+///
+/// Grouped rather than four separate options because they only mean anything
+/// together: three of the four leaves a control somebody cannot steer.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct KeyDpad {
+    pub up: Key,
+    pub down: Key,
+    pub left: Key,
+    pub right: Key,
+}
+
 /// Struct containing all user-configurable options.
 /// What somebody chose to draw in place of one of the iPhone's fonts.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -67,6 +145,13 @@ pub struct Options {
     pub button_to_touch: HashMap<Button, (f32, f32)>,
     pub dpad_to_touch: Option<(f32, f32, f32, f32)>,
     pub stick_to_touch: Option<(f32, f32, f32, f32)>,
+    /// Keys on this computer's keyboard mapped to points on the guest screen,
+    /// the same way `button_to_touch` maps a controller's buttons. Somebody
+    /// without a controller has a keyboard.
+    pub key_to_touch: HashMap<Key, (f32, f32)>,
+    /// Four keys driving a touch around a region, the keyboard's answer to
+    /// `dpad_to_touch`, with the region it moves in.
+    pub key_dpad_to_touch: Option<(KeyDpad, (f32, f32, f32, f32))>,
     pub stabilize_virtual_cursor: Option<(f32, f32)>,
     pub gles1_implementation: Option<GLESImplementation>,
     pub direct_memory_access: bool,
@@ -116,6 +201,8 @@ impl Default for Options {
             button_to_touch: HashMap::new(),
             dpad_to_touch: None,
             stick_to_touch: None,
+            key_to_touch: HashMap::new(),
+            key_dpad_to_touch: None,
             stabilize_virtual_cursor: None,
             gles1_implementation: None,
             direct_memory_access: true,
@@ -264,6 +351,47 @@ impl Options {
                 .parse()
                 .map_err(|_| "Invalid Y co-ordinate for --button-to-touch=".to_string())?;
             self.button_to_touch.insert(button, (x, y));
+        } else if let Some(values) = arg.strip_prefix("--key-to-touch=") {
+            let (key, coords) = values
+                .split_once(',')
+                .ok_or_else(|| "--key-to-touch= requires three values".to_string())?;
+            let (x, y) = coords
+                .split_once(',')
+                .ok_or_else(|| "--key-to-touch= requires three values".to_string())?;
+            let key = Key::from_name(key)
+                .ok_or_else(|| format!("Invalid key for --key-to-touch=: {key}"))?;
+            let x: f32 = x
+                .parse()
+                .map_err(|_| "Invalid X co-ordinate for --key-to-touch=".to_string())?;
+            let y: f32 = y
+                .parse()
+                .map_err(|_| "Invalid Y co-ordinate for --key-to-touch=".to_string())?;
+            self.key_to_touch.insert(key, (x, y));
+        } else if let Some(values) = arg.strip_prefix("--key-dpad-to-touch=") {
+            let parts: Vec<&str> = values.split(',').collect();
+            let parts: [&str; 8] = parts.try_into().map_err(|_| {
+                "--key-dpad-to-touch= requires four keys and four numbers".to_string()
+            })?;
+            let mut keys = [Key::Up; 4];
+            for (key, name) in keys.iter_mut().zip(&parts[..4]) {
+                *key = Key::from_name(name)
+                    .ok_or_else(|| format!("Invalid key for --key-dpad-to-touch=: {name}"))?;
+            }
+            let mut nums = [0.0f32; 4];
+            for (num, text) in nums.iter_mut().zip(&parts[4..]) {
+                *num = text
+                    .parse()
+                    .map_err(|_| "invalid --key-dpad-to-touch".to_string())?;
+            }
+            self.key_dpad_to_touch = Some((
+                KeyDpad {
+                    up: keys[0],
+                    down: keys[1],
+                    left: keys[2],
+                    right: keys[3],
+                },
+                (nums[0], nums[1], nums[2], nums[3]),
+            ));
         } else if let Some(values) = arg.strip_prefix("--stick-to-touch=") {
             let nums: [f32; 4] = values
                 .split(',')
@@ -495,7 +623,7 @@ fn parse_dump_options(options: &str) -> Result<DumpingOptions, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Options, BOOLEAN_OPTION_PAIRS};
+    use super::{Key, KeyDpad, Options, BOOLEAN_OPTION_PAIRS};
     use crate::window::DeviceOrientation;
 
     fn parse_all(args: &[&str]) -> Options {
@@ -562,5 +690,78 @@ mod tests {
     fn an_unknown_option_is_not_an_error() {
         let mut options = Options::default();
         assert_eq!(options.parse_argument("--no-such-option"), Ok(false));
+    }
+
+    /// Every key has to survive being written to a settings file and read
+    /// back, and no two may share a name — a collision would silently rebind
+    /// one of them to the other.
+    #[test]
+    fn every_key_name_is_unique_and_round_trips() {
+        let mut seen = std::collections::HashSet::new();
+        for &key in Key::ALL {
+            assert_eq!(Key::from_name(key.name()), Some(key), "{key:?}");
+            assert!(seen.insert(key.name()), "two keys called {}", key.name());
+        }
+    }
+
+    /// Both modifiers of a pair are the same key here, because a layout that
+    /// insisted on the right Shift would do nothing on a keyboard with one.
+    #[test]
+    fn either_of_a_modifier_pair_is_the_same_key() {
+        use sdl2::keyboard::Keycode as K;
+        for (left, right, key) in [
+            (K::LShift, K::RShift, Key::Shift),
+            (K::LCtrl, K::RCtrl, Key::Ctrl),
+            (K::LAlt, K::RAlt, Key::Alt),
+        ] {
+            assert_eq!(Key::from_keycode(left), Some(key));
+            assert_eq!(Key::from_keycode(right), Some(key));
+        }
+    }
+
+    /// F12 is the debugger. If it were bindable, mapping it would take the
+    /// only way to break into a stuck app.
+    #[test]
+    fn the_debugger_key_cannot_be_bound() {
+        assert_eq!(Key::from_keycode(sdl2::keyboard::Keycode::F12), None);
+    }
+
+    #[test]
+    fn keyboard_mappings_parse() {
+        let options = parse_all(&[
+            "--key-to-touch=Space,470,310",
+            "--key-to-touch=Num1,10,20",
+            "--key-dpad-to-touch=W,S,A,D,10,10,50,50",
+        ]);
+        assert_eq!(options.key_to_touch[&Key::Space], (470.0, 310.0));
+        assert_eq!(options.key_to_touch[&Key::Num1], (10.0, 20.0));
+        assert_eq!(
+            options.key_dpad_to_touch,
+            Some((
+                KeyDpad {
+                    up: Key::W,
+                    down: Key::S,
+                    left: Key::A,
+                    right: Key::D,
+                },
+                (10.0, 10.0, 50.0, 50.0)
+            ))
+        );
+    }
+
+    /// A misspelled key has to be refused rather than ignored: a mapping that
+    /// silently does nothing is harder to notice than one that complains.
+    #[test]
+    fn a_keyboard_mapping_that_is_wrong_is_refused() {
+        for bad in [
+            "--key-to-touch=Spacebar,1,2",
+            "--key-to-touch=Space,1",
+            "--key-to-touch=Space,1,over-there",
+            "--key-dpad-to-touch=W,S,A,D,1,2,3",
+            "--key-dpad-to-touch=W,S,A,Nope,1,2,3,4",
+        ] {
+            let mut options = Options::default();
+            assert!(options.parse_argument(bad).is_err(), "{bad} was accepted");
+        }
     }
 }

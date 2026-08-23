@@ -20,22 +20,21 @@
 //! towards how long an app has been played — and the environment has to be
 //! set before launch, so an already-running app could not be asked anyway.
 //!
-//! Everything happens on a worker thread. The capture takes as long as the
-//! app takes to draw its first screen, which is seconds, and a frozen
-//! interface for that long would look like a hang.
+//! **The person decides when the picture is taken.** An earlier version
+//! waited a fixed six seconds and then shot whatever was on screen, which
+//! meant the picture was usually a publisher logo, and on a slow app the run
+//! was killed before it had drawn its menu at all. The screen worth mapping
+//! controls onto is a screen only the person watching can recognise, so the
+//! app is left running, they play it to wherever they want, and they press a
+//! button. Nothing here is on a timer until they do.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::mpsc::{Receiver, TryRecvError};
+use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
-/// How long to wait for the app to get as far as drawing something before
-/// asking for a frame. Menus of this era are quick; the launch image is not
-/// what anybody wants to map controls onto.
-const SETTLE: Duration = Duration::from_secs(6);
-
-/// How long to wait for a frame after asking. Generous, because a first frame
-/// can be behind a shader compile.
+/// How long to wait for a frame after asking for one. Generous, because a
+/// frame can be behind a shader compile. This starts when the picture is
+/// asked for, never before.
 const DEADLINE: Duration = Duration::from_secs(20);
 
 pub struct Frame {
@@ -46,160 +45,174 @@ pub struct Frame {
 }
 
 pub enum Progress {
-    Working,
+    /// The app is running and nobody has asked for a picture yet.
+    Running,
+    /// A picture has been asked for and has not arrived yet.
+    Taking,
     Ready(Frame),
     Failed(String),
 }
 
-/// A capture in flight.
+#[derive(PartialEq)]
+enum Stage {
+    Running,
+    Requested,
+    /// A result has been handed over; there is nothing left to poll.
+    Finished,
+}
+
+/// An app running so a picture can be taken of it.
+///
+/// Nothing here blocks. The process is started, and then polled from wherever
+/// the interface is already being drawn, because the whole point is that the
+/// app keeps running — and stays interactive — until somebody says when.
 pub struct Capture {
-    receiver: Receiver<Result<Frame, String>>,
-    finished: bool,
+    child: Child,
+    /// Everything this capture made, removed when it is dropped.
+    directory: PathBuf,
+    request: PathBuf,
+    output: PathBuf,
+    log: PathBuf,
+    stage: Stage,
+    /// When the picture was asked for, for the deadline.
+    requested_at: Option<Instant>,
 }
 
 impl Capture {
-    /// Launch the app, wait for it to draw, and take one frame.
+    /// Start the app. It keeps running until a picture is taken or this is
+    /// dropped.
     pub fn start(
         emulator: PathBuf,
         app_path: PathBuf,
         working_directory: PathBuf,
         arguments: Vec<String>,
-    ) -> Capture {
-        let (sender, receiver) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let outcome = run(&emulator, &app_path, &working_directory, &arguments);
-            // The editor may have been closed while this was working. Nobody
-            // is left to tell, and that is fine.
-            let _ = sender.send(outcome);
-        });
-        Capture {
-            receiver,
-            finished: false,
+    ) -> Result<Capture, String> {
+        let directory = std::env::temp_dir().join(format!(
+            "taphle-editor-capture-{}",
+            std::process::id() as u64 * 31 + now_nanos()
+        ));
+        std::fs::create_dir_all(&directory)
+            .map_err(|e| format!("Could not make a place for the capture: {e}"))?;
+
+        let request = directory.join("frame.request");
+        let output = directory.join("frame.ppm");
+
+        // Kept, so a failure can say what the emulator said. A capture that
+        // fails with only an exit code leaves somebody with nothing to act
+        // on, and the reason is almost always in the last few lines.
+        let log_path = directory.join("log.txt");
+        let log = std::fs::File::create(&log_path)
+            .map_err(|e| format!("Could not open a log for the capture: {e}"))?;
+        let log_err = log
+            .try_clone()
+            .map_err(|e| format!("Could not open a log for the capture: {e}"))?;
+
+        let mut command = Command::new(emulator);
+        command
+            .arg(app_path)
+            .args(arguments)
+            .current_dir(working_directory)
+            .env("TAPHLE_FRAME_CAPTURE_REQUEST", &request)
+            .env("TAPHLE_FRAME_CAPTURE_OUTPUT", &output)
+            .stdout(std::process::Stdio::from(log))
+            .stderr(std::process::Stdio::from(log_err));
+        crate::process::without_console(&mut command);
+
+        let child = command.spawn().map_err(|e| {
+            // Only ever this directory, by the path just built. Never a
+            // pattern match against the temporary directory, which is shared.
+            let _ = std::fs::remove_dir_all(&directory);
+            format!("Could not start the emulator: {e}")
+        })?;
+
+        Ok(Capture {
+            child,
+            directory,
+            request,
+            output,
+            log: log_path,
+            stage: Stage::Running,
+            requested_at: None,
+        })
+    }
+
+    /// Whether asking for a picture would do anything.
+    pub fn can_take(&self) -> bool {
+        self.stage == Stage::Running
+    }
+
+    /// Ask for the next frame the app draws.
+    pub fn take_now(&mut self) -> Result<(), String> {
+        if !self.can_take() {
+            return Ok(());
         }
+        // Created, not written to: the emulator treats the file appearing as
+        // the request, and refuses to overwrite an existing output.
+        std::fs::File::create(&self.request)
+            .map_err(|e| format!("Could not ask for a frame: {e}"))?;
+        self.stage = Stage::Requested;
+        self.requested_at = Some(Instant::now());
+        Ok(())
     }
 
     pub fn poll(&mut self) -> Progress {
-        if self.finished {
-            return Progress::Failed("The capture already finished.".to_string());
-        }
-        match self.receiver.try_recv() {
-            Ok(Ok(frame)) => {
-                self.finished = true;
-                Progress::Ready(frame)
-            }
-            Ok(Err(e)) => {
-                self.finished = true;
-                Progress::Failed(e)
-            }
-            Err(TryRecvError::Empty) => Progress::Working,
-            Err(TryRecvError::Disconnected) => {
-                self.finished = true;
-                Progress::Failed("The capture stopped unexpectedly.".to_string())
-            }
+        match self.stage {
+            Stage::Finished => Progress::Failed("The capture already finished.".to_string()),
+            Stage::Running => match self.child.try_wait() {
+                Ok(Some(status)) => self.fail(format!(
+                    "The app closed before a picture was taken ({status})."
+                )),
+                _ => Progress::Running,
+            },
+            Stage::Requested => self.poll_requested(),
         }
     }
-}
 
-fn run(
-    emulator: &Path,
-    app_path: &Path,
-    working_directory: &Path,
-    arguments: &[String],
-) -> Result<Frame, String> {
-    let directory = std::env::temp_dir().join(format!(
-        "taphle-editor-capture-{}",
-        std::process::id() as u64 * 31 + now_nanos()
-    ));
-    std::fs::create_dir_all(&directory)
-        .map_err(|e| format!("Could not make a place for the capture: {e}"))?;
-
-    let request = directory.join("frame.request");
-    let output = directory.join("frame.ppm");
-
-    // Kept, so a failure can say what the emulator said. A capture that
-    // fails with only an exit code leaves somebody with nothing to act on,
-    // and the reason is almost always in the last few lines of the log.
-    let log_path = directory.join("log.txt");
-    let log = std::fs::File::create(&log_path)
-        .map_err(|e| format!("Could not open a log for the capture: {e}"))?;
-    let log_err = log
-        .try_clone()
-        .map_err(|e| format!("Could not open a log for the capture: {e}"))?;
-
-    let mut command = Command::new(emulator);
-    command
-        .arg(app_path)
-        .args(arguments)
-        .current_dir(working_directory)
-        .env("TAPHLE_FRAME_CAPTURE_REQUEST", &request)
-        .env("TAPHLE_FRAME_CAPTURE_OUTPUT", &output)
-        .stdout(std::process::Stdio::from(log))
-        .stderr(std::process::Stdio::from(log_err));
-    crate::process::without_console(&mut command);
-
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("Could not start the emulator: {e}"))?;
-
-    // Everything below has to leave nothing running and nothing on disk, on
-    // every path out, so the result is computed and cleaned up afterwards
-    // rather than returned early.
-    let result =
-        capture_from(&mut child, &request, &output).map_err(|e| {
-            match last_meaningful_line(&log_path) {
-                Some(said) => format!(
-                    "{e}
-{said}"
-                ),
-                None => e,
-            }
-        });
-    let _ = child.kill();
-    let _ = child.wait();
-    // Only ever this directory, by the path this function built. Never a
-    // pattern match against the temporary directory, which is shared.
-    let _ = std::fs::remove_dir_all(&directory);
-    result
-}
-
-fn capture_from(
-    child: &mut std::process::Child,
-    request: &Path,
-    output: &Path,
-) -> Result<Frame, String> {
-    let started = Instant::now();
-    while started.elapsed() < SETTLE {
-        if let Ok(Some(status)) = child.try_wait() {
-            return Err(format!(
-                "The app stopped before it drew anything ({status})."
-            ));
-        }
-        std::thread::sleep(Duration::from_millis(150));
-    }
-
-    // Created, not written to: the emulator treats the file appearing as the
-    // request, and refuses to overwrite an existing output.
-    std::fs::File::create(request).map_err(|e| format!("Could not ask for a frame: {e}"))?;
-
-    let deadline = Instant::now();
-    while deadline.elapsed() < DEADLINE {
-        if output.is_file() {
+    fn poll_requested(&mut self) -> Progress {
+        if self.output.is_file() {
             // The file becomes visible before it is fully written, so a parse
             // failure here means "not finished yet" rather than "broken".
-            if let Ok(bytes) = std::fs::read(output) {
+            if let Ok(bytes) = std::fs::read(&self.output) {
                 if let Ok(frame) = decode_ppm(&bytes) {
-                    return Ok(frame);
+                    self.stage = Stage::Finished;
+                    return Progress::Ready(frame);
                 }
             }
         }
-        if let Ok(Some(status)) = child.try_wait() {
-            return Err(format!(
-                "The app stopped before a frame arrived ({status})."
+        if let Ok(Some(status)) = self.child.try_wait() {
+            return self.fail(format!(
+                "The app stopped before the frame arrived ({status})."
             ));
         }
-        std::thread::sleep(Duration::from_millis(150));
+        let waited = self.requested_at.map(|at| at.elapsed()).unwrap_or_default();
+        if waited > DEADLINE {
+            return self.fail("The app did not produce a frame in time.".to_string());
+        }
+        Progress::Taking
     }
-    Err("The app did not produce a frame in time.".to_string())
+
+    /// Finish with a message, saying what the emulator said if it said
+    /// anything useful.
+    fn fail(&mut self, reason: String) -> Progress {
+        self.stage = Stage::Finished;
+        match last_meaningful_line(&self.log) {
+            Some(said) => Progress::Failed(format!("{reason}\n{said}")),
+            None => Progress::Failed(reason),
+        }
+    }
+}
+
+impl Drop for Capture {
+    fn drop(&mut self) {
+        // The app is only running because this editor asked it to, so it goes
+        // when the editor is done with it, however that happened — a picture
+        // taken, a failure, or the editor closed with the app still up.
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        // Only ever this directory, by the path `start` built. Never a
+        // pattern match against the temporary directory, which is shared.
+        let _ = std::fs::remove_dir_all(&self.directory);
+    }
 }
 
 /// The last line of the emulator's output that is likely to explain a
@@ -212,7 +225,7 @@ fn last_meaningful_line(log: &Path) -> Option<String> {
     };
     // A panic explains itself; otherwise the last non-trace line will do.
     let panicked = text.lines().find(|l| l.contains("panicked at"));
-    let last = text.lines().filter(interesting).next_back();
+    let last = text.lines().rfind(interesting);
     panicked.or(last).map(|l| l.trim().to_string())
 }
 
