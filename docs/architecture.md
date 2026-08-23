@@ -216,20 +216,40 @@ section.
 
 ### What is where
 
-| File | What it holds |
+The frontend is split along two axes, and keeping them apart is the point.
+**Interface code is split by form factor**, because Windows, Linux and macOS
+draw an identical window — egui paints every pixel itself — while a
+touchscreen needs a different arrangement of the same product. **Platform code
+is split by operating system**, because that is the only thing it varies with.
+Nesting either inside the other produces the wrong tree: `ui/desktop/windows/`
+would be an empty folder, and `platform/ios/ui/` would be a second
+implementation of the interface.
+
+| Path | What it holds |
 | --- | --- |
 | `main.rs` | Entry point, window geometry, panic hook |
 | `app.rs` | State, the frame, and what each action does |
-| `ui.rs`, `ui/` | The interface; every part reports an `Action` |
-| `library.rs` | Entries, importing, filtering, sorting |
-| `metadata.rs` | Reading an app, and the icon cache |
-| `settings.rs` | Global defaults, per-app overrides, argument generation |
-| `launcher.rs` | Child processes and their outcomes |
-| `logstore.rs` | The shared log buffer and line classification |
-| `compat.rs` | Compatibility ratings, local and shared |
-| `updates.rs` | Release checking |
-| `storage.rs` | Where the frontend's own files live |
-| `http.rs`, `process.rs`, `timefmt.rs` | Small shared services |
+| `ui/theme.rs` | The visual identity: palette, type scale, spacing |
+| `ui/widgets.rs` | The pieces both form factors are built from |
+| `ui/desktop/` | Composition for a pointer and a large screen |
+| `ui/mobile.rs` | Composition for a touchscreen; declared, not yet written |
+| `state/action.rs` | `Action`, the intent vocabulary both form factors report |
+| `state/library.rs` | Entries, importing, filtering, sorting |
+| `state/metadata.rs` | Reading an app, and the icon cache |
+| `state/settings.rs` | Global defaults, per-app overrides, argument generation |
+| `state/logstore.rs` | The shared log buffer and line classification |
+| `state/compat.rs` | Compatibility ratings, local and shared |
+| `state/updates.rs` | Release checking |
+| `state/timefmt.rs` | Dates and durations as a person reads them |
+| `platform/storage.rs` | Where the frontend's own files live |
+| `platform/process.rs` | Opening a folder, and launching without a console |
+| `platform/http.rs` | The one place the frontend makes a request |
+| `run/launcher.rs` | Child processes and their outcomes |
+| `run/capture.rs` | Getting a picture of an app's screen |
+
+Nothing under `ui/theme.rs` or `ui/widgets.rs` may know which form factor is
+drawing it, and neither `ui/desktop/` nor `ui/mobile.rs` holds state: both read
+`state/` and both report a `state::Action`.
 
 Every part of the interface reports what the person asked for as an `Action` and
 the window applies them after it is built. That is not ceremony: an

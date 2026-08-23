@@ -13,7 +13,8 @@
 //!
 //! The one deliberate borrowing from the software tapHLE emulates is in the
 //! library grid, where the icon size and the spacing between icons follow the
-//! iPad's home screen. That belongs in [crate::ui::library_view]; the rest
+//! iPad's home screen. That belongs in [crate::ui::desktop::library_view];
+//! the rest
 //! of the window is a desktop program and looks like one.
 
 use egui::{Color32, CornerRadius, FontData, FontDefinitions, FontFamily, Margin, Stroke};

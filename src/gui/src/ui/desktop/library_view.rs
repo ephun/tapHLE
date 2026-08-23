@@ -20,12 +20,13 @@ use std::collections::HashMap;
 
 use egui::{Color32, Rect, Sense, Stroke, Ui, Vec2};
 
-use crate::compat::DatabaseSnapshot;
-use crate::library::{Library, LibraryEntry, VersionGroup};
-use crate::settings::ViewMode;
-use crate::theme;
-use crate::timefmt;
-use crate::ui::{self, Action};
+use crate::state::compat::DatabaseSnapshot;
+use crate::state::library::{Library, LibraryEntry, VersionGroup};
+use crate::state::settings::ViewMode;
+use crate::state::timefmt;
+use crate::state::Action;
+use crate::ui::theme;
+use crate::ui::widgets;
 
 /// Everything the library view needs to draw itself.
 pub struct LibraryContext<'a> {
@@ -183,10 +184,10 @@ fn grid_cell(
             .circle_filled(badge.center(), 7.5, Color32::WHITE);
         ui.painter()
             .circle_stroke(badge.center(), 7.5, Stroke::new(1.0_f32, palette.accent));
-        ui::draw_icon(
+        widgets::draw_icon(
             ui.painter(),
             badge.shrink(4.0),
-            ui::Icon::Play,
+            widgets::Icon::Play,
             palette.accent,
         );
     }
@@ -195,7 +196,7 @@ fn grid_cell(
             egui::pos2(icon_rect.left() + 3.0, icon_rect.top() + 3.0),
             Vec2::splat(13.0),
         );
-        ui::draw_icon(ui.painter(), badge, ui::Icon::Star, palette.star);
+        widgets::draw_icon(ui.painter(), badge, widgets::Icon::Star, palette.star);
     }
 
     let label_rect = Rect::from_min_max(
@@ -257,7 +258,7 @@ fn is_selected(context: &LibraryContext<'_>, group: &VersionGroup) -> bool {
 
 /// One version's name, as distinct from the others in its group.
 fn group_label(context: &LibraryContext<'_>, group: &VersionGroup, entry: &LibraryEntry) -> String {
-    crate::library::version_label(
+    crate::state::library::version_label(
         entry,
         group
             .versions
@@ -548,7 +549,7 @@ fn handle_entry_interaction(
 /// This mirrors the emulator's own layout rather than asking it, because the
 /// folder only comes into existence once the app has run.
 pub fn sandbox_folder(entry: &LibraryEntry) -> std::path::PathBuf {
-    crate::storage::data_dir()
+    crate::platform::storage::data_dir()
         .join(tapHLE::paths::SANDBOX_DIR)
         .join(&entry.metadata.bundle_identifier)
 }
@@ -574,7 +575,7 @@ pub fn describe_entry(entry: &LibraryEntry) -> String {
     text.push_str(&format!(
         "Device family: {}\nPath: {}\n",
         metadata.device_family_summary(),
-        crate::storage::display_path(&entry.path)
+        crate::platform::storage::display_path(&entry.path)
     ));
     text
 }

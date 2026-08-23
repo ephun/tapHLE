@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// The emulator settings, re-exported so the rest of the frontend can keep
-/// saying `crate::settings::EmulatorSettings`.
+/// saying `crate::state::settings::EmulatorSettings`.
 pub use tapHLE::settings::{
     DeviceFamilyPref, EmulatorSettings, FrameRateLimit, Gles1Pref, OrientationPref,
 };
@@ -99,7 +99,8 @@ pub struct FrontendSettings {
     /// Emulator defaults for every app in the library.
     ///
     /// Stored in the shared settings file rather than here, for the reason
-    /// given on [crate::library::LibraryEntry::overrides]. Still read from an
+    /// given on [crate::state::library::LibraryEntry::overrides]. Still read
+    /// from an
     /// older settings file so an existing set of defaults survives the move.
     #[serde(default, skip_serializing)]
     pub emulator: EmulatorSettings,
@@ -131,7 +132,7 @@ impl Default for FrontendSettings {
             developer_mode: false,
             check_for_updates: true,
             confirm_remove: true,
-            log_capacity: crate::logstore::DEFAULT_CAPACITY,
+            log_capacity: crate::state::logstore::DEFAULT_CAPACITY,
             log_show_timestamps: true,
             ui_zoom: 1.0,
         }

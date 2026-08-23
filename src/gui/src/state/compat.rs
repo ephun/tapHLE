@@ -34,7 +34,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::http::Transport;
+use crate::platform::http::Transport;
 
 /// The site the compatibility database is served from.
 pub const DATABASE_SITE: &str = "https://taphle.ephun.net";
@@ -189,7 +189,7 @@ impl CompatibilityProvider for TapHledbProvider {
                 response.status
             ));
         }
-        parse_snapshot(&response.body, crate::timefmt::now_seconds())
+        parse_snapshot(&response.body, crate::state::timefmt::now_seconds())
     }
 
     fn submission_limitation(&self) -> &'static str {
@@ -221,7 +221,7 @@ impl LocalRating {
     }
 
     pub fn touch(&mut self) {
-        self.updated = Some(crate::timefmt::now_seconds());
+        self.updated = Some(crate::state::timefmt::now_seconds());
         self.taphle_version = Some(tapHLE_version::VERSION.trim().to_string());
     }
 }
@@ -408,7 +408,7 @@ mod tests {
     #[test]
     #[ignore = "requires the network"]
     fn the_live_database_is_understood() {
-        let provider = TapHledbProvider::new(Arc::new(crate::http::CurlTransport));
+        let provider = TapHledbProvider::new(Arc::new(crate::platform::http::CurlTransport));
         let snapshot = provider.fetch().expect("the database should answer");
         assert!(
             !snapshot.is_empty(),

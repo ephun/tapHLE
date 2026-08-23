@@ -18,7 +18,7 @@
 //! and the severity is inferred from the wording. [classify] is where that
 //! guesswork lives, and it is deliberately the only place.
 
-use crate::timefmt;
+use crate::state::timefmt;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 

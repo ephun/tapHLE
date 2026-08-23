@@ -13,9 +13,10 @@
 
 use egui::Ui;
 
-use crate::settings::{IconSize, SortOrder, ViewMode};
-use crate::theme;
-use crate::ui::{self, Action, Icon};
+use crate::state::settings::{IconSize, SortOrder, ViewMode};
+use crate::state::Action;
+use crate::ui::theme;
+use crate::ui::widgets::{self, Icon};
 
 /// What the chrome needs to know to draw itself correctly.
 pub struct ChromeContext<'a> {
@@ -223,7 +224,9 @@ pub fn menu_bar(ui: &mut Ui, context: &ChromeContext<'_>, actions: &mut Vec<Acti
                 ui.close();
             }
             if ui.button("Compatibility Database").clicked() {
-                actions.push(Action::OpenUrl(crate::compat::DATABASE_WEB_URL.to_string()));
+                actions.push(Action::OpenUrl(
+                    crate::state::compat::DATABASE_WEB_URL.to_string(),
+                ));
                 ui.close();
             }
         });
@@ -240,7 +243,7 @@ pub fn toolbar(
         ui.spacing_mut().item_spacing.x = 2.0;
         ui.add_space(2.0);
 
-        if ui::toolbar_button(
+        if widgets::toolbar_button(
             ui,
             Icon::Add,
             Some("Add App"),
@@ -261,13 +264,13 @@ pub fn toolbar(
             _ if context.selected_running => "This app is already running",
             _ => "Start the selected app in its own window",
         };
-        if ui::toolbar_button(ui, Icon::Play, Some("Play"), play_hint, can_play).clicked() {
+        if widgets::toolbar_button(ui, Icon::Play, Some("Play"), play_hint, can_play).clicked() {
             if let Some(id) = context.selected {
                 actions.push(Action::Play(id.to_string()));
             }
         }
         let can_stop = context.running_count > 0;
-        if ui::toolbar_button(
+        if widgets::toolbar_button(
             ui,
             Icon::Stop,
             Some("Stop"),
@@ -284,11 +287,12 @@ pub fn toolbar(
         }
         separator(ui);
 
-        if ui::toolbar_button(ui, Icon::Refresh, None, "Rescan the library folders", true).clicked()
+        if widgets::toolbar_button(ui, Icon::Refresh, None, "Rescan the library folders", true)
+            .clicked()
         {
             actions.push(Action::RefreshLibrary);
         }
-        if ui::toolbar_button(
+        if widgets::toolbar_button(
             ui,
             Icon::Settings,
             Some("Settings"),
@@ -299,7 +303,7 @@ pub fn toolbar(
         {
             actions.push(Action::OpenGlobalSettings);
         }
-        if ui::toolbar_button(
+        if widgets::toolbar_button(
             ui,
             Icon::Log,
             None,
@@ -321,10 +325,10 @@ pub fn toolbar(
                 context.view_mode == ViewMode::Grid,
                 context.view_mode == ViewMode::List,
             );
-            if ui::toolbar_button(ui, Icon::List, None, "Show as a list", !list).clicked() {
+            if widgets::toolbar_button(ui, Icon::List, None, "Show as a list", !list).clicked() {
                 actions.push(Action::SetViewMode(ViewMode::List));
             }
-            if ui::toolbar_button(ui, Icon::Grid, None, "Show as a grid", !grid).clicked() {
+            if widgets::toolbar_button(ui, Icon::Grid, None, "Show as a grid", !grid).clicked() {
                 actions.push(Action::SetViewMode(ViewMode::Grid));
             }
             separator(ui);
@@ -335,7 +339,7 @@ pub fn toolbar(
             );
             let (icon_rect, _) =
                 ui.allocate_exact_size(egui::Vec2::splat(14.0), egui::Sense::hover());
-            ui::draw_icon(ui.painter(), icon_rect, Icon::Search, theme::LIGHT.text_dim);
+            widgets::draw_icon(ui.painter(), icon_rect, Icon::Search, theme::LIGHT.text_dim);
         });
     });
 }

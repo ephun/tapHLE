@@ -18,7 +18,7 @@
 //! Geometry is a fraction of the guest screen throughout, so the canvas can be
 //! any size on screen and the app can be any shape. See [tapHLE::controls].
 
-use crate::theme;
+use crate::ui::theme;
 use egui::{Color32, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use tapHLE::controls::{Binding, ControlLayout, Geometry, Source, Target, TargetKind};
 use tapHLE::options::{Button, Key, KeyDpad};
@@ -243,7 +243,7 @@ pub struct ControlEditor {
     /// placing a marker on a black rectangle and guessing where the app's
     /// button is, which is the thing this editor exists to stop.
     backdrop: Option<egui::TextureHandle>,
-    capture: Option<crate::capture::Capture>,
+    capture: Option<crate::run::capture::Capture>,
     capture_error: Option<String>,
     /// Set while the editor is waiting for a key press to bind.
     listening: bool,
@@ -333,7 +333,7 @@ impl ControlEditor {
     }
 
     /// Take over a capture the frontend started.
-    pub fn capturing(&mut self, capture: crate::capture::Capture) {
+    pub fn capturing(&mut self, capture: crate::run::capture::Capture) {
         self.capture = Some(capture);
         self.capture_error = None;
     }
@@ -343,13 +343,13 @@ impl ControlEditor {
             return;
         };
         match capture.poll() {
-            crate::capture::Progress::Running | crate::capture::Progress::Taking => {
+            crate::run::capture::Progress::Running | crate::run::capture::Progress::Taking => {
                 // Nothing else would wake the interface: the app closing, or
                 // the frame landing, are both changes on disk rather than
                 // input events.
                 ctx.request_repaint_after(std::time::Duration::from_millis(250));
             }
-            crate::capture::Progress::Ready(frame) => {
+            crate::run::capture::Progress::Ready(frame) => {
                 let image = egui::ColorImage::from_rgba_unmultiplied(
                     [frame.width, frame.height],
                     &frame.rgba,
@@ -358,7 +358,7 @@ impl ControlEditor {
                     Some(ctx.load_texture("control-editor-backdrop", image, Default::default()));
                 self.capture = None;
             }
-            crate::capture::Progress::Failed(e) => {
+            crate::run::capture::Progress::Failed(e) => {
                 self.capture_error = Some(e);
                 self.capture = None;
             }
@@ -707,7 +707,7 @@ fn canvas(ui: &mut Ui, editor: &mut ControlEditor) {
 
 /// The properties of whatever is selected, and the way to add something.
 fn inspector(ui: &mut Ui, editor: &mut ControlEditor) {
-    crate::ui::section(ui, "The app's screen");
+    crate::ui::widgets::section(ui, "The app's screen");
     // Three states, and only the middle one is new: nothing running, the app
     // running while somebody gets it to the screen they want, and the wait
     // for the frame after they have asked for it.
@@ -787,7 +787,7 @@ fn inspector(ui: &mut Ui, editor: &mut ControlEditor) {
     }
 
     ui.add_space(8.0);
-    crate::ui::section(ui, "Add");
+    crate::ui::widgets::section(ui, "Add");
     ui.horizontal(|ui| {
         let touch = ui.selectable_label(editor.placing == Placing::Touch, "Touch");
         if touch.clicked() {
@@ -815,7 +815,7 @@ fn inspector(ui: &mut Ui, editor: &mut ControlEditor) {
     }
 
     ui.add_space(8.0);
-    crate::ui::section(ui, "Selected");
+    crate::ui::widgets::section(ui, "Selected");
 
     let Some(selected) = editor.selected.clone() else {
         ui.label(

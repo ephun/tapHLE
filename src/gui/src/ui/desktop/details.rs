@@ -15,11 +15,12 @@
 
 use egui::Ui;
 
-use crate::compat::DatabaseSnapshot;
-use crate::library::LibraryEntry;
-use crate::theme;
-use crate::timefmt;
-use crate::ui::{self, Action};
+use crate::state::compat::DatabaseSnapshot;
+use crate::state::library::LibraryEntry;
+use crate::state::timefmt;
+use crate::state::Action;
+use crate::ui::theme;
+use crate::ui::widgets;
 
 pub struct DetailsContext<'a> {
     pub entry: Option<&'a LibraryEntry>,
@@ -96,7 +97,7 @@ fn header(
                 .color(theme::LIGHT.error),
         );
         ui.label(
-            egui::RichText::new(crate::storage::display_path(&entry.path))
+            egui::RichText::new(crate::platform::storage::display_path(&entry.path))
                 .small()
                 .color(theme::LIGHT.text_dim),
         );
@@ -161,15 +162,17 @@ fn version_row(
                 .color(theme::LIGHT.text_dim),
         );
         egui::ComboBox::from_id_salt("details-version")
-            .selected_text(crate::library::version_label(
+            .selected_text(crate::state::library::version_label(
                 entry,
                 context.versions.iter().copied(),
             ))
             .width(120.0)
             .show_ui(ui, |ui| {
                 for other in &context.versions {
-                    let mut label =
-                        crate::library::version_label(other, context.versions.iter().copied());
+                    let mut label = crate::state::library::version_label(
+                        other,
+                        context.versions.iter().copied(),
+                    );
                     if other.missing {
                         label.push_str(" — missing");
                     }
@@ -199,7 +202,7 @@ fn compatibility(
     entry: &LibraryEntry,
     actions: &mut Vec<Action>,
 ) {
-    ui::section(ui, "Compatibility");
+    widgets::section(ui, "Compatibility");
     let record = context.database.find(&entry.metadata.bundle_identifier);
 
     ui.horizontal(|ui| {
@@ -208,7 +211,7 @@ fn compatibility(
         );
         match record.and_then(|record| record.rating) {
             Some(rating) => {
-                ui::stars(ui, Some(rating), 13.0);
+                widgets::stars(ui, Some(rating), 13.0);
                 ui.label(egui::RichText::new(format!("{rating}/5")).small());
             }
             None if !context.database_available => {
@@ -233,7 +236,7 @@ fn compatibility(
             egui::Label::new(egui::RichText::new("This machine").color(theme::LIGHT.text_dim))
                 .wrap(),
         );
-        if let Some(new_rating) = ui::star_picker(ui, entry.local_rating.stars) {
+        if let Some(new_rating) = widgets::star_picker(ui, entry.local_rating.stars) {
             actions.push(Action::SetLocalRating(entry.id.clone(), new_rating));
         }
     });
@@ -267,25 +270,25 @@ fn compatibility(
 }
 
 fn details(ui: &mut Ui, entry: &LibraryEntry, actions: &mut Vec<Action>) {
-    ui::section(ui, "Details");
+    widgets::section(ui, "Details");
     let metadata = &entry.metadata;
 
-    let identifier = ui::selectable_field(ui, "Bundle ID", &metadata.bundle_identifier);
+    let identifier = widgets::selectable_field(ui, "Bundle ID", &metadata.bundle_identifier);
     if identifier.clicked() {
         actions.push(Action::CopyText(metadata.bundle_identifier.clone()));
     }
     identifier.on_hover_text("Click to copy");
 
-    ui::field(ui, "Bundle version", &metadata.bundle_version);
+    widgets::field(ui, "Bundle version", &metadata.bundle_version);
     if let Some(short) = &metadata.short_version {
-        ui::field(ui, "Short version", short);
+        widgets::field(ui, "Short version", short);
     }
     if let Some(minimum) = &metadata.minimum_os_version {
-        ui::field(ui, "Minimum iOS", minimum);
+        widgets::field(ui, "Minimum iOS", minimum);
     }
-    ui::field(ui, "Device family", &metadata.device_family_summary());
+    widgets::field(ui, "Device family", &metadata.device_family_summary());
     if !metadata.supported_orientations.is_empty() {
-        ui::field(
+        widgets::field(
             ui,
             "Orientations",
             &metadata
@@ -300,21 +303,21 @@ fn details(ui: &mut Ui, entry: &LibraryEntry, actions: &mut Vec<Action>) {
         );
     }
     if !metadata.required_capabilities.is_empty() {
-        ui::field(ui, "Requires", &metadata.required_capabilities.join(", "));
+        widgets::field(ui, "Requires", &metadata.required_capabilities.join(", "));
     }
     if let Some(genre) = &metadata.genre {
-        ui::field(ui, "Genre", genre);
+        widgets::field(ui, "Genre", genre);
     }
     if let Some(released) = &metadata.release_date {
         // The store records a full timestamp; the date is the useful part.
-        ui::field(ui, "Released", &released[..released.len().min(10)]);
+        widgets::field(ui, "Released", &released[..released.len().min(10)]);
     }
     if let Some(size) = metadata.size_bytes {
-        ui::field(ui, "Size", &format_size(size));
+        widgets::field(ui, "Size", &format_size(size));
     }
 
-    let path = crate::storage::display_path(&entry.path);
-    let path_row = ui::selectable_field(ui, "Location", &path);
+    let path = crate::platform::storage::display_path(&entry.path);
+    let path_row = widgets::selectable_field(ui, "Location", &path);
     if path_row.clicked() {
         actions.push(Action::CopyText(path.clone()));
     }
@@ -322,27 +325,28 @@ fn details(ui: &mut Ui, entry: &LibraryEntry, actions: &mut Vec<Action>) {
 }
 
 fn activity(ui: &mut Ui, entry: &LibraryEntry) {
-    ui::section(ui, "Activity");
+    widgets::section(ui, "Activity");
     let now = timefmt::now_seconds();
     match entry.last_played {
         Some(when) => {
-            let row = ui::selectable_field(ui, "Last played", &timefmt::format_relative(when, now));
+            let row =
+                widgets::selectable_field(ui, "Last played", &timefmt::format_relative(when, now));
             row.on_hover_text(timefmt::format_datetime(when));
         }
-        None => ui::field(ui, "Last played", "never"),
+        None => widgets::field(ui, "Last played", "never"),
     }
     if entry.play_seconds > 0 {
-        ui::field(
+        widgets::field(
             ui,
             "Time played",
             &timefmt::format_duration(entry.play_seconds),
         );
     }
     if entry.play_count > 0 {
-        ui::field(ui, "Times launched", &entry.play_count.to_string());
+        widgets::field(ui, "Times launched", &entry.play_count.to_string());
     }
     if entry.added > 0 {
-        ui::field(ui, "Added", &timefmt::format_date(entry.added));
+        widgets::field(ui, "Added", &timefmt::format_date(entry.added));
     }
 }
 
