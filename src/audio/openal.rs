@@ -38,9 +38,15 @@ impl Drop for OpenALManager {
 #[derive(Debug)]
 pub struct OpenALContext {
     context: *mut ALCcontext,
-    // We don't need to guarantee the lifetime or thread-safety of the device -
-    // OpenAL (should) do that for us.
     device: *mut ALCdevice,
+    /// Whether closing the device is this context's job.
+    ///
+    /// True when [OpenALContext::new] opened one for itself. False for a
+    /// device handed in by a caller — the guest's own `alcOpenDevice` goes
+    /// through [crate::frameworks::openal], which tracks its devices and
+    /// closes them when the app asks. Closing one here as well would close it
+    /// twice.
+    owns_device: bool,
 }
 
 impl OpenALContext {
@@ -49,7 +55,10 @@ impl OpenALContext {
         if device.is_null() {
             return Err("Could not open OpenAL device".to_string());
         }
-        unsafe { Self::new_with_device_and_attrlist(_manager, device, std::ptr::null()) }
+        let mut context =
+            unsafe { Self::new_with_device_and_attrlist(_manager, device, std::ptr::null()) }?;
+        context.owns_device = true;
+        Ok(context)
     }
 
     pub unsafe fn new_with_device_and_attrlist(
@@ -66,7 +75,12 @@ impl OpenALContext {
             device,
             context
         );
-        Ok(Self { context, device })
+        // A caller-supplied device stays the caller's to close.
+        Ok(Self {
+            context,
+            device,
+            owns_device: false,
+        })
     }
 
     pub fn make_current<'al_ctx, 'manager: 'al_ctx>(
@@ -103,7 +117,15 @@ impl OpenALContext {
 
 impl Drop for OpenALContext {
     fn drop(&mut self) {
-        unsafe { al_sys::alcDestroyContext(self.context) };
+        unsafe {
+            // Not current first. Destroying the context that is current is
+            // undefined, and OpenAL Soft is entitled to object.
+            al_sys::alcMakeContextCurrent(std::ptr::null_mut());
+            al_sys::alcDestroyContext(self.context);
+            if self.owns_device {
+                al_sys::alcCloseDevice(self.device);
+            }
+        }
     }
 }
 
