@@ -506,11 +506,8 @@ impl EmulatorSettings {
         {
             args.push(format!("--preferred-languages={languages}"));
         }
-        match self.virtual_cursor_stabilization {
-            Some((smoothing, sticky)) => {
-                args.push(format!("--stabilize-virtual-cursor={smoothing},{sticky}"))
-            }
-            None => (),
+        if let Some((smoothing, sticky)) = self.virtual_cursor_stabilization {
+            args.push(format!("--stabilize-virtual-cursor={smoothing},{sticky}"));
         }
         flag(
             &mut args,

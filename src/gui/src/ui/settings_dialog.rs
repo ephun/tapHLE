@@ -356,6 +356,101 @@ fn optional_row<T: Clone + PartialEq>(
     });
 }
 
+/// A tri-state group: the "set" checkbox and the name on their own line, and
+/// the controls indented under it.
+///
+/// `optional_row` puts everything on one line, which is right for one control
+/// and falls apart for two. The inner controls need labels of their own, and
+/// those land 150 pixels right of the row's label; the stacked block stretches
+/// the row it sits in; and the "inherits" note ends up beside a two-line pile
+/// rather than after the thing it describes.
+fn optional_block<T: Clone + PartialEq>(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut Option<T>,
+    default_value: T,
+    inherited: Option<String>,
+    contents: impl FnOnce(&mut Ui, &mut T),
+) {
+    ui.horizontal(|ui| {
+        let mut set = value.is_some();
+        // The label goes on the checkbox itself. Nothing else on this line
+        // could be mistaken for the thing it switches, so there is no reason
+        // to hold it apart the way a row with a control after it must.
+        if ui
+            .checkbox(&mut set, label)
+            .on_hover_text(if inherited.is_some() {
+                "Set this for this app"
+            } else {
+                "Set this. Leave it clear to use tapHLE's own default and the \
+                 options files."
+            })
+            .changed()
+        {
+            *value = set.then(|| value.clone().unwrap_or_else(|| default_value.clone()));
+        }
+        if value.is_none() {
+            if let Some(inherited) = &inherited {
+                ui.label(
+                    egui::RichText::new(inherited)
+                        .small()
+                        .color(theme::LIGHT.text_dim),
+                );
+            }
+        }
+    });
+    ui.indent(label, |ui| match value {
+        Some(inner) => contents(ui, inner),
+        None => {
+            ui.add_enabled_ui(false, |ui| {
+                let mut ghost = default_value.clone();
+                contents(ui, &mut ghost);
+            });
+        }
+    });
+}
+
+/// A named pair of buttons standing in for a checkbox.
+///
+/// Every row already begins with a checkbox that says whether the setting is
+/// decided here. A second checkbox for the value itself puts two boxes on one
+/// line with no way to tell which decides what, and greying the second one out
+/// leaves a tick that still looks like "this is on". Naming both states says
+/// which is which, and still says it when the row is unset.
+fn switch(ui: &mut Ui, value: &mut bool) -> egui::Response {
+    let height = ui.spacing().interact_size.y;
+    let on = ui.add_sized([44.0, height], egui::Button::selectable(*value, "On"));
+    if on.clicked() {
+        *value = true;
+    }
+    let off = ui.add_sized([44.0, height], egui::Button::selectable(!*value, "Off"));
+    if off.clicked() {
+        *value = false;
+    }
+    on.union(off)
+}
+
+/// One tri-state row for a setting that is only ever on or off.
+///
+/// `note` is what the second checkbox used to spell out. It is a hint rather
+/// than the setting's name, so it belongs where the dialog puts its other
+/// hints, on hover, instead of competing with the row's own label.
+fn switch_row(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut Option<bool>,
+    default_value: bool,
+    inherited: Option<String>,
+    note: &str,
+) {
+    optional_row(ui, label, value, default_value, inherited, |ui, value| {
+        let response = switch(ui, value);
+        if !note.is_empty() {
+            response.on_hover_text(note);
+        }
+    });
+}
+
 fn describe<T: std::fmt::Debug>(value: &Option<T>, describe: impl Fn(&T) -> String) -> String {
     match value {
         Some(value) => format!("inherits {}", describe(value)),
@@ -389,15 +484,13 @@ fn emulator_page(
 
 fn display_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {
     crate::ui::section(ui, "Window");
-    optional_row(
+    switch_row(
         ui,
         "Start in full screen",
         &mut draft.fullscreen,
         false,
         inherited.map(|i| describe(&i.fullscreen, |v| on_off(*v))),
-        |ui, value| {
-            ui.checkbox(value, if *value { "Full screen" } else { "Windowed" });
-        },
+        "The window fills the screen as soon as the app starts.",
     );
     optional_row(
         ui,
@@ -490,25 +583,21 @@ fn graphics_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
                 });
         },
     );
-    optional_row(
+    switch_row(
         ui,
         "Force composition",
         &mut draft.force_composition,
         false,
         inherited.map(|i| describe(&i.force_composition, |v| on_off(*v))),
-        |ui, value| {
-            ui.checkbox(value, "Present through the compositor");
-        },
+        "Presents through the compositor.",
     );
-    optional_row(
+    switch_row(
         ui,
         "Ignore OpenGL errors",
         &mut draft.ignore_gl_errors,
         false,
         inherited.map(|i| describe(&i.ignore_gl_errors, |v| on_off(*v))),
-        |ui, value| {
-            ui.checkbox(value, "Hide host errors from the app");
-        },
+        "Hides this computer's OpenGL errors from the app.",
     );
 
     crate::ui::section(ui, "Frame rate");
@@ -547,15 +636,13 @@ fn graphics_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
         .small()
         .color(theme::LIGHT.text_dim),
     );
-    optional_row(
+    switch_row(
         ui,
         "Log the frame rate",
         &mut draft.print_fps,
         false,
         inherited.map(|i| describe(&i.print_fps, |v| on_off(*v))),
-        |ui, value| {
-            ui.checkbox(value, "Once per second, to the log");
-        },
+        "Writes it to the log once a second.",
     );
 }
 
@@ -587,34 +674,35 @@ fn controls_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
 
     crate::ui::section(ui, "Virtual cursor");
     caption(ui, "The right stick moves a pointer. Press it to tap.");
-    optional_row(
+    // Two sliders, so a block rather than a row: on one line the second
+    // slider's label sits 150 pixels right of "Steady it" and reads as a
+    // separate setting.
+    optional_block(
         ui,
-        "Steady it",
+        "Steady the pointer",
         &mut draft.virtual_cursor_stabilization,
         (0.1, 10.0),
         inherited.map(|i| {
             describe(&i.virtual_cursor_stabilization, |(s, r)| {
-                format!("{s}s, {r}px")
+                format!("{s} s, {r} px")
             })
         }),
         |ui, value| {
-            ui.vertical(|ui| {
-                slider_row(ui, "Smoothing", |ui| {
-                    ui.add(
-                        egui::Slider::new(&mut value.0, 0.0..=0.5)
-                            .fixed_decimals(2)
-                            .suffix(" s"),
-                    )
-                    .on_hover_text("Softens sharp movement. Costs response.");
-                });
-                slider_row(ui, "Ignore movement under", |ui| {
-                    ui.add(
-                        egui::Slider::new(&mut value.1, 0.0..=40.0)
-                            .fixed_decimals(0)
-                            .suffix(" px"),
-                    )
-                    .on_hover_text("Keeps a tap from being read as a drag.");
-                });
+            slider_row(ui, "Smoothing", |ui| {
+                ui.add(
+                    egui::Slider::new(&mut value.0, 0.0..=0.5)
+                        .fixed_decimals(2)
+                        .suffix(" s"),
+                )
+                .on_hover_text("Softens sharp movement. Costs response.");
+            });
+            slider_row(ui, "Ignore movement under", |ui| {
+                ui.add(
+                    egui::Slider::new(&mut value.1, 0.0..=40.0)
+                        .fixed_decimals(0)
+                        .suffix(" px"),
+                )
+                .on_hover_text("Keeps a tap from being read as a drag.");
             });
         },
     );
@@ -625,16 +713,13 @@ fn controls_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
         "A desktop has no accelerometer, so a stick stands in for it.",
     );
     caption(ui, "You can also tilt by holding the right mouse button.");
-    optional_row(
+    switch_row(
         ui,
         "Tilt with the left stick",
         &mut draft.analog_stick_tilt,
         true,
         inherited.map(|i| describe(&i.analog_stick_tilt, |v| on_off(*v))),
-        |ui, value| {
-            ui.checkbox(value, "The left stick tilts the device")
-                .on_hover_text("Turn off to leave the stick free for the app.");
-        },
+        "Off leaves the stick free for whatever the app maps it to.",
     );
     for (label, field, default, hover) in [
         (
@@ -689,10 +774,7 @@ fn app_control_layout(
 
     if layout.is_empty() {
         if inherited.is_empty() {
-            caption(
-                ui,
-                "No controller mapping. The app is played with the mouse.",
-            );
+            caption(ui, "Nothing mapped. The app is played with the mouse.");
         } else {
             caption(
                 ui,
@@ -754,15 +836,13 @@ fn slider_row(ui: &mut Ui, label: &str, slider: impl FnOnce(&mut Ui)) {
 fn fonts_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {
     use tapHLE::font::catalogue;
 
-    optional_row(
+    switch_row(
         ui,
         "Installed fonts",
         &mut draft.use_host_fonts,
         true,
         inherited.map(|i| describe(&i.use_host_fonts, |v| on_off(*v))),
-        |ui, value| {
-            ui.checkbox(value, "Use mine when the name matches");
-        },
+        "Uses a font from this computer when the name matches.",
     );
 
     ui.add_space(6.0);
@@ -879,25 +959,21 @@ fn font_row(
 
 fn system_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {
     crate::ui::section(ui, "Behaviour");
-    optional_row(
+    switch_row(
         ui,
         "Network access",
         &mut draft.network_access,
         false,
         inherited.map(|i| describe(&i.network_access, |v| on_off(*v))),
-        |ui, value| {
-            ui.checkbox(value, "Let apps reach the network");
-        },
+        "Lets the app reach the network.",
     );
-    optional_row(
+    switch_row(
         ui,
         "Error message box",
         &mut draft.error_popup,
         true,
         inherited.map(|i| describe(&i.error_popup, |v| on_off(*v))),
-        |ui, value| {
-            ui.checkbox(value, "Show a box when a run fails");
-        },
+        "Shows a box when a run fails, instead of only logging it.",
     );
     optional_row(
         ui,
@@ -915,15 +991,13 @@ fn system_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Emu
     );
 
     crate::ui::section(ui, "Advanced");
-    optional_row(
+    switch_row(
         ui,
         "Direct memory access",
         &mut draft.direct_memory_access,
         true,
         inherited.map(|i| describe(&i.direct_memory_access, |v| on_off(*v))),
-        |ui, value| {
-            ui.checkbox(value, "Fast path for guest memory");
-        },
+        "A faster path to the app's memory.",
     );
     optional_row(
         ui,

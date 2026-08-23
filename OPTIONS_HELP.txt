@@ -184,6 +184,46 @@ Game controller options:
         right analog stick (tap/hold by pressing the stick or right shoulder
         button).
 
+    --key-to-touch=...
+        Maps a key on this computer's keyboard to a point on the simulated
+        touch screen of the device, exactly as --button-to-touch does for a
+        game controller. Holding the key holds the touch.
+
+        This is three parts separated by commas: the name of a key, the X
+        co-ordinate and the Y co-ordinate. The co-ordinates work the same way
+        as --button-to-touch's.
+
+        Key names are: A to Z; Num0 to Num9 for the number row; Left, Right,
+        Up and Down; Space, Return, Escape, Tab and Backspace; Shift, Ctrl and
+        Alt (either one of a pair); and Comma, Period, Slash, Semicolon,
+        Quote, LeftBracket, RightBracket, Backslash, Minus, Equals and
+        Backquote.
+
+        For example, --key-to-touch=Space,470,310 will make the space bar
+        simulate tapping the bottom-right corner of a landscape game.
+
+        A key mapped this way does not reach the app as text. F12 cannot be
+        mapped: it always opens the debugger.
+
+        Except where specified in tapHLE_default_options.txt, this is not used
+        by default.
+
+    --key-dpad-to-touch=...
+        Maps four keys to simulated finger movement within a region of the
+        simulated touch screen, the keyboard's equivalent of --dpad-to-touch.
+        Holding two adjacent directions gives a diagonal.
+
+        This is eight parts separated by commas: the up, down, left and right
+        keys, then x,y,w,h. Key names are the same as --key-to-touch's, and
+        the co-ordinates work the same way as --dpad-to-touch's.
+
+        For example, --key-dpad-to-touch=W,S,A,D,10,10,50,50 will steer a
+        touch around a 50x50 pixel region starting at (10,10) with the W, A, S
+        and D keys.
+
+        Except where specified in tapHLE_default_options.txt, this is not used
+        by default.
+
     --stabilize-virtual-cursor=...
     --no-stabilize-virtual-cursor
         Apply motion smoothing and a sticky radius to the virtual cursor

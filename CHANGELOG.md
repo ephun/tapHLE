@@ -698,14 +698,33 @@
   edge you drag to resize the details panel sat on the same two pixels, so
   moving the pointer across it flipped between the two and neither the
   pointer nor the drawing said which one a drag would get.
-- You can now put a game's controller buttons where they belong by looking at
-  the game. Its own **Settings… ▸ Controls** has a **Place controls on the
-  screen…** button, which opens the game's screen as a canvas: press **Show
-  the app's screen** and tapHLE runs the game for a moment, takes one picture
-  and closes it, then you drag a marker onto the button you want and pick
-  which controller button presses it. Nothing is applied until you press Save,
-  so Undo and Cancel really do undo. Setting this up used to mean working out
-  a coordinate by eye and typing `--button-to-touch=A,470,310`.
+- You can now put a game's controls where they belong by looking at the game.
+  Its own **Settings… ▸ Controls** has a **Place controls on the screen…**
+  button, which opens the game's screen as a canvas: press **Show the app's
+  screen** and the game starts in its own window, play it to the screen you
+  want to map, then press **Take the picture**. You drag a marker onto the
+  button you want and pick what presses it. Nothing is applied until you press
+  Save, so Undo and Cancel really do undo. Setting this up used to mean working
+  out a coordinate by eye and typing `--button-to-touch=A,470,310`.
+- You decide when that picture is taken. The game stays up until you ask for
+  it, with no timer of any kind, because only you can tell a publisher's logo
+  from the screen your controls belong on.
+- Controls can be bound to the keyboard, so tapHLE is playable without a
+  controller. Any control can be a key — select it, press **Press a key**, and
+  press the one you want — and a stick zone can be steered with the arrow keys
+  or with W, A, S and D, diagonals included. On the command line these are
+  `--key-to-touch=` and `--key-dpad-to-touch=`.
+- A stick zone is now drawn as a circle, and a new one is a circle rather than
+  whatever shape the app's screen happens to be. It stands for a thumb sweeping
+  a stick, which reaches every direction equally; the old zone was a quarter of
+  each axis, which on a portrait phone came out as an 80 by 120 oval. It is
+  also centred on where you click instead of hanging below and to the right
+  of it.
+- A control's caption stays with its control. A long one — **Left shoulder**,
+  **Arrow keys**, or a name you type yourself — used to be drawn as a single
+  line straight through the marker and off the edge of the canvas. It now wraps
+  under the marker, on a backing dark enough to read against the game's own
+  screen, and never leaves the picture.
 - Because a control is now stored as a position on the screen rather than a
   pixel, the same layout means the same place whichever device a game is
   emulated as, and however the screen is turned.
@@ -732,6 +751,16 @@
   `tapHLE_options.txt`, a file the window never showed you, and the same game
   could behave differently depending on how you started it. Your existing
   settings move across the first time you open the window.
+- Every on-or-off setting now says which state it is in. Each row used to end
+  in a second checkbox that restated the setting's name in different words —
+  **Tilt with the left stick** followed by a ticked, greyed-out box called
+  **The left stick tilts the device** — leaving two boxes on one line with no
+  way to tell which decided what. There is one **On**/**Off** pair instead,
+  which still reads correctly when the row is following a setting from
+  somewhere else.
+- The virtual cursor's two sliders no longer sit crammed into a row built for
+  one control, with the second slider's label stranded far to the right of the
+  setting it belongs to.
 - `--deadzone` now rejects a value outside 0 to 1 with a message that says so.
   It was being checked as though it were an angle, so anything from -360 to 360
   was accepted: a negative one crashed tapHLE the moment a stick moved, and one
