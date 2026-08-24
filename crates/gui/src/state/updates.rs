@@ -220,15 +220,16 @@ pub fn evaluate(releases: &[Release], current: &str) -> UpdateStatus {
 
 /// Order two version strings the way semantic versioning does.
 ///
-/// tapHLE's versions are `0.3.0-alpha.1` shaped: dotted numbers, then an
-/// optional pre-release tail. The rules that matter are that numbers compare
-/// numerically rather than as text — so 0.10 is after 0.9 — and that a
-/// pre-release sorts before the release it leads to, so an alpha must never
-/// be announced as an update to the final version.
+/// tapHLE numbered releases are dotted numbers; development builds add a
+/// `-dev.N` tail. Numbers compare numerically rather than as text — so 0.10 is
+/// after 0.9 — and a development build sorts before the release it leads to.
 pub fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
     use std::cmp::Ordering;
 
     fn split(version: &str) -> (&str, Option<&str>) {
+        let version = version
+            .split_once('+')
+            .map_or(version, |(precedence, _)| precedence);
         match version.split_once('-') {
             Some((core, tail)) => (core, Some(tail)),
             None => (version, None),
@@ -302,7 +303,7 @@ mod tests {
         let releases = parse_releases("[]").unwrap();
         assert!(releases.is_empty());
         assert_eq!(
-            evaluate(&releases, "0.3.0-alpha.1"),
+            evaluate(&releases, "0.2.4-dev.1"),
             UpdateStatus::NoReleasesPublished
         );
     }
@@ -336,7 +337,7 @@ mod tests {
                         "draft":false,"prerelease":false,
                         "published_at":"2026-09-01T00:00:00Z"}]"#;
         let releases = parse_releases(body).unwrap();
-        match evaluate(&releases, "0.3.0-alpha.1") {
+        match evaluate(&releases, "0.2.4-dev.1") {
             UpdateStatus::Available(release) => assert_eq!(release.version, "0.4.0"),
             other => panic!("expected an update, got {other:?}"),
         }
@@ -344,14 +345,14 @@ mod tests {
 
     #[test]
     fn the_current_release_is_not_an_update() {
-        let body = r#"[{"tag_name":"taphle-v0.3.0-alpha.1",
+        let body = r#"[{"tag_name":"taphle-v0.2.4",
                         "html_url":"https://x/1","draft":false,
-                        "prerelease":true}]"#;
+                        "prerelease":false}]"#;
         let releases = parse_releases(body).unwrap();
         assert_eq!(
-            evaluate(&releases, "0.3.0-alpha.1"),
+            evaluate(&releases, "0.2.4"),
             UpdateStatus::UpToDate {
-                latest: "0.3.0-alpha.1".to_string()
+                latest: "0.2.4".to_string()
             }
         );
     }
@@ -365,19 +366,19 @@ mod tests {
         assert_eq!(compare_versions("0.3.0", "0.3"), Ordering::Equal);
     }
 
-    /// An alpha leads to the release, not the other way round; getting this
-    /// backwards would nag every user of a final build to install an alpha.
+    /// A development build leads to the release, not the other way round.
     #[test]
-    fn a_prerelease_sorts_before_its_release() {
-        assert_eq!(compare_versions("0.3.0-alpha.1", "0.3.0"), Ordering::Less);
+    fn development_versions_sort_before_their_release() {
+        assert_eq!(compare_versions("0.2.4-dev.1", "0.2.4"), Ordering::Less);
         assert_eq!(
-            compare_versions("0.3.0-alpha.2", "0.3.0-alpha.1"),
+            compare_versions("0.2.4-dev.12", "0.2.4-dev.2"),
             Ordering::Greater
         );
         assert_eq!(
-            compare_versions("0.3.0-alpha.1", "0.3.0-beta.1"),
-            Ordering::Less
+            compare_versions("0.2.4-dev.12+gabcdef0", "0.2.4-dev.2+g1234567"),
+            Ordering::Greater
         );
+        assert_eq!(compare_versions("0.2.4+gabcdef0", "0.2.4"), Ordering::Equal);
     }
 
     /// Whatever GitHub sends, the check must not panic; it runs at startup.

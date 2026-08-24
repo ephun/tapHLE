@@ -10,7 +10,7 @@ members = ["crates/taphle", "crates/gui"]
 default-members = ["crates/taphle", "crates/gui"]
 
 [workspace.package]
-version = "0.3.0-alpha.1"
+version = "0.2.4-dev.1"
 edition = "2021"
 license = "MPL-2.0"
 authors = ["tapHLE project contributors", "touchHLE project contributors"]

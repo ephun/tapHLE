@@ -8,7 +8,7 @@
 ;
 ;   cd dev-scripts
 ;   ./make-windows-bundle.sh ../target/release/tapHLE.exe
-;   iscc /DBundleDir=..\tapHLE_windows_bundle /DAppVersion=0.3.0-alpha.1 tapHLE.iss
+;   iscc /DBundleDir=..\tapHLE_windows_bundle /DAppVersion=0.2.4 tapHLE.iss
 ;
 ; It installs per user, into %LOCALAPPDATA%\Programs\tapHLE, and asks for no
 ; administrator rights. That is not laziness: tapHLE keeps its saved app data,
@@ -45,7 +45,7 @@ DefaultGroupName=tapHLE
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-OutputBaseFilename=tapHLE-{#AppVersion}-windows-x86_64-setup
+OutputBaseFilename=tapHLE-v{#AppVersion}-Windows-x86_64-setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

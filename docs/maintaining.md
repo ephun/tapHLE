@@ -8,22 +8,30 @@ Per-platform status lives in `docs/platforms.md` and is not repeated here.
 ## Versioning
 
 tapHLE uses Semantic Versioning for its own release line. The inherited `0.2.3`
-version belongs to the upstream starting point; the first tapHLE prerelease is
-`0.3.0-alpha.1`, and the first stable tapHLE release will be `0.3.0`.
+is the upstream starting point. The first tapHLE release is `0.2.4`.
 
-- `trunk` is the preview channel. Preview builds are identified by their Git
-  commit and are not numbered releases.
-- Numbered prereleases use `alpha.N`, then `beta.N` when broader testing is
-  appropriate, and `rc.N` only for builds believed ready to become stable.
-- While the project is below 1.0, increment the minor version for a meaningful
-  user-facing compatibility or emulator capability milestone. Increment the
-  patch version for fixes to an existing numbered release.
-- Reserve 1.0 for a dependable distribution with established release,
-  configuration, save-data, and compatibility expectations.
+The emulator version also marks the guest-OS compatibility generation:
+
+- `0.2.x` incrementally expands iPhone OS 2 compatibility;
+- `0.3.x` corresponds to iPhone OS 3 compatibility.
+
+This is a direction for the release line, not a claim that every API from that OS
+is already implemented.
+
+There are two build classes only:
+
+- **Numbered releases** use a plain version such as `0.2.4`.
+- **Development builds** use `0.2.4-dev.N`, with `N` starting at 1 and increasing.
+  A build may append exact commit metadata, for example
+  `0.2.4-dev.1+g2b5b4089`.
+
+There are no alpha, beta or release-candidate stages. The Git commit is the
+canonical source identity; development metadata is a convenience and never
+replaces the full commit recorded in build provenance.
 
 Do not put app names, upstream revisions, dates, or a permanent `tap` suffix in
-the Cargo version. Compatibility records already identify exact app versions and
-emulator commits.
+the Cargo version. Compatibility and release-verification records carry exact app
+identity, source commit and artifact hashes separately.
 
 The repository pins its Rust compiler, Clippy, and Rustfmt version in
 `rust-toolchain.toml`. Update that file deliberately, run the full lint and test
@@ -31,63 +39,49 @@ suite with the new toolchain, and record any required source changes in a normal
 reviewed commit. Release builds must not depend on whichever stable toolchain
 happened to be installed on a runner that day.
 
-## The first release is on hold
+## The first release gate
 
-**The first numbered tapHLE release waits for the new GUI on all five
-platforms.** Until that ships, the trigger below does not fire, however full
-`Unreleased` gets.
+The first numbered release is `0.2.4`, and it ships on Windows, Linux, macOS,
+Android and iOS together. Do not create or publish a release or tag until the
+complete release matrix passes.
 
-The desktop GUI exists and is tested on Windows. The bar the maintainer set on
-2026-08-17 is wider than that — see "Release eligibility" in
-`docs/platforms.md`. This is a maintainer decision recorded here so that the
-rule is visibly held rather than quietly not working, and
-`dev-scripts/release-readiness.ps1` reports it as a blocker for the same reason.
+The `0.2.4` compatibility cohort froze on 2026-08-24. Its exact 24 app versions
+are preserved in `compatibility/release-cohorts/0.2.4.json`: 22 entered through
+approved three-star Windows reports and two through audited pending reports from
+an Ethan-controlled agent identity. Four other pending three-star submissions
+were excluded because their own evidence reported mirrored or rotated rendering,
+which does not meet tapHLE's three-star rendering rule. The immutable pre-change
+live-database backup and its digest are recorded in that manifest's provenance
+fields.
 
-The reasoning is that a first release is the one release that gets looked at as
-a statement of what the project is. Everything after it is an increment against
-that baseline. Shipping `0.3.0-alpha.1` as a command-line emulator would set the
-baseline in the wrong place.
+A candidate passes only when every frozen app independently reaches at least
+three stars on all five hosts. Every run must use a product built from the same
+full candidate commit and record the product hash and build provenance. A build
+or launch check is not a substitute for the app matrix.
 
-This is a hold on the *first* release only. When the GUI ships, lift it by
-flipping the flag at the top of `release-readiness.ps1` and deleting this
-section; the mechanical trigger below then applies from that point on and is not
-subject to further judgement calls.
+Release reconfirmations are stored as release-verification records in tapHLEdb.
+They are distinct from rating-changing compatibility reports, so repeatedly
+confirming an existing rating for release qualification does not create false
+rating history.
+
+`dev-scripts/release-readiness.ps1` is the mechanical gate. Until it can read a
+complete five-host matrix for the exact candidate commit and all required checks
+pass, its only correct result is NOT MET.
 
 ## When to cut one
 
-The trigger is the changelog, not a commit count and not a judgement call about
-significance:
+A non-empty changelog is necessary but not sufficient. Cut `0.2.4` only after:
 
-**If `## Unreleased` in `CHANGELOG.md` has at least one user-visible entry and
-`trunk` is green, cut a prerelease before starting the next body of work.**
+1. all five installable products come from one exact clean `trunk` commit;
+2. each product's hash and reproducible build provenance are recorded;
+3. every frozen app has a valid three-star-or-better release verification on
+   every host for those products; and
+4. repository policy, lint, unit, integration, packaging and visible runtime
+   checks pass on the applicable hosts.
 
-Run `dev-scripts/release-readiness.ps1` to evaluate this. It reports MET or NOT
-MET with reasons and exits non-zero when a release should not be cut, so the
-answer does not depend on anyone remembering to look. Check it after merging a
-batch of work; `-Quick` skips the test suites for a fast look while a build is
-otherwise occupied, and says that it cannot report readiness on its own.
-
-That is the whole rule. It is deliberately mechanical, because the previous
-wording — a "meaningful milestone" — had no edge, and something with no edge
-never fires: the project reached hundreds of commits and an untouched
-`Unreleased` heading without a single release. A rule that depends on deciding
-whether work was important enough will always lose to the next piece of work.
-
-Consequences worth stating so the rule is not quietly softened:
-
-- An `alpha.N` is cheap and is meant to be. Bump `N` and cut another; there is
-  no cost to a prerelease that turns out to be a small one, and a large cost to
-  a backlog nobody can summarise.
-- If `Unreleased` is empty, there is nothing to release. Refactors, tests,
-  tooling and documentation legitimately produce no entry, and a period with no
-  release is the correct outcome rather than a missed one.
-- Do not batch several capabilities into one release to make it look
-  substantial. The changelog records what happened; the version number is a
-  label, not a verdict.
-
-The version *number* still follows the rules above: within `0.3.0`, successive
-prereleases increment `alpha.N`; a meaningful capability milestone increments
-the minor version and restarts at `alpha.1`.
+Only after that candidate matrix passes should the final changelog format and
+release section be prepared. Do not batch speculative release notes while the
+candidate is still changing.
 
 ## Release notes are the changelog
 
@@ -112,17 +106,21 @@ Release notes should record the upstream base when that provenance is useful.
 The fork-specific annotated tag is the source of release identity:
 
 ```text
-taphle-v0.3.0-alpha.1
-taphle-v0.3.0-rc.1
-taphle-v0.3.0
+taphle-v0.2.4
+taphle-v0.2.5
 ```
 
 The `taphle-` namespace prevents imported upstream tags from being mistaken for
 tapHLE releases. The corresponding user-facing version omits that namespace, for
-example `v0.3.0-alpha.1`. A host's archive is named for its host:
+example `v0.2.4`. Every artifact names its host and architecture:
 
 ```text
-tapHLE-v0.3.0-alpha.1-Windows-x86_64.zip
+tapHLE-v0.2.4-Windows-x86_64.zip
+tapHLE-v0.2.4-Windows-x86_64-setup.exe
+tapHLE-v0.2.4-Linux-x86_64.tar.gz
+tapHLE-v0.2.4-macOS-x86_64.dmg
+tapHLE-v0.2.4-Android-arm64-v8a.apk
+tapHLE-v0.2.4-iOS-arm64.ipa
 ```
 
 A desktop release artifact contains one program, `tapHLE`, which shows the app
@@ -136,52 +134,58 @@ uninstall entry and an upgrade over an existing installation.
 
 A numbered release must:
 
-1. come from the exact current `trunk` commit, never directly from `compat/*`;
+1. come from one exact current `trunk` commit, never directly from `compat/*`;
 2. have a clean worktree and an exact Cargo version, changelog heading, and
    `taphle-v<version>` tag;
-3. pass repository policy, formatting, unit/integration tests, and the release
-   builds in CI;
-4. contain the executables, runtime libraries/fonts, default and user option
-   templates, README/changelog, and license text; and
-5. avoid claims broader than the exact committed compatibility evidence.
+3. pass repository policy, formatting, lint, unit/integration tests, build,
+   packaging and visible runtime validation on every applicable host;
+4. provide real installable products for Windows, Linux, macOS, Android and iOS,
+   all built from that same commit;
+5. record SHA-256 product hashes and build provenance including host, architecture,
+   OS/toolchain versions and build profile;
+6. carry a complete tapHLEdb release-verification matrix for the frozen cohort,
+   with each app independently at three stars or better on every host; and
+7. avoid claims broader than the exact committed compatibility evidence.
 
-An alpha may have incomplete app compatibility. Its release notes must state the
-useful supported milestones and important remaining limitations. Do not move or
-reuse a published tag; make a new version for every replacement.
+Do not move or reuse a published tag; make a new version for every replacement.
 
 ## Maintainer release procedure
 
 Agents may prepare and validate a release commit, but creating and pushing the
 annotated tag requires explicit maintainer authorization.
 
-1. Update the workspace version in `Cargo.toml` and regenerate `Cargo.lock`.
-2. Turn the `CHANGELOG.md` unreleased section into an exact
-   `## <version> - YYYY-MM-DD` heading, then create a fresh Unreleased section.
-3. Validate the intended tag and archive name:
+1. Select one exact clean `trunk` development commit as the candidate.
+2. Build every host product from that commit, record hashes and build provenance,
+   and complete the frozen five-host app matrix in tapHLEdb. If any row fails,
+   fix forward on a development version and restart with a new candidate commit.
+3. Only after the matrix passes, update the workspace version from
+   `0.2.4-dev.N` to `0.2.4`, regenerate `Cargo.lock`, finalize the changelog
+   section as `## 0.2.4 - YYYY-MM-DD`, and open a fresh Unreleased section.
+4. Validate the intended tag and each artifact name:
 
    ```powershell
-   python dev-scripts/release_version.py check-tag taphle-v0.3.0-alpha.1
-   python dev-scripts/release_version.py archive-name
+   python dev-scripts/release_version.py check-tag taphle-v0.2.4
+   python dev-scripts/release_version.py artifact-names
    ```
 
-4. Run the checks in `AGENTS.md`, commit, push `trunk`, and wait for its
-   workflow to pass.
-5. From that exact clean `trunk` commit, create and push an annotated tag:
+5. Run the checks in `AGENTS.md` on the exact release commit and push `trunk`.
+   Build all five final products again, record their new hashes and provenance,
+   and rerun all 120 frozen-cohort host verifications on this exact commit. The
+   development-candidate matrix from step 2 does not qualify the changed release
+   commit. Wait for every required host workflow and the final matrix to pass.
+6. After explicit maintainer authorization, create and push the annotated tag:
 
    ```powershell
-   git tag -a taphle-v0.3.0-alpha.1 -m "tapHLE v0.3.0-alpha.1"
-   git push origin refs/tags/taphle-v0.3.0-alpha.1
+   git tag -a taphle-v0.2.4 -m "tapHLE v0.2.4"
+   git push origin refs/tags/taphle-v0.2.4
    ```
 
-6. The tag workflow revalidates the annotated tag/version, changelog heading,
-   and exact current `trunk` commit; rebuilds and tests; verifies release
-   identity and the absence of tracked source modifications; and creates the
-   full ZIP and SHA-256 file.
-7. The workflow creates a draft GitHub prerelease or stable release. Inspect the
-   draft ZIP against its `.sha256` file, replace the placeholder body with
-   curated notes from the changelog, and then publish it manually. Treat a
-   workflow failure as a failed release attempt; fix forward with a new version
-   instead of retagging a published release.
+7. The tag workflow revalidates the tag/version, changelog heading, exact current
+   `trunk` commit, product hashes, provenance and five-host matrix before staging
+   a draft ordinary GitHub release. Inspect every artifact against its checksum
+   and use the finalized changelog section as the release body. Treat any failure
+   as a failed release attempt; fix forward with a new version instead of
+   retagging a published release.
 
 Release branches are unnecessary while only one release line is maintained. Add
 one only when a real need exists to patch an older stable line while newer
@@ -215,7 +219,7 @@ and run either program.
 script. Build it from a finished bundle:
 
 ```powershell
-iscc /DBundleDir=..\tapHLE_windows_bundle /DAppVersion=0.3.0-alpha.1 tapHLE.iss
+iscc /DBundleDir=..\tapHLE_windows_bundle /DAppVersion=0.2.4 tapHLE.iss
 ```
 
 **It has not been built or run yet** — Inno Setup is not installed on the

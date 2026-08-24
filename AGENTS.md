@@ -121,7 +121,9 @@ facilities. The command loop is in [`docs/debugging.md`](docs/debugging.md).
 Version bumps, tags, and release packaging follow
 [`docs/maintaining.md`](docs/maintaining.md). Agents may prepare release changes
 but **must not create or push a release tag without explicit maintainer
-authorization**.
+authorization**. For `0.2.4`, authorization is not sufficient on its own: do not
+create or publish the tag until the complete frozen-cohort matrix passes on
+Windows, Linux, macOS, Android and iOS using products from one exact commit.
 
 ## Compatibility claims
 
@@ -152,9 +154,11 @@ distinction is the reason the field exists.
 
 **Submit it yourself, without asking.** A report is ordinary finished work, in
 exactly the way an ordinary `git push` is: the maintainer set the goal, the
-result is the deliverable, and every submission lands unapproved for review
-anyway, so asking permission adds a round trip and buys no safety. Stopping to
-ask is the error, not the caution. The narrow exceptions elsewhere in this guide
+result is the deliverable. Ordinary credentials land pending moderation;
+explicitly trusted Ethan-controlled agent credentials may be approved immediately
+by tapHLEdb. Trust changes moderation latency, not the evidence standard or the
+three-star agent cap. Asking permission adds a round trip and buys no safety.
+Stopping to ask is the error, not the caution. The narrow exceptions elsewhere in this guide
 — force-pushing, rewriting published history, release tags — do not extend to
 this.
 
@@ -189,14 +193,25 @@ report exactly this way on 2026-08-05, and the loss is permanent.
 A boundary passed without a report **cannot be recovered afterwards.** Do not
 compose one from memory, from a work note, or from a rerun on a later revision.
 
-Submit when the rating changes in **either** direction. Do not submit when a
-rerun merely reproduces a rating already recorded for that revision; the endpoint
-does not deduplicate, so that is pure moderation noise.
+Submit when the rating changes in **either** direction. A rerun that reproduces
+the same rating is not another compatibility boundary. Submit it only when a
+named release candidate needs a `release_verification` record, which tapHLEdb
+keeps distinguishable from rating-changing compatibility history.
+
+Every report records the platform, architecture, OS version, full tapHLE commit,
+tested binary or package hash, reproducible build provenance and profile, exact
+app artifact identity, rating/frontier, producer identity and verification type.
+A short commit or package filename is not a substitute for those fields.
 
 An agent may assign **at most three stars** (two for a stable screen, three for a
 gameplay loop that starts and persists). Four and five stars require human
 testing. Three stars includes rendering: broken, mirrored, flipped or clipped
 output is not a three.
+
+A screenshot normally shows only the tapHLE/app window or a tightly cropped
+relevant area, not the full private desktop. Inspect the final image for sensitive
+information before submission. Screenshots are useful but optional; omit one when
+no safe image can prove the result.
 
 **The agent token lives at `~/.taphledb-token` and nowhere else.** Read it inline
 at the moment of use, as `$(cat ~/.taphledb-token)`. Never echo it, and never
@@ -570,7 +585,7 @@ disagreed, which is the failure this rule exists to prevent.
 **Use the controlled vocabulary.** The same page defines the words tapHLE uses
 precisely — *app* rather than game in technical writing, *supported host* rather
 than supported platform, *guest app* for the emulated side, *build-verified*
-against *runtime-verified*, *numbered release* against *trunk preview*. Each of
+against *runtime-verified*, *numbered release* against *development build*. Each of
 those had a loose sense that produced a contradiction somebody then had to
 untangle. "Supported" in particular is a commitment: it means the maintainer
 accepts compatibility claims earned on that host, never that the code compiled.

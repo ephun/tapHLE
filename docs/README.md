@@ -27,7 +27,7 @@ owner instead of restating the fact. This table is what makes that checkable.
 | Platform build/runtime/CI/package/release status | `docs/platforms.md` | Link. **No other file keeps a status matrix.** |
 | What "supported", "packaged", "tested" mean | `docs/platforms.md` | Link |
 | Release eligibility and the all-five bar | `docs/platforms.md` | `docs/maintaining.md` links for procedure |
-| Version numbering, release trigger, tags | `docs/maintaining.md` | Link |
+| Version numbering, release gate, tags | `docs/maintaining.md` | Link |
 | Packaging per host | `docs/maintaining.md` | Link |
 | Upstream sync procedure | `docs/maintaining.md` | Link |
 | Build prerequisites and commands | `docs/development.md` | Link |
@@ -73,7 +73,7 @@ table cell. Use the canonical column.
 | guest / game / binary | **guest app** or **guest code** | The guest is the 32-bit application and the environment tapHLE emulates for it. |
 | tested | **build-verified**, **runtime-verified**, or **CI-tested** | "Built in CI" is not a runtime test, and conflating them is what put "built in CI, not played on" in a column headed *Tested*. |
 | packaged | **bundle tooling**, **installer tooling**, or **published artifact** | Not a yes/no. A bundle script existing is not an installer, and neither is a published download. |
-| release | **numbered release**, as against a **trunk preview** | A commit-identified `trunk` build is not a release. |
+| release | **numbered release**, as against a **development build** | A `-dev.N` build is not a release, even when it comes from `trunk`. |
 | compatibility, as a bare noun | **compatibility result** | A result names an app build, a tapHLE revision, a host, and a rating. Anything short of that is an observation. |
 | app note / work note | **compatibility work note** | Explicitly non-canonical, continuation state — never a claim. |
 | touchHLE, for anything current | **tapHLE** | Use touchHLE only for upstream and inherited history. Renaming a file does not make an inherited claim true here; see `project-history.md`. |
