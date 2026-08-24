@@ -196,7 +196,7 @@ The JSON schemas are described in `ObjC::dump_classes` (`src/objc/classes.rs`),
 
 ## Before implementing a stub, check whether tapHLE already ships the real thing
 
-`tapHLE_dylibs/` holds real Apple-era libraries — `libgcc_s.1.dylib`,
+`runtime/dylibs/` holds real Apple-era libraries — `libgcc_s.1.dylib`,
 `libstdc++.6.0.9.dylib`, `libxml2`, `libz`, `libsqlite3` — and an app that links
 one of them gets the genuine implementation loaded as guest code. So when an app
 stops inside a tapHLE stub, the question is not only "how do I implement this",
@@ -216,7 +216,7 @@ Two checks, both cheap:
 ```powershell
 $llvmBin = Join-Path (rustc --print sysroot) `
     'lib\rustlib\x86_64-pc-windows-msvc\bin'
-& (Join-Path $llvmBin 'llvm-nm.exe') --defined-only tapHLE_dylibs\libgcc_s.1.dylib |
+& (Join-Path $llvmBin 'llvm-nm.exe') --defined-only runtime\dylibs\libgcc_s.1.dylib |
     Select-String Unwind
 ```
 
@@ -328,7 +328,7 @@ behaviour and its known gaps.
 ## Running on Windows: making runs isolated and repeatable
 
 Use a uniquely named temporary directory as tapHLE's working directory. Link its
-`tapHLE_dylibs` and `tapHLE_fonts` to the checkout and copy the small tracked
+`runtime/dylibs` and `runtime/fonts` to the checkout and copy the small tracked
 default-options file rather than copying large support trees. Do not add local
 options unless the experiment is specifically testing one.
 
@@ -433,7 +433,7 @@ cargo build --release
 
 powershell -NoProfile -ExecutionPolicy Bypass -File `
     .\dev-scripts\agy-visible-taphle.ps1 -Action Launch `
-    -AppPath '.\tapHLE_apps\<exact verified filename>.ipa'
+    -AppPath '.\runtime\apps\<exact verified filename>.ipa'
 
 powershell -NoProfile -ExecutionPolicy Bypass -File `
     .\dev-scripts\agy-visible-taphle.ps1 -Action Status
@@ -747,4 +747,4 @@ To build while the maintainer's tree is dirty, use a separate worktree with its
 own submodule init and its own `CARGO_TARGET_DIR`. Never stash their work.
 
 After a commit, a binary can still report the old revision; touch
-`src/version/build.rs` to force the stamp to regenerate.
+`crates/version/build.rs` to force the stamp to regenerate.

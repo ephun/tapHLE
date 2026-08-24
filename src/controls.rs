@@ -252,7 +252,7 @@ impl ControlLayout {
     /// Read the equivalent layout back out of already-resolved options.
     ///
     /// This is how mappings that arrived as command-line options or from
-    /// `tapHLE_default_options.txt` become visible to an editor: they are the
+    /// `runtime/default_options.txt` become visible to an editor: they are the
     /// same mappings, and somebody looking at the guest screen should see them
     /// whichever way they were set.
     pub fn from_options(options: &Options, screen: (f32, f32)) -> ControlLayout {
@@ -559,7 +559,7 @@ mod tests {
     /// Every control mapping tapHLE ships, converted to fractions and back,
     /// has to land on exactly the pixel it started on.
     ///
-    /// `tapHLE_default_options.txt` carries 179 button mappings and a
+    /// `runtime/default_options.txt` carries 179 button mappings and a
     /// scattering of stick and D-pad regions across 68 apps, all of them
     /// absolute coordinates that somebody arrived at by looking at the screen.
     /// Normalising them is the one change that could move all of them at once,
@@ -573,7 +573,7 @@ mod tests {
     fn every_shipped_mapping_survives_normalisation() {
         let shipped = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tapHLE_default_options.txt"
+            "/runtime/default_options.txt"
         ));
 
         let mut apps_checked = 0;

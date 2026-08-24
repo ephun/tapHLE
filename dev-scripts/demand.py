@@ -608,7 +608,7 @@ def host_coverage():
                 dylibs.setdefault(provided, rel)
 
     # Not everything tapHLE provides is emulated. It also ships real armv6/armv7
-    # dylibs in tapHLE_dylibs/ — zlib, sqlite3, libxml2, and the C++ and GCC
+    # dylibs in runtime/dylibs/ — zlib, sqlite3, libxml2, and the C++ and GCC
     # runtimes — which the guest links normally. Their exports are supplied just
     # as surely as a host function is, and omitting them would put every
     # `_sqlite3_*` and C++ ABI symbol on the to-do list as work already done.
@@ -653,7 +653,7 @@ def paths_dylibs_dir():
     """The directory name from `src/paths.rs`, so the two cannot drift apart."""
     text = (REPO / "src" / "paths.rs").read_text(encoding="utf-8", errors="replace")
     match = re.search(r'DYLIBS_DIR:\s*&str\s*=\s*"([^"]+)"', text)
-    return match.group(1) if match else "tapHLE_dylibs"
+    return match.group(1) if match else "dylibs"
 
 
 def framework_of(dylib_path):

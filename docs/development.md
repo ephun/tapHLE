@@ -120,15 +120,15 @@ cargo build --release
 .\target\release\tapHLE.exe --help
 ```
 
-Running from the repository root lets tapHLE find `tapHLE_dylibs`,
-`tapHLE_fonts`, and `tapHLE_default_options.txt`. To run elsewhere, copy those
+Running from the repository root lets tapHLE find `runtime/dylibs`,
+`runtime/fonts`, and `tapHLE_default_options.txt`. To run elsewhere, copy those
 resources beside the executable, or use
 `dev-scripts/make-windows-bundle.sh` from Git Bash to assemble a complete
 portable directory.
 
 Run `tapHLE` with no arguments to pick an app from the library instead of
 naming one.
-Keep local playtest files in `tapHLE_apps`, which is the directory the frontend
+Keep local playtest files in `runtime/apps`, which is the directory the frontend
 scans. It is ignored by Git, and app binaries must not be committed or
 redistributed.
 

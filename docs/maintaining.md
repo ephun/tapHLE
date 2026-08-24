@@ -202,8 +202,8 @@ cd dev-scripts
 ./make-windows-bundle.sh ../target/release/tapHLE.exe
 ```
 
-The result holds the executable, `tapHLE_dylibs`, `tapHLE_fonts`,
-`res/icon.png`, the two options files, `OPTIONS_HELP.txt`, the readme, the
+The result holds the executable, `runtime/dylibs`, `runtime/fonts`,
+`res/icon.png`, the two options files, `runtime/OPTIONS_HELP.txt`, the readme, the
 changelog and the licence.
 
 That directory is already a complete portable installation: unpack it anywhere
@@ -234,14 +234,14 @@ machine-wide install can ask for one in the wizard.
 The installer places both programs. The command line is not a second-class way
 to run tapHLE, and `tapHLE.exe` is a usable program on its own.
 
-Uninstalling removes what was installed and nothing else. `tapHLE_apps`,
-`tapHLE_sandbox` and `tapHLE_frontend` are the person's own apps, saved games
+Uninstalling removes what was installed and nothing else. `runtime/apps`,
+`runtime/sandbox` and `runtime/frontend` are the person's own apps, saved games
 and library, and Inno Setup does not touch files it did not place. The user's
 `tapHLE_options.txt` is installed only if absent, so an upgrade never discards
 what somebody put in it.
 
 The executables carry their icon and version properties, attached by
-`src/gui/build.rs` through `winresource` from `res/icon.ico`. Regenerate that
+`crates/gui/build.rs` through `winresource` from `res/icon.ico`. Regenerate that
 file from `res/icon.png` if the artwork changes; it holds the sizes Windows asks
 for between 16 and 256 pixels.
 

@@ -11,7 +11,7 @@
 # gets a capture and a line of output, and a human or an agent looks at them.
 #
 #   .\dev-scripts\clickmap.ps1 -Map compatibility\clickmaps\cubed-rally-redline.json `
-#                              -App "tapHLE_apps\Cubed Rally Redline (v1.32) [Decrypted].ipa"
+#                              -App "runtime\apps\Cubed Rally Redline (v1.32) [Decrypted].ipa"
 #   .\dev-scripts\clickmap.ps1 -Map compatibility\clickmaps\jim-and-frank-hd.json -Validate
 #
 # Exit code is 0 when every step ran and the app was still alive at the end,
@@ -111,13 +111,13 @@ if (-not $OutDir)  { $OutDir  = Join-Path $WorkDir 'frames' }
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 New-Item -ItemType Directory -Force -Path $OutDir  | Out-Null
 
-# tapHLE reads tapHLE_default_options.txt from its working directory, so a run
+# tapHLE reads default_options.txt from its working directory, so a run
 # from anywhere else silently gets no launch options at all. Copy the current
 # file in rather than trusting whatever a previous run left behind: a stale copy
 # is indistinguishable from a correct one until an app renders wrong.
-Copy-Item (Join-Path $repo 'tapHLE_default_options.txt') (Join-Path $WorkDir 'tapHLE_default_options.txt') -Force
-foreach ($link in 'tapHLE_dylibs', 'tapHLE_fonts') {
-    $target = Join-Path $repo $link
+Copy-Item (Join-Path $repo 'runtime/default_options.txt') (Join-Path $WorkDir 'default_options.txt') -Force
+foreach ($link in 'dylibs', 'fonts') {
+    $target = Join-Path $repo "runtime/$link"
     $here = Join-Path $WorkDir $link
     if ((Test-Path $target) -and -not (Test-Path $here)) {
         cmd /c mklink /J "`"$here`"" "`"$target`"" | Out-Null

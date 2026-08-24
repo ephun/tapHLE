@@ -45,6 +45,14 @@ fn main() -> Result<(), String> {
     // Before anything prints: this is a windowed program, so it has no console
     // unless it borrows the one it was started from.
     let on_a_terminal = platform::console::attach_to_parent();
+
+    // Before the working directory moves. tapHLE runs from its data
+    // directory, which is not the directory somebody typed a path in, so an
+    // app named as `apps/Thing.ipa` would stop resolving the moment the
+    // program moved. Anything that names something real is made absolute
+    // while the original directory is still the current one.
+    let args: Vec<String> = std::env::args().map(absolute_if_it_exists).collect();
+
     let (data_dir, notes) = platform::storage::locate_data_dir();
 
     // One executable with two jobs, told apart by whether it was given
@@ -54,11 +62,8 @@ fn main() -> Result<(), String> {
     //
     // The emulator's argument handling is used verbatim rather than copied,
     // so the window cannot drift into a dialect of its own.
-    let mut args = std::env::args();
-    let argv0 = args.next();
-    let rest: Vec<String> = args.collect();
-    if !rest.is_empty() {
-        return tapHLE::main(argv0.into_iter().chain(rest));
+    if args.len() > 1 {
+        return tapHLE::main(args.into_iter());
     }
 
     install_panic_hook();
@@ -81,6 +86,27 @@ fn main() -> Result<(), String> {
         frontend.mirror_log_to_stderr(on_a_terminal);
         frontend
     })
+}
+
+/// Make an argument absolute if it names something that exists.
+///
+/// Only then: an option like `--scale-hack=2` is not a path, and a path to
+/// something that is not there is better reported by whoever tried to open it
+/// than silently rewritten here.
+fn absolute_if_it_exists(argument: String) -> String {
+    let path = std::path::Path::new(&argument);
+    if !path.exists() {
+        return argument;
+    }
+    match std::fs::canonicalize(path) {
+        // Windows canonicalises to the extended-length form, which some of
+        // what tapHLE hands paths to does not understand.
+        Ok(absolute) => absolute
+            .to_str()
+            .map(|text| text.strip_prefix(r"\?\").unwrap_or(text).to_string())
+            .unwrap_or(argument),
+        Err(_) => argument,
+    }
 }
 
 /// The project's own icon, used for the window and the taskbar.

@@ -21,7 +21,7 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 /// Directory holding every file the frontend owns.
-pub const DIR: &str = "tapHLE_frontend";
+pub const DIR: &str = "frontend";
 /// Global settings, both emulator defaults and frontend preferences.
 pub const SETTINGS_FILE: &str = "settings.json";
 /// The app library: entries, per-app overrides, play statistics, ratings.
@@ -94,6 +94,17 @@ pub fn locate_data_dir() -> (PathBuf, Vec<String>) {
         }
         Err(e) => notes.push(format!("Could not locate this program: {e}")),
     }
+
+    // Each place is tried twice: once for a `runtime` folder inside it, and
+    // once for the place itself. A source checkout keeps tapHLE's data in
+    // `runtime/` so the repository root can be about the source; an installed
+    // copy has no such folder, because the directory holding the executable
+    // *is* the data directory. Looking for both is what lets one rule cover a
+    // developer and somebody who unzipped a release.
+    let candidates: Vec<PathBuf> = candidates
+        .into_iter()
+        .flat_map(|path| [path.join("runtime"), path])
+        .collect();
 
     for candidate in &candidates {
         if !looks_like_data_dir(candidate) {

@@ -23,7 +23,7 @@ fn main() {
 #[cfg(windows)]
 fn windows_resources() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let icon = std::path::Path::new(&manifest_dir).join("../../res/icon.ico");
+    let icon = std::path::Path::new(&manifest_dir).join("../../runtime/res/icon.ico");
     println!("cargo:rerun-if-changed={}", icon.display());
     if !icon.is_file() {
         // A missing icon is not worth failing a build over, but it should not

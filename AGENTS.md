@@ -205,7 +205,7 @@ or a command whose output is recorded. If the file is absent, say so and keep
 working: an unrecorded result is a far smaller problem than a leaked credential.
 
 **Never commit an IPA, extracted files, assets, keys, save data, screenshots, raw
-logs, or personal paths.** Apps go in the gitignored `tapHLE_apps/`, next to the
+logs, or personal paths.** Apps go in the gitignored `runtime/apps/`, next to the
 other targets — not a cache directory of your own, and never one outside the
 checkout.
 

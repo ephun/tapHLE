@@ -27,13 +27,13 @@ use std::path::{Path, PathBuf};
 
 /// Name of the directory containing ARMv6 dynamic libraries bundled with
 /// tapHLE.
-pub const DYLIBS_DIR: &str = "tapHLE_dylibs";
+pub const DYLIBS_DIR: &str = "dylibs";
 
 /// Name of the directory containing fonts bundled with tapHLE.
-pub const FONTS_DIR: &str = "tapHLE_fonts";
+pub const FONTS_DIR: &str = "fonts";
 
 /// Name of the file containing tapHLE's default options for various apps.
-pub const DEFAULT_OPTIONS_FILE: &str = "tapHLE_default_options.txt";
+pub const DEFAULT_OPTIONS_FILE: &str = "default_options.txt";
 
 /// macOS-only: If tapHLE is located in a .app bundle, return the path of the
 /// Resources directory. If tapHLE is not located in a .app bundle, return
@@ -116,13 +116,13 @@ pub const RESOURCES_ARE_EXTERNAL_FILES: bool = cfg!(not(target_os = "android"));
 
 /// Name of the directory where the user can put apps if they want them to
 /// appear in tapHLE's library.
-pub const APPS_DIR: &str = "tapHLE_apps";
+pub const APPS_DIR: &str = "apps";
 
 /// Name of the file intended for the user's own options.
 ///
 /// Superseded by [SETTINGS_FILE]. Still read, so that an options file
 /// somebody already wrote keeps working, but nothing writes it any more.
-pub const USER_OPTIONS_FILE: &str = "tapHLE_options.txt";
+pub const USER_OPTIONS_FILE: &str = "options.txt";
 
 /// Name of the settings file the emulator and the frontend share.
 ///
@@ -131,11 +131,11 @@ pub const USER_OPTIONS_FILE: &str = "tapHLE_options.txt";
 /// chose — before this existed the frontend's settings reached the emulator
 /// only as command-line arguments, so a setting the frontend left alone fell
 /// through to a file the frontend never showed.
-pub const SETTINGS_FILE: &str = "tapHLE_settings.json";
+pub const SETTINGS_FILE: &str = "settings.json";
 
 /// Name of the directory where tapHLE will store sandboxed app data, e.g.
 /// the `Documents` directory.
-pub const SANDBOX_DIR: &str = "tapHLE_sandbox";
+pub const SANDBOX_DIR: &str = "sandbox";
 
 /// Get a platform-specific base path needed for accessing tapHLE's
 /// user-modifiable files. This is empty on platforms other than Android.
@@ -244,14 +244,14 @@ pub fn prepopulate_user_data_dir() {
     if !apps_dir_readme.is_file() {
         let content = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tapHLE_apps/README.txt"
+            "/runtime/apps/README.txt"
         ));
         create_file(&apps_dir_readme, content);
     }
 
     let user_options = base_path.join(USER_OPTIONS_FILE);
     if !user_options.is_file() {
-        let content = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tapHLE_options.txt"));
+        let content = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/runtime/options.txt"));
         create_file(&user_options, content);
     }
 

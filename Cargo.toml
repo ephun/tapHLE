@@ -6,8 +6,8 @@
 # desktop frontend depends on the root package rather than the other way round,
 # so it has to be listed. It is also a default member so that the ordinary
 # `cargo build` and the lint/format scripts cover it.
-members = ["src/gui"]
-default-members = [".", "src/gui"]
+members = ["crates/gui"]
+default-members = [".", "crates/gui"]
 
 [workspace.package]
 version = "0.3.0-alpha.1"
@@ -89,7 +89,7 @@ tapHLE_gl_bindings = { path = "src/gles/gl_bindings" }
 tapHLE_openal_soft_wrapper = { path = "src/audio/openal_soft_wrapper" }
 tapHLE_pvrt_decompress_wrapper = { path = "src/image/pvrt_decompress_wrapper" }
 tapHLE_stb_image_wrapper = { path = "src/image/stb_image_wrapper" }
-tapHLE_version = { path = "src/version" }
+tapHLE_version = { path = "crates/version" }
 windows-sys = { version = "0.61.0", features = ["Win32_System_Memory"] }
 nibarchive = "0.1.0"
 libc = "0.2.180"

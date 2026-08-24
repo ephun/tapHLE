@@ -43,7 +43,7 @@ You need:
 4. Lawful access to the exact app version you want to test.
 
 **Never upload an IPA, app files, or a raw log to GitHub.** Keep them outside the
-repository. The `tapHLE_apps` folder is ignored by Git for this reason.
+repository. The `runtime/apps` folder is ignored by Git for this reason.
 
 Opening an issue does not promise that another contributor will do the work. It
 gives you and your agent a place to record the goal and avoid duplicate work.
@@ -59,7 +59,7 @@ I want to improve tapHLE support for [app title and exact version] on Windows.
 
 Exact Archive.org item URL: [URL, or "none"]
 Exact Archive.org IPA file name: [file name, or "none"]
-Local IPA path: [path, or "download the exact named original to tapHLE_apps/"]
+Local IPA path: [path, or "download the exact named original to runtime/apps/"]
 
 Read AGENTS.md and docs/compatibility.md before changing anything.
 
@@ -69,7 +69,7 @@ database and compatibility/notes/ first so you do not repeat old work.
 If I gave an Archive.org item, verify the exact canonical item URL and original
 filename in the live metadata before opening, inspecting, or running the IPA.
 If no local path was supplied, download only that exact original into
-tapHLE_apps/. Record a locally computed SHA-256, then read the app identity with
+runtime/apps/. Record a locally computed SHA-256, then read the app identity with
 tapHLE --info before composing any report. Stop if the item or filename differs.
 If I wrote "none," do not search for an item and do not make an Archive-linked
 database report. Ask me to confirm that I authorize use of my lawful local copy
@@ -128,7 +128,7 @@ law that applies to them.
 Use the exact Archive.org item URL supplied by the maintainer or reporter. Do not
 search for, guess, or grope around for an item. After the live metadata confirms
 the exact original filename, download only that file into the gitignored
-`tapHLE_apps/` — not a cache directory of your own, and never one outside the
+`runtime/apps/` — not a cache directory of your own, and never one outside the
 checkout. If the item or filename does not match, stop; do not use a different
 local copy because it looks close.
 

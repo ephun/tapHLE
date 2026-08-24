@@ -14,8 +14,10 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 
-pub const OPTIONS_HELP: &str =
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/OPTIONS_HELP.txt"));
+pub const OPTIONS_HELP: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/runtime/OPTIONS_HELP.txt"
+));
 
 /// Game controller button for `--button-to-touch=` option.
 ///
@@ -434,7 +436,7 @@ impl Options {
         } else if arg == "--no-stabilize-virtual-cursor" {
             // The off spelling exists for the same reason every boolean option
             // has one: seven apps switch stabilisation on in
-            // tapHLE_default_options.txt, and without this nothing a later
+            // runtime/default_options.txt, and without this nothing a later
             // layer said could turn it back off again.
             self.stabilize_virtual_cursor = None;
         } else if let Some(value) = arg.strip_prefix("--gles1=") {

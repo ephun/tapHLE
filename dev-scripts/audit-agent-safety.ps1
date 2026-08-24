@@ -93,7 +93,7 @@ try {
     }
 
     $skipDirectoryNames = @(
-        ".git", "vendor", "target", "tapHLE_apps", "tapHLE_sandbox",
+        ".git", "vendor", "target", "runtime",
         "touchHLE_apps", "touchHLE_sandbox", "build", ".gradle", ".idea", ".cxx"
     )
     $pendingDirectories = [System.Collections.Generic.Stack[System.IO.DirectoryInfo]]::new()

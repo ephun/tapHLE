@@ -17,13 +17,13 @@ if [ "$#" -eq 1 ]; then
     mkdir tapHLE_windows_bundle
     cp "$PATH_TO_BINARY" tapHLE_windows_bundle/
 
-    cp -r ../tapHLE_dylibs tapHLE_windows_bundle/
-    cp -r ../tapHLE_fonts tapHLE_windows_bundle/
-    mkdir tapHLE_windows_bundle/tapHLE_apps
-    cp ../tapHLE_apps/README.txt tapHLE_windows_bundle/tapHLE_apps/
+    cp -r ../runtime/dylibs tapHLE_windows_bundle/
+    cp -r ../runtime/fonts tapHLE_windows_bundle/
+    mkdir tapHLE_windows_bundle/apps
+    cp ../runtime/apps/README.txt tapHLE_windows_bundle/apps/
     # The frontend looks for the window icon beside itself.
     mkdir tapHLE_windows_bundle/res
-    cp ../res/icon.png tapHLE_windows_bundle/res/
+    cp ../runtime/res/icon.png tapHLE_windows_bundle/res/
     cp ../README.md tapHLE_windows_bundle/
     cp ../CHANGELOG.md tapHLE_windows_bundle/
     cp gpl-3.0.txt tapHLE_windows_bundle/COPYING.txt

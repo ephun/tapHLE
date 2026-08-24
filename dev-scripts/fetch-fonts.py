@@ -8,7 +8,7 @@ ships instead is a set of open substitutes, chosen for how close they come to
 the original's role and, where such a thing exists, its metrics.
 
 This script fetches them. It exists so that the provenance of every file in
-`tapHLE_fonts/` is written down rather than remembered: where it came from,
+`runtime/fonts/` is written down rather than remembered: where it came from,
 what it hashes to, and under which licence.
 
     python dev-scripts/fetch-fonts.py            # fetch anything missing
@@ -30,7 +30,7 @@ fetched, checked by name, and its hash printed to be pinned deliberately.
 Only OFL 1.1 and Apache 2.0 families are listed here. Both permit
 redistribution inside a program, which is the whole question — a font being
 present on a device says nothing about the right to copy it. Each family's
-licence is fetched alongside it into `tapHLE_fonts/licenses/`, which the OFL
+licence is fetched alongside it into `runtime/fonts/licenses/`, which the OFL
 requires rather than merely encourages.
 
 ## Why some families are here and better-known ones are not
@@ -51,7 +51,7 @@ import urllib.request
 import zipfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FONTS = os.path.join(REPO, 'tapHLE_fonts')
+FONTS = os.path.join(REPO, 'runtime', 'fonts')
 LICENSES = os.path.join(FONTS, 'licenses')
 
 RAW = 'https://raw.githubusercontent.com'

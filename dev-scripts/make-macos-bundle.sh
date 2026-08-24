@@ -20,13 +20,13 @@ if [[ $# == 3 ]]; then
     fi
     rm -rf "$ICON_NAME.icns" "$ICON_NAME.iconset"
     mkdir "$ICON_NAME.iconset"
-    cp ../res/"$ICON_NAME.png" "$ICON_NAME.iconset"/icon_512x512.png
+    cp ../runtime/res/"$ICON_NAME.png" "$ICON_NAME.iconset"/icon_512x512.png
     iconutil -c icns -o "$ICON_NAME.icns" "$ICON_NAME.iconset"
 
     rm -rf "$APP_NAME.app"
     mkdir -p "$APP_NAME.app"/Contents/MacOS "$APP_NAME.app"/Contents/Resources
     cp $PATH_TO_BINARY "$APP_NAME.app"/Contents/MacOS/tapHLE
-    cp -r ../tapHLE_dylibs "$APP_NAME.app"/Contents/Resources/
+    cp -r ../runtime/dylibs "$APP_NAME.app"/Contents/Resources/
     cp -r ../tapHLE_fonts "$APP_NAME.app"/Contents/Resources/
     cp -r ../tapHLE_default_options.txt "$APP_NAME.app"/Contents/Resources/
     cp "$ICON_NAME.icns" "$APP_NAME.app"/Contents/Resources/

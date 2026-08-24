@@ -49,7 +49,7 @@ owner instead of restating the fact. This table is what makes that checkable.
 | Subsystem map and code layout | `docs/architecture.md` | Link |
 | Frontend design and its rationale | `docs/architecture.md` | Link |
 | Rendering handedness, layout behaviour | `docs/architecture.md` | `docs/debugging.md` links |
-| CLI options | `OPTIONS_HELP.txt` | It **is** `--help`; never restate an option list |
+| CLI options | `runtime/OPTIONS_HELP.txt` | It **is** `--help`; never restate an option list |
 | Settings precedence | `docs/user-guide.md` | Link |
 | Where user files live | `docs/user-guide.md` | Link |
 | Agent policy, safety, attribution, required checks | `AGENTS.md` | Link |
