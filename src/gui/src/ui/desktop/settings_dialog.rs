@@ -1114,6 +1114,11 @@ fn general_page(ui: &mut Ui, draft: &mut FrontendSettings) {
             ui,
             "What a phone will have to do. This window stops responding while              the app runs, its log goes to the terminal instead of the panel,              and only one app can run at a time.",
         );
+        ui.checkbox(&mut draft.preview_mobile, "Preview the mobile layout");
+        caption(
+            ui,
+            "Draws the phone interface here, at phone proportions. The same              code a phone will run, in a different rectangle.",
+        );
     }
 
     crate::ui::widgets::section(ui, "Updates");
