@@ -47,6 +47,27 @@ pub struct State {
     warned_mixer_output_rate_proc: bool,
     warned_invalid_host_devices: HashSet<*mut ALCdevice>,
 }
+
+/// Close whatever the app left open.
+///
+/// An app is not obliged to tidy up before it ends, and most do not: they call
+/// `exit()`, or the window is closed, and their devices and contexts are still
+/// open. That used to be nobody's problem, because the process ended with the
+/// app. Now that a run returns instead, OpenAL Soft's own teardown runs
+/// afterwards, and with a device still open it takes the process down at
+/// `0xC0000409` with no message and no backtrace at all. Two apps out of two
+/// hit it. See "The teardown abort" in `docs/architecture.md`.
+impl Drop for State {
+    fn drop(&mut self) {
+        // Contexts first: a device will not close while a context on it is
+        // still alive. Dropping one destroys the context and leaves the
+        // device alone, because the device is this map's to close.
+        self.contexts.clear();
+        for (_, host_device) in self.devices.drain() {
+            unsafe { al::alcCloseDevice(host_device) };
+        }
+    }
+}
 impl State {
     fn get(env: &mut Environment) -> &mut Self {
         &mut env.framework_state.openal

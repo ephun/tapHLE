@@ -46,59 +46,31 @@ none of these is.
 
 ### The teardown abort
 
-**Known defect, and a blocker for the single-process frontend.** Now that a run
-returns, the process reaches normal termination after emulating an app for the
-first time, and the C runtime's teardown aborts: after `main` has returned
-`Ok`, with no message, no backtrace and status `0xC0000409`. Everything before
-it is clean — the run returns, the environment drops, `main` finishes.
+Returning from a run means the process reaches normal termination after
+emulating an app, which it had never done before — the emulator always exited
+from deep inside. The first thing found there was an abort at `0xC0000409`,
+after `main` had returned `Ok`, with no message and no backtrace.
 
-`tapHLE` steps over it by calling `std::process::exit` at the end of `main`,
-which is also how it carries the app's status to the command line. That works
-for a program whose job is done. It will not work for the frontend, which has
-to keep running after a game closes, so this has to be found before the two
-share a process.
+It was OpenAL. An app is not obliged to tidy up before it ends and most do not,
+so its devices and contexts were still open; OpenAL Soft's own teardown then
+runs against an open device and takes the process down. Nobody had seen it
+because the process used to end first.
 
-What is known so far:
+Devices are closed now, and which side owns one is explicit:
 
-- **Returning from `main` is fine until an `Environment` has existed.**
-  `--copyright` and `--dump=symbols --headless` both return normally and exit
-  0. Whatever aborts needs a run to have happened.
-- **It is not the run, and not the environment's own teardown.** Traced: `run`
-  returns, `Drop for Environment` completes, `main` returns `Ok`, and the abort
-  comes after all of that.
-- Suspects are therefore the static destructors of the statically linked
-  dynarmic, SDL and OpenAL Soft, none of which had ever run after a guest had
-  executed. The `static` feature is what links them that way, so building
-  without it is the next discriminator to try.
+- `frameworks::openal::State` closes on drop whatever the app left open,
+  contexts before devices, because a device will not close while a context on
+  it is alive. `alcCloseDevice` removes its entry, so an app that does tidy up
+  is not closed twice.
+- `audio::openal::OpenALContext` carries `owns_device`, set only when it opened
+  one for itself. A device handed in by a caller belongs to the caller — that
+  is how the guest's own devices stay the `State` map's to close.
 
-It reproduces in about twenty seconds without a window on anybody's desktop:
-replay a one-step clickmap with `--replay-quit`, which injects an ordinary quit
-once the step settles.
-
-`tapHLE-gui` is the desktop frontend — app library, details panel, settings,
-integrated log. It launches `tapHLE` as a child process with the same arguments
-somebody would type at a terminal, and reads its output back through pipes.
-
-Four things follow, and they are the reasons for the choice rather than
-consequences of it:
-
-- the emulator opens its own window and the library window stays alive;
-- a crash in an app cannot take the frontend with it, so the log and the
-  diagnostics survive to be read afterwards;
-- every option the interface sets is an option the command line already accepts,
-  so the two interfaces cannot drift apart — and a settings change can be
-  reproduced by hand;
-- relaunching costs nothing, which is the whole developer loop.
-
-On Windows the child is created with `CREATE_NO_WINDOW`, so no console appears. A
-console object is still allocated — that is what carries the pipes — but it has no
-window; `crate::process` is the only place that flag is set.
-
-They are separate binaries for a second reason: subsystems. On Windows a program
-is built either for the console subsystem or the windowed one. `tapHLE.exe` stays
-a console program, so running it from a terminal behaves exactly as it always
-has; `tapHLE-gui.exe` is a windowed program, so it never opens a console of its
-own.
+Worth knowing when something similar appears: the abort says nothing at all, so
+it is found by exit code rather than by reading a log. It reproduces in about
+twenty seconds with no window on anybody's desktop — trim a clickmap from
+`compatibility/clickmaps/` to a single step and run it with `--replay-quit`,
+which injects an ordinary quit once the step settles.
 
 ## Where the code lives
 

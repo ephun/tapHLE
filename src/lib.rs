@@ -491,21 +491,12 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
     // returns; anything else is what the app asked `exit()` for and has to
     // reach whoever ran tapHLE from a terminal.
     let status = env.run();
-    // Exiting here rather than returning, even for a successful run.
-    //
-    // Two reasons, and only the first is about the status. The run's status
-    // is the app's, and whoever ran tapHLE from a terminal is owed it.
-    //
-    // The second is a defect this change made reachable rather than caused.
-    // The process had never run to normal termination after emulating an app,
-    // because the emulator used to exit from deep inside the run; now that it
-    // returns, the C runtime's teardown runs for the first time and aborts —
-    // after `main` has returned Ok, with no message and no backtrace, at
-    // 0xC0000409. Everything before it is clean: the run returns, the
-    // environment drops, `main` finishes. Exiting first steps over it.
-    //
-    // This has to be found before the frontend can host a run in its own
-    // process, because there is no `exit` to hide behind there. Recorded in
-    // docs/architecture.md.
-    std::process::exit(status);
+    // A non-zero status is the app's own, and whoever ran tapHLE from a
+    // terminal is owed it; returning `Ok` would report success. Zero returns
+    // normally, which runs the process teardown — the thing the frontend will
+    // do too, so it is the path worth exercising here.
+    if status != 0 {
+        std::process::exit(status);
+    }
+    Ok(())
 }
