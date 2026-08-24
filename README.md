@@ -94,7 +94,7 @@ authors identified in the source and bundled notices.
 The emulator source is licensed under the Mozilla Public License 2.0. Due to
 dependency license compatibility, distributed binaries are licensed under the
 GNU General Public License version 3 or later. Bundled dynamic libraries and
-fonts have their own notices in `tapHLE_dylibs` and `tapHLE_fonts`.
+fonts have their own notices in `runtime/dylibs` and `runtime/fonts`.
 
 The project is not affiliated with or endorsed by Apple Inc. iPhone, iOS,
 iPod, iPod touch, and iPad are Apple trademarks.

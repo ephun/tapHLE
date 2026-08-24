@@ -16,7 +16,7 @@ instruction; either is accepted and Thumb is assumed unless `--arm` is given.
 
 Example, for the fault JellyCar 1 dies on:
 
-    python dev-scripts/disasm-guest-fault.py "tapHLE_apps/JellyCar 1.5.4 (Decrypted).ipa" 0x30190
+    python dev-scripts/disasm-guest-fault.py "runtime/apps/JellyCar 1.5.4 (Decrypted).ipa" 0x30190
 
 Requires `capstone` (pip install capstone).
 """

@@ -128,7 +128,7 @@ tapHLE-v0.3.0-alpha.1-Windows-x86_64.zip
 A desktop release artifact contains one program, `tapHLE`, which shows the app
 library when started with nothing and runs an app when given one. A Windows
 release should also
-carry the installer built from `dev-scripts/tapHLE.iss`, which has been written
+carry the installer built from `platforms/windows/installer.iss`, which has been written
 but not yet built — do not publish one without checking its shortcut, its
 uninstall entry and an upgrade over an existing installation.
 
@@ -198,12 +198,12 @@ The redistributable directory is what CI uploads and what a release archive
 contains:
 
 ```sh
-cd dev-scripts
-./make-windows-bundle.sh ../target/release/tapHLE.exe
+cd platforms/windows
+./make-bundle.sh ../../target/release/tapHLE.exe
 ```
 
-The result holds the executable, `tapHLE_dylibs`, `tapHLE_fonts`,
-`res/icon.png`, the two options files, `OPTIONS_HELP.txt`, the readme, the
+The result holds the executable, `runtime/dylibs`, `runtime/fonts`,
+`res/icon.png`, the two options files, `runtime/OPTIONS_HELP.txt`, the readme, the
 changelog and the licence.
 
 That directory is already a complete portable installation: unpack it anywhere
@@ -211,7 +211,7 @@ and run either program.
 
 ### Windows: the installer
 
-`dev-scripts/tapHLE.iss` is an [Inno Setup](https://jrsoftware.org/isinfo.php) 6
+`platforms/windows/installer.iss` is an [Inno Setup](https://jrsoftware.org/isinfo.php) 6
 script. Build it from a finished bundle:
 
 ```powershell
@@ -234,14 +234,14 @@ machine-wide install can ask for one in the wizard.
 The installer places both programs. The command line is not a second-class way
 to run tapHLE, and `tapHLE.exe` is a usable program on its own.
 
-Uninstalling removes what was installed and nothing else. `tapHLE_apps`,
-`tapHLE_sandbox` and `tapHLE_frontend` are the person's own apps, saved games
+Uninstalling removes what was installed and nothing else. `runtime/apps`,
+`runtime/sandbox` and `runtime/frontend` are the person's own apps, saved games
 and library, and Inno Setup does not touch files it did not place. The user's
 `tapHLE_options.txt` is installed only if absent, so an upgrade never discards
 what somebody put in it.
 
 The executables carry their icon and version properties, attached by
-`src/gui/build.rs` through `winresource` from `res/icon.ico`. Regenerate that
+`crates/gui/build.rs` through `winresource` from `res/icon.ico`. Regenerate that
 file from `res/icon.png` if the artwork changes; it holds the sizes Windows asks
 for between 16 and 256 pixels.
 
@@ -250,7 +250,7 @@ extra is needed.
 
 ### macOS
 
-`dev-scripts/make-macos-bundle.sh` is inherited from touchHLE and produces a
+`platforms/macos/make-bundle.sh` is inherited from touchHLE and produces a
 `.app` for the emulator. It predates the frontend and does **not** include it.
 
 A window-carrying bundle needs, at minimum: `tapHLE` as the bundle
@@ -264,7 +264,7 @@ signing and notarisation, which the project has no certificate for.
 The inherited helper is invoked as:
 
 ```sh
-dev-scripts/make-macos-bundle.sh \
+platforms/macos/make-bundle.sh \
     target/release/tapHLE \
     "$(cargo run --package tapHLE_version)" \
     "$(cargo run --package tapHLE_version -- --branding)"

@@ -23,7 +23,7 @@ identically to an unpacked copy.
 
 ## Adding apps
 
-Put `.ipa` files or `.app` bundles in `tapHLE_apps`, drop them onto the window,
+Put `.ipa` files or `.app` bundles in `runtime/apps`, drop them onto the window,
 or use **Add App**.
 
 Those files are ignored by Git, so you can keep playtest targets there without
@@ -50,7 +50,7 @@ letting its window vanish.
 ### Where settings come from
 
 Everything you set, at either scope, is stored in one file:
-**`tapHLE_settings.json`**, beside the emulator. The frontend writes it and the
+**`runtime/settings.json`**, beside the emulator. The frontend writes it and the
 emulator reads it directly, so a run started from a terminal behaves exactly
 like one started from the library.
 
@@ -59,9 +59,9 @@ Options are read in layers, and **a later layer wins**:
 | Priority | Layer | What it is |
 | --- | --- | --- |
 | 1 (lowest) | The emulator's own default | Compiled in |
-| 2 | Your global settings | `global` in `tapHLE_settings.json` — applies to every app |
+| 2 | Your global settings | `global` in `runtime/settings.json` — applies to every app |
 | 3 | `tapHLE_default_options.txt` | Per-app entries that ship with tapHLE and make particular apps work |
-| 4 | Your settings for this app | `apps` in `tapHLE_settings.json` |
+| 4 | Your settings for this app | `apps` in `runtime/settings.json` |
 | 5 (highest) | The command line | For a run you start yourself |
 
 **The more specific setting wins.** A setting tapHLE ships for one app beats
@@ -90,7 +90,7 @@ off — `--windowed` for `--fullscreen`, `--no-landscape-native` for
 a later layer, so the off spelling is how you countermand something an earlier
 layer turned on.
 
-`OPTIONS_HELP.txt` explains every option in full. It is the same text `--help`
+`runtime/OPTIONS_HELP.txt` explains every option in full. It is the same text `--help`
 prints — the file is the source, compiled into the binary — so the two can never
 disagree.
 
@@ -150,9 +150,9 @@ stays available after its window has gone.
 
 | Directory | What it holds | Touched by uninstall? |
 | --- | --- | --- |
-| `tapHLE_apps` | The app files you added | No |
-| `tapHLE_sandbox` | Guest save data | No |
-| `tapHLE_frontend` | Library, settings and window state, as readable JSON | No |
+| `runtime/apps` | The app files you added | No |
+| `runtime/sandbox` | Guest save data | No |
+| `runtime/frontend` | Library, settings and window state, as readable JSON | No |
 
 None of it is touched by an uninstall, and `tapHLE_options.txt` is only installed
 if absent, so an upgrade never discards what you put in it.
@@ -199,4 +199,4 @@ touch, and iPad are Apple trademarks.
 The emulator source is licensed under the Mozilla Public License 2.0. Due to
 dependency license compatibility, distributed binaries are licensed under the GNU
 General Public License version 3 or later. Bundled dynamic libraries and fonts
-have their own notices in `tapHLE_dylibs` and `tapHLE_fonts`.
+have their own notices in `runtime/dylibs` and `runtime/fonts`.

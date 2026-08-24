@@ -25,7 +25,7 @@ TEXT_SUFFIXES = {
 }
 
 TRACKED_DIRS = (
-    "docs", "dev-scripts", "compatibility", "tests", "src", "res", "android",
+    "docs", "dev-scripts", "compatibility", "crates", "platforms", "runtime",
     r"\.github",
 )
 
@@ -36,7 +36,7 @@ PATH_RE = re.compile(
 
 ROOT_DOC_RE = re.compile(
     r"`(AGENTS|CLAUDE|README|CONTRIBUTING|CHANGELOG|CODE_OF_CONDUCT"
-    r"|OPTIONS_HELP|tapHLE_options|tapHLE_default_options)\.(md|txt)`"
+    r"|OPTIONS_HELP|options|default_options)\.(md|txt)`"
 )
 
 

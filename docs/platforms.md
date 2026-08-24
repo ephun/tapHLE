@@ -57,8 +57,8 @@ The primary development and compatibility environment. A compatibility result
 is accepted here and nowhere else today, so in practice this is the host to
 expect apps to work on.
 
-`dev-scripts/make-windows-bundle.sh` assembles the redistributable directory
-and runs in CI. `dev-scripts/tapHLE.iss` is a written, reviewed Inno Setup
+`platforms/windows/make-bundle.sh` assembles the redistributable directory
+and runs in CI. `platforms/windows/installer.iss` is a written, reviewed Inno Setup
 script that **has never been built** — Inno Setup is not installed on the
 development machine. Treat its first run as unproven.
 
@@ -69,7 +69,7 @@ Nobody plays apps on it, so a macOS result is unverified by definition. It is
 useful for comparing guest behaviour against Apple's own frameworks and for
 debugging shared code.
 
-`dev-scripts/make-macos-bundle.sh` is inherited from touchHLE, predates the
+`platforms/macos/make-bundle.sh` is inherited from touchHLE, predates the
 frontend, and bundles the emulator only.
 
 ### Linux x86_64

@@ -34,7 +34,7 @@ owner instead of restating the fact. This table is what makes that checkable.
 | The test ladder | `docs/development.md` | Link |
 | Code style | `docs/development.md` | Link |
 | Copyright and reverse-engineering rules | `docs/development.md` | `AGENTS.md` carries the normative summary |
-| TestApp fixture, LLVM and SDK setup | `tests/README.md` | `docs/development.md` links |
+| TestApp fixture, LLVM and SDK setup | `crates/taphle/tests/README.md` | `docs/development.md` links |
 | What a compatibility result means | `docs/compatibility.md` | Link |
 | Artifact identity and provenance protocol | `docs/compatibility.md` | Link |
 | Availability / archive / DMCA policy | `docs/compatibility.md` | Link |
@@ -49,7 +49,7 @@ owner instead of restating the fact. This table is what makes that checkable.
 | Subsystem map and code layout | `docs/architecture.md` | Link |
 | Frontend design and its rationale | `docs/architecture.md` | Link |
 | Rendering handedness, layout behaviour | `docs/architecture.md` | `docs/debugging.md` links |
-| CLI options | `OPTIONS_HELP.txt` | It **is** `--help`; never restate an option list |
+| CLI options | `runtime/OPTIONS_HELP.txt` | It **is** `--help`; never restate an option list |
 | Settings precedence | `docs/user-guide.md` | Link |
 | Where user files live | `docs/user-guide.md` | Link |
 | Agent policy, safety, attribution, required checks | `AGENTS.md` | Link |

@@ -1,20 +1,20 @@
 /target
 /build
 /vendor/boost
-/tapHLE_sandbox
+/runtime/sandbox
 
 # The desktop frontend's own state: which apps this machine knows about, how
 # long they have been played, this user's ratings and window geometry. All of
 # it is local, and the library file names the paths of a personal collection.
-/tapHLE_frontend
+/runtime/frontend
 # The settings both programs share. Local to this machine, and its per-app
 # section names apps this person owns.
-/tapHLE_settings.json
-/tapHLE_apps/*
-!/tapHLE_apps/README.txt
+/runtime/settings.json
+/runtime/apps/*
+!/runtime/apps/README.txt
 *.ipa
-tapHLE_log.txt
-tapHLE_wallpaper.*
+log.txt
+runtime/wallpaper.*
 
 # Frontier surveys (dev-scripts/survey.py) and import scans
 # (dev-scripts/demand.py) list the apps in a personal collection. Share the

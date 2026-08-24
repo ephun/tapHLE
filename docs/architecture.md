@@ -98,20 +98,40 @@ which injects an ordinary quit once the step settles.
 
 ## Where the code lives
 
+The repository root separates three things that used to share it:
+
+| Folder | What it is |
+| --- | --- |
+| `crates/taphle/src/` | the emulator library — and only that |
+| `crates/` | the other Rust packages: `gui` (both frontends) and `version` |
+| `runtime/` | what tapHLE ships and reads: `dylibs`, `fonts`, `apps`, `res`, the options files, and at runtime `sandbox`, `frontend` and the log |
+
+`runtime/` is the reason the shipped names have no `tapHLE_` prefix any more.
+They used to carry one because an install directory is not necessarily one
+tapHLE owns — unzip a release into a folder with other things in it and a bare
+`apps/` or `fonts/` collides. A directory that is tapHLE's own needs no such
+namespace, and `locate_data_dir` finds it by looking for `dylibs` inside a
+`runtime` folder or beside the executable, which covers a source checkout and
+an unpacked release with one rule.
+
+The wrapper crates stay beside the module they serve — `crates/taphle/src/cpu/dynarmic_wrapper`
+next to `crates/taphle/src/cpu.rs` — because they are build plumbing for that one module
+rather than packages anybody goes looking for.
+
 | Path | What it holds |
 | --- | --- |
-| `src/lib.rs` | Emulator entry points and main control flow |
-| `src/app_bundle.rs` | The narrow public reader other tapHLE programs use to learn what an app says about itself |
-| `src/options.rs`, `src/paths.rs`, `src/log.rs` | Configuration, host paths, diagnostic output |
-| `src/bundle.rs`, `src/mach_o.rs`, `src/dyld.rs`, `src/abi.rs` | Guest app loading, linking, symbols, ABI boundaries |
-| `src/cpu.rs`, `src/mem.rs` | Emulated CPU and guest memory |
-| `src/objc.rs`, `src/objc/` | Objective-C runtime model |
-| `src/frameworks/` | High-level implementations of iPhone OS frameworks |
-| `src/libc.rs`, `src/libc/` | C/POSIX compatibility layer |
-| `src/window.rs`, `src/gles.rs`, `src/audio.rs` | Host-facing input, graphics, audio |
-| `src/fs.rs`, `src/environment.rs` | Guest filesystem and process state |
-| `src/gui/` | The `tapHLE_gui` package — the desktop frontend |
-| `tests/integration.rs`, `tests/TestApp_source/` | Emulator integration probes |
+| `crates/taphle/src/lib.rs` | Emulator entry points and main control flow |
+| `crates/taphle/src/app_bundle.rs` | The narrow public reader other tapHLE programs use to learn what an app says about itself |
+| `crates/taphle/src/options.rs`, `crates/taphle/src/paths.rs`, `crates/taphle/src/log.rs` | Configuration, host paths, diagnostic output |
+| `crates/taphle/src/bundle.rs`, `crates/taphle/src/mach_o.rs`, `crates/taphle/src/dyld.rs`, `crates/taphle/src/abi.rs` | Guest app loading, linking, symbols, ABI boundaries |
+| `crates/taphle/src/cpu.rs`, `crates/taphle/src/mem.rs` | Emulated CPU and guest memory |
+| `crates/taphle/src/objc.rs`, `crates/taphle/src/objc/` | Objective-C runtime model |
+| `crates/taphle/src/frameworks/` | High-level implementations of iPhone OS frameworks |
+| `crates/taphle/src/libc.rs`, `crates/taphle/src/libc/` | C/POSIX compatibility layer |
+| `crates/taphle/src/window.rs`, `crates/taphle/src/gles.rs`, `crates/taphle/src/audio.rs` | Host-facing input, graphics, audio |
+| `crates/taphle/src/fs.rs`, `crates/taphle/src/environment.rs` | Guest filesystem and process state |
+| `crates/gui/` | The `tapHLE_gui` package — the desktop frontend |
+| `crates/taphle/tests/integration.rs`, `crates/taphle/tests/TestApp_source/` | Emulator integration probes |
 
 Guest-visible API names and ABI constants may intentionally use Apple's naming
 instead of Rust naming. Check nearby export tables and tests before renaming
@@ -128,10 +148,10 @@ which is right — they are the ones that know about the emulator.
 But a *set* of functions sharing hidden state has to come from one place, and the
 two binding paths historically disagreed about which: a non-lazy symbol pointer
 already preferred a guest dylib's definition, while a lazy stub preferred the
-host's. `guest_definition_wins` in `src/dyld.rs` is where that exception is
+host's. `guest_definition_wins` in `crates/taphle/src/dyld.rs` is where that exception is
 stated. Extend it only for the same shape of problem, and say why.
 
-`tapHLE_dylibs/` ships real Apple-era libraries (`libgcc_s.1.dylib`,
+`runtime/dylibs/` ships real Apple-era libraries (`libgcc_s.1.dylib`,
 `libstdc++.6.0.9.dylib`, `libxml2`, `libz`, `libsqlite3`), so an app that links
 one gets the genuine implementation loaded as guest code. Before implementing a
 stub, check whether the real thing is already present — see `docs/debugging.md`.
@@ -202,7 +222,7 @@ framebuffer continuously.
 
 ## The frontend
 
-Source is the `tapHLE_gui` package in `src/gui`.
+Source is the `tapHLE_gui` package in `crates/taphle/src/gui`.
 
 ### Why egui
 
@@ -250,11 +270,11 @@ the interface that is not the reason anyone opens the program.
 
 egui draws an interface and knows nothing about windows. Something has to open
 one, hand egui the input, paint the triangles it returns and act on what it
-asks for afterwards. `src/gui/src/shell.rs` is that, and `eframe` was that
+asks for afterwards. `crates/gui/src/shell.rs` is that, and `eframe` was that
 before it.
 
 **SDL, not winit.** The emulator already opens an SDL window with a GL context
-on every platform tapHLE targets, iOS and Android included, and `android/` is
+on every platform tapHLE targets, iOS and Android included, and `platforms/android/` is
 already an `SDLActivity`. One window system for the whole product means one
 input, lifecycle and graphics layer rather than one for the desktop and a
 different one per phone — and `eframe` is a desktop and web framework whose
@@ -385,11 +405,11 @@ two definitions of one type is how they stop agreeing.
 
 ### One store, read by both programs
 
-`tapHLE_settings.json` holds `global` and `apps`, and belongs to neither
+`runtime/settings.json` holds `global` and `apps`, and belongs to neither
 program: the frontend writes it, the emulator reads it directly at startup.
 
 It replaced an arrangement where the frontend kept its settings in
-`tapHLE_frontend/settings.json` and `library.json` and handed them to the
+`runtime/frontend/settings.json` and `library.json` and handed them to the
 emulator as command-line arguments, while the emulator separately read
 `tapHLE_default_options.txt` and `tapHLE_options.txt` underneath. The two
 systems met only at argv, and because an unset setting emits no argument, a
@@ -481,7 +501,7 @@ is a trait so a linked-in client can replace it without either caller changing.
 
 ### Where the frontend's files live
 
-In `tapHLE_frontend/`, beside `tapHLE_sandbox` and `tapHLE_apps`, as indented
+In `runtime/frontend/`, beside `runtime/sandbox` and `runtime/apps`, as indented
 JSON meant to be readable and hand-editable:
 
 | File | What it holds |

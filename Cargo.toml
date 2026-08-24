@@ -6,8 +6,8 @@
 # desktop frontend depends on the root package rather than the other way round,
 # so it has to be listed. It is also a default member so that the ordinary
 # `cargo build` and the lint/format scripts cover it.
-members = ["src/gui"]
-default-members = [".", "src/gui"]
+members = ["crates/taphle", "crates/gui"]
+default-members = ["crates/taphle", "crates/gui"]
 
 [workspace.package]
 version = "0.3.0-alpha.1"
@@ -17,26 +17,6 @@ authors = ["tapHLE project contributors", "touchHLE project contributors"]
 homepage = "https://github.com/ephun/tapHLE"
 repository = "https://github.com/ephun/tapHLE"
 
-[package]
-name = "tapHLE"
-description = "A Windows-focused high-level emulator for early iPhone OS games"
-version = { workspace = true }
-edition = { workspace = true }
-license = { workspace = true }
-authors = { workspace = true }
-homepage = { workspace = true }
-repository = { workspace = true }
-
-[lib]
-# https://users.rust-lang.org/t/making-both-binary-and-cdylib-from-one-package/29105
-crate-type = ["cdylib", "rlib"]
-
-[features]
-default = ["static"]
-static = ["sdl2/bundled", "sdl2/static-link", "tapHLE_openal_soft_wrapper/static"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [workspace.dependencies]
 cc = "1.0.83"
 # Declared for the workspace because the emulator and the frontend both open
@@ -44,60 +24,3 @@ cc = "1.0.83"
 sdl2 = { git = "https://github.com/touchHLE/rust-sdl2", tag = "touchHLE-3", features = ["hidapi"] }
 cmake = "0.1.49"
 gl_generator = "0.14.0"
-
-[dependencies]
-flate2 = "1.0"
-hound = "3.5.0"
-mach_object = "0.1.17"
-plist = "1.8.0"
-zip = { version = "0.6.4", default-features = false, features = ["deflate"] }
-rusttype = "0.9.3"
-# Needed so we can access underlying OwnedFace from rusttype
-# (bump version if rusttype is updated!)
-owned_ttf_parser = "0.15.2"
-# While most Symphonia codecs are (likely) unpatented/have freely licenseable
-# patents as of 2024, all of the AAC profiles except AAC-LC (likely) have
-# active patent claims. The "aac" feature only enables AAC-LC, so it's should
-# be ok.
-# (The above statements should not understood as legal claims/advice.)
-symphonia = { version = "0.6.0", default-features = false, features = [
-    # formats
-    "aiff", "caf", "isomp4", "wav",
-    # codecs
-    "aac", "adpcm", "alac", "mp3", "pcm"
-] }
-quick-xml = "0.38.4"
-# Reading clickmaps for --replay, and the settings file both programs share.
-# Already in the workspace via tapHLE_gui, so these are not new external
-# dependencies, only a new user of them.
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-digest = "0.10.7"
-md-5 = "0.10.6"
-sha1 = "0.10.6"
-sha2 = "0.10.9"
-aes = "0.8.4"
-encoding_rs = "0.8.35"
-# This upstream-owned fork and tag are inherited, reviewed dependency pins.
-# Their URL is provenance, not product branding.
-# The HIDAPI feature is enabled because rust-sdl2 hides the SDL2 sensor features
-# behind this, but the actual HIDAPI is not used by tapHLE (see window.rs).
-sdl2 = { workspace = true }
-sdl2-sys = { git = "https://github.com/touchHLE/rust-sdl2", tag = "touchHLE-3" }
-tapHLE_dynarmic_wrapper = { path = "src/cpu/dynarmic_wrapper" }
-tapHLE_gl_bindings = { path = "src/gles/gl_bindings" }
-tapHLE_openal_soft_wrapper = { path = "src/audio/openal_soft_wrapper" }
-tapHLE_pvrt_decompress_wrapper = { path = "src/image/pvrt_decompress_wrapper" }
-tapHLE_stb_image_wrapper = { path = "src/image/stb_image_wrapper" }
-tapHLE_version = { path = "src/version" }
-windows-sys = { version = "0.61.0", features = ["Win32_System_Memory"] }
-nibarchive = "0.1.0"
-libc = "0.2.180"
-corosensei = "0.3.2"
-uuid = { version = "1.2.2", default-features = false, features = ["v4"] }
-
-[build-dependencies]
-cargo-license = "0.5.1"
-cc = { workspace = true }
-cmake = { workspace = true }
-gl_generator = { workspace = true }

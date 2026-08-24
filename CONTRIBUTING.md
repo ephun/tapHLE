@@ -67,7 +67,7 @@ is in the document that owns it.
 
 - **Never commit or upload an IPA, extracted app, asset, decryption key, save
   data, personal path, or raw tapHLE log.** Keep apps in the gitignored
-  `tapHLE_apps/`.
+  `runtime/apps/`.
 - **Never claim a compatibility result from a dirty worktree**, and never
   force-push a commit a compatibility report names.
 - **Do not consult leaked Apple source, private SDK material, or decompiled

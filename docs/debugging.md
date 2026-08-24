@@ -11,7 +11,7 @@ not.
 
 ## Logging
 
-`src/log.rs` provides two logging macros, `log!()` and `log_dbg!()`. The former
+`crates/taphle/src/log.rs` provides two logging macros, `log!()` and `log_dbg!()`. The former
 always prints; the latter only prints if the containing module is listed in
 `ENABLED_MODULES` in the same file.
 
@@ -190,13 +190,13 @@ an app might need that tapHLE does not implement. Check with
 `dev-scripts/log-unimplemented.sh [name of app to check]` — make sure `jq` is
 installed.
 
-The JSON schemas are described in `ObjC::dump_classes` (`src/objc/classes.rs`),
-`ObjC::dump_selectors` (`src/objc/selectors.rs`), and `Dyld::dump_lazy_symbols`
-(`src/dyld.rs`).
+The JSON schemas are described in `ObjC::dump_classes` (`crates/taphle/src/objc/classes.rs`),
+`ObjC::dump_selectors` (`crates/taphle/src/objc/selectors.rs`), and `Dyld::dump_lazy_symbols`
+(`crates/taphle/src/dyld.rs`).
 
 ## Before implementing a stub, check whether tapHLE already ships the real thing
 
-`tapHLE_dylibs/` holds real Apple-era libraries — `libgcc_s.1.dylib`,
+`runtime/dylibs/` holds real Apple-era libraries — `libgcc_s.1.dylib`,
 `libstdc++.6.0.9.dylib`, `libxml2`, `libz`, `libsqlite3` — and an app that links
 one of them gets the genuine implementation loaded as guest code. So when an app
 stops inside a tapHLE stub, the question is not only "how do I implement this",
@@ -216,7 +216,7 @@ Two checks, both cheap:
 ```powershell
 $llvmBin = Join-Path (rustc --print sysroot) `
     'lib\rustlib\x86_64-pc-windows-msvc\bin'
-& (Join-Path $llvmBin 'llvm-nm.exe') --defined-only tapHLE_dylibs\libgcc_s.1.dylib |
+& (Join-Path $llvmBin 'llvm-nm.exe') --defined-only runtime\dylibs\libgcc_s.1.dylib |
     Select-String Unwind
 ```
 
@@ -229,7 +229,7 @@ normally win, which is right: they are the ones that know about the emulator. Bu
 a *set* of functions sharing hidden state has to come from one place, and the two
 binding paths disagreed about which — a non-lazy symbol pointer already preferred
 a guest dylib's definition, while a lazy stub preferred the host's.
-`guest_definition_wins` in `src/dyld.rs` is where that exception is stated;
+`guest_definition_wins` in `crates/taphle/src/dyld.rs` is where that exception is stated;
 extend it only for the same shape of problem, and say why.
 
 ## The GDB remote serial protocol server
@@ -290,7 +290,7 @@ won't help.
 
 More generally, and especially outside the OpenGL realm, sometimes the most
 effective solution is dumping image data to a file. There are functions in
-[`crate::debug`](../src/debug.rs) for this, and `std::fs::write` works too. GIMP
+[`crate::debug`](../crates/taphle/src/debug.rs) for this, and `std::fs::write` works too. GIMP
 and some other tools can read raw pixel data, easiest if the filename ends in
 `.data`.
 
@@ -328,7 +328,7 @@ behaviour and its known gaps.
 ## Running on Windows: making runs isolated and repeatable
 
 Use a uniquely named temporary directory as tapHLE's working directory. Link its
-`tapHLE_dylibs` and `tapHLE_fonts` to the checkout and copy the small tracked
+`runtime/dylibs` and `runtime/fonts` to the checkout and copy the small tracked
 default-options file rather than copying large support trees. Do not add local
 options unless the experiment is specifically testing one.
 
@@ -433,7 +433,7 @@ cargo build --release
 
 powershell -NoProfile -ExecutionPolicy Bypass -File `
     .\dev-scripts\agy-visible-taphle.ps1 -Action Launch `
-    -AppPath '.\tapHLE_apps\<exact verified filename>.ipa'
+    -AppPath '.\runtime\apps\<exact verified filename>.ipa'
 
 powershell -NoProfile -ExecutionPolicy Bypass -File `
     .\dev-scripts\agy-visible-taphle.ps1 -Action Status
@@ -747,4 +747,4 @@ To build while the maintainer's tree is dirty, use a separate worktree with its
 own submodule init and its own `CARGO_TARGET_DIR`. Never stash their work.
 
 After a commit, a binary can still report the old revision; touch
-`src/version/build.rs` to force the stamp to regenerate.
+`crates/version/build.rs` to force the stamp to regenerate.
