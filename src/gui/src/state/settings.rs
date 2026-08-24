@@ -122,6 +122,13 @@ pub struct FrontendSettings {
     /// and several apps can run at once, which compatibility work needs.
     #[serde(default)]
     pub run_in_process: bool,
+    /// Draw the mobile composition instead of the desktop one.
+    ///
+    /// The mobile interface is otherwise only visible by building for a
+    /// phone, which means in practice it does not get looked at. Same code,
+    /// a different rectangle.
+    #[serde(default)]
+    pub preview_mobile: bool,
     /// Ask GitHub for a newer release at startup.
     pub check_for_updates: bool,
     /// Ask before taking an app out of the library.
@@ -141,6 +148,7 @@ impl Default for FrontendSettings {
             reveal_log_on_crash: true,
             developer_mode: false,
             run_in_process: false,
+            preview_mobile: false,
             check_for_updates: true,
             confirm_remove: true,
             log_capacity: crate::state::logstore::DEFAULT_CAPACITY,

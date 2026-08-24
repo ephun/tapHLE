@@ -100,6 +100,8 @@ pub struct Frontend {
     settings: FrontendSettings,
     /// Set by Play when apps are set to run in this process.
     pending_in_process: Option<PendingRun>,
+    /// Which screen the mobile preview is showing.
+    mobile_screen: crate::ui::mobile::Screen,
     state: UiState,
     library: Library,
     log: SharedLog,
@@ -217,6 +219,7 @@ impl Frontend {
             app_dialog: None,
             control_editor: None,
             pending_in_process: None,
+            mobile_screen: Default::default(),
             about: None,
             import_report: None,
             crash: None,
@@ -1500,7 +1503,41 @@ impl crate::shell::Application for Frontend {
                     view,
                     library_is_empty,
                 };
-                crate::ui::desktop::library_view::show(ui, &context, &mut actions);
+                if self.settings.preview_mobile {
+                    // A phone's shape, centred, so what is being judged is a
+                    // phone layout rather than a wide one with a phone's
+                    // widgets in it. 390 by 844 points is an iPhone 14.
+                    let available = ui.max_rect();
+                    let size = egui::vec2(390.0, 844.0);
+                    let frame = egui::Rect::from_center_size(
+                        available.center(),
+                        egui::vec2(
+                            size.x.min(available.width()),
+                            size.y.min(available.height()),
+                        ),
+                    );
+                    ui.painter().rect_stroke(
+                        frame.expand(1.0),
+                        0.0,
+                        egui::Stroke::new(1.0_f32, theme::LIGHT.border_strong),
+                        egui::StrokeKind::Outside,
+                    );
+                    let mobile = crate::ui::mobile::MobileContext {
+                        library: &self.library,
+                        groups: &groups,
+                        icons: &self.icons,
+                        selected: self.state.selected_app.as_deref(),
+                        running: &running,
+                    };
+                    actions.extend(crate::ui::mobile::show(
+                        ui,
+                        frame,
+                        &mobile,
+                        &mut self.mobile_screen,
+                    ));
+                } else {
+                    crate::ui::desktop::library_view::show(ui, &context, &mut actions);
+                }
             });
 
         self.search = search;
