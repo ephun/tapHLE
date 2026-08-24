@@ -38,6 +38,27 @@ The native Dynarmic dependency currently expects Boost 1.81 in the repository on
 Windows. Download Boost 1.81 and extract/rename its top-level directory to
 `vendor/boost`, so `vendor/boost/boost/` exists.
 
+**A host with no GPU needs a software renderer.** tapHLE asks SDL for an OpenGL
+ES context, and a machine whose only display adapter is virtual — a VM with
+QXL, or a headless cloud runner — has no driver that can give it one. Every app
+then dies immediately with an OpenGL panic, which reads like a broken build
+rather than a missing driver. Put Mesa3D's `opengl32.dll` and `libglapi.dll`
+beside the executable and set:
+
+```sh
+GALLIUM_DRIVER=llvmpipe
+LIBGL_ALWAYS_SOFTWARE=true
+```
+
+Software rendering is slow enough to change what a run looks like, so results
+from such a host are not comparable with results from one that has a GPU.
+`dev-scripts/regression-sweep.ps1` sampling a title screen is the case that
+bites: frames arrive far enough apart that slow-cycling screens flip between
+MOVING and STATIC between runs. That is fine for comparing two revisions on the
+same host, which is what a regression sweep does, and it is not a compatibility
+result — see [`docs/platforms.md`](platforms.md) on results being
+host-qualified.
+
 **CMake 4 needs a policy override.** It dropped support for projects declaring a
 minimum policy version below 3.5, which the vendored SDL, Dynarmic and OpenAL
 sources all do. `.cargo/config.toml` sets `CMAKE_POLICY_VERSION_MINIMUM=3.5` so
