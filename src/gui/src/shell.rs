@@ -38,6 +38,23 @@ use egui::{Pos2, Rect, Vec2, ViewportCommand, ViewportId, ViewportInfo};
 pub trait Application {
     fn update(&mut self, ctx: &egui::Context);
 
+    /// Whether the application wants the window's input to itself for a
+    /// while, blocking this one.
+    ///
+    /// SDL allows exactly one `EventPump` in a process, so a second thing
+    /// that reads input — the emulator, running an app in here rather than in
+    /// a process of its own — cannot start one while the shell holds its own.
+    /// Asking first is how the shell knows to put its pump down.
+    fn wants_to_hand_over(&mut self) -> bool {
+        false
+    }
+
+    /// Do the blocking thing [Application::wants_to_hand_over] asked for.
+    ///
+    /// Called with no event pump in existence, so whatever runs here may make
+    /// its own. The shell takes its pump back afterwards.
+    fn hand_over(&mut self) {}
+
     /// Called once, after the loop ends and before the window closes.
     fn on_exit(&mut self) {}
 }
@@ -269,6 +286,20 @@ pub fn run<A: Application>(
 
         if closing {
             break 'frames;
+        }
+
+        // Handing over: the pump has to be dropped, not merely unused, before
+        // anything else can make one. Taken back straight afterwards, and the
+        // frontend has been frozen the whole time — which is the honest cost
+        // of running an app in here rather than in a process of its own.
+        if app.wants_to_hand_over() {
+            drop(event_pump);
+            app.hand_over();
+            event_pump = sdl.event_pump()?;
+            // Whatever happened while the pump was gone is not this window's
+            // to replay, and the frontend has a frame's worth of catching up.
+            pending.clear();
+            egui_ctx.request_repaint();
         }
         // Nothing to redraw and nothing waiting: sleep in SDL until something
         // happens, rather than spinning a core to draw the same window again.

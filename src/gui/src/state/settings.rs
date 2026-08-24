@@ -112,6 +112,16 @@ pub struct FrontendSettings {
     pub reveal_log_on_crash: bool,
     /// Keep the log panel open and show the developer-facing extras.
     pub developer_mode: bool,
+    /// Run an app inside this program instead of starting a second one.
+    ///
+    /// What the mobile frontends will have no choice about, offered here so
+    /// the same path can be watched on a desktop. Off by default, because a
+    /// second process is better on a desktop in every way that matters
+    /// today — the library window keeps repainting, the app's output reaches
+    /// the log panel through a pipe, a crash cannot take the library with it,
+    /// and several apps can run at once, which compatibility work needs.
+    #[serde(default)]
+    pub run_in_process: bool,
     /// Ask GitHub for a newer release at startup.
     pub check_for_updates: bool,
     /// Ask before taking an app out of the library.
@@ -130,6 +140,7 @@ impl Default for FrontendSettings {
             emulator_path: None,
             reveal_log_on_crash: true,
             developer_mode: false,
+            run_in_process: false,
             check_for_updates: true,
             confirm_remove: true,
             log_capacity: crate::state::logstore::DEFAULT_CAPACITY,

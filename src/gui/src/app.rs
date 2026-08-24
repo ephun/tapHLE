@@ -83,8 +83,23 @@ const SAVE_INTERVAL: Duration = Duration::from_secs(3);
 /// How many recent lines a crash notice and a diagnostics copy carry.
 const EXCERPT_LINES: usize = 40;
 
+/// An app waiting to be run inside this process.
+///
+/// Owned rather than borrowed because it outlives the frame that asked for
+/// it: the shell carries it out after the frame, once it has released SDL's
+/// event pump.
+struct PendingRun {
+    entry_id: String,
+    title: String,
+    path: PathBuf,
+    working_directory: PathBuf,
+    environment: Vec<(String, String)>,
+}
+
 pub struct Frontend {
     settings: FrontendSettings,
+    /// Set by Play when apps are set to run in this process.
+    pending_in_process: Option<PendingRun>,
     state: UiState,
     library: Library,
     log: SharedLog,
@@ -201,6 +216,7 @@ impl Frontend {
             global_dialog: None,
             app_dialog: None,
             control_editor: None,
+            pending_in_process: None,
             about: None,
             import_report: None,
             crash: None,
@@ -874,6 +890,21 @@ impl Frontend {
         }
 
         let data_dir = self.data_dir.clone();
+        if self.settings.run_in_process {
+            // Not run here: an app needs SDL's one event pump, and the shell
+            // is holding it while this frame is being drawn. Recorded for the
+            // shell to carry out once it has put the pump down — the same
+            // "ask, do not act" rule every other part of the interface
+            // follows, for the same reason.
+            self.pending_in_process = Some(PendingRun {
+                entry_id: entry_id.to_string(),
+                title: title.clone(),
+                path: path.clone(),
+                working_directory: data_dir,
+                environment: settings.to_env(),
+            });
+            return;
+        }
         let result = self.launcher.launch(launcher::LaunchRequest {
             emulator: &emulator,
             working_directory: &data_dir,
@@ -1310,6 +1341,43 @@ impl Frontend {
 }
 
 impl crate::shell::Application for Frontend {
+    fn wants_to_hand_over(&mut self) -> bool {
+        self.pending_in_process.is_some()
+    }
+
+    fn hand_over(&mut self) {
+        let Some(run) = self.pending_in_process.take() else {
+            return;
+        };
+        let request = launcher::LaunchRequest {
+            emulator: std::path::Path::new(""),
+            working_directory: &run.working_directory,
+            entry_id: &run.entry_id,
+            app_name: &run.title,
+            app_path: &run.path,
+            // Deliberately none, for the reason given where a spawned run
+            // says the same: the settings reach the emulator through the
+            // shared settings file, not as arguments.
+            arguments: &[],
+            environment: &run.environment,
+        };
+        match self.launcher.run_here(request) {
+            Ok(status) => {
+                let level = if status == 0 {
+                    LogLevel::Info
+                } else {
+                    LogLevel::Warning
+                };
+                self.note(level, format!("{} ended with status {status}.", run.title));
+                if let Some(entry) = self.library.find_mut(&run.entry_id) {
+                    entry.last_played = Some(timefmt::now_seconds());
+                }
+                self.dirty.library = true;
+            }
+            Err(e) => self.note(LogLevel::Error, e),
+        }
+    }
+
     fn update(&mut self, ctx: &egui::Context) {
         self.drain_background(ctx);
         self.collect_dropped_files(ctx);

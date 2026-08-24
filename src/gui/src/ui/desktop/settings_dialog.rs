@@ -1105,6 +1105,16 @@ fn general_page(ui: &mut Ui, draft: &mut FrontendSettings) {
         &mut draft.developer_mode,
         "Developer mode: keep the log panel open and show extra tools",
     );
+    if draft.developer_mode {
+        ui.checkbox(
+            &mut draft.run_in_process,
+            "Run apps inside this window's process",
+        );
+        caption(
+            ui,
+            "What a phone will have to do. This window stops responding while              the app runs, its log goes to the terminal instead of the panel,              and only one app can run at a time.",
+        );
+    }
 
     crate::ui::widgets::section(ui, "Updates");
     ui.checkbox(

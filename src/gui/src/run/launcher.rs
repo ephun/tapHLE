@@ -194,6 +194,60 @@ impl Launcher {
         Ok(id)
     }
 
+    /// Run an app in this process, on this thread, and wait for it to end.
+    ///
+    /// The mobile frontends will have no other option: an app bundle is one
+    /// process there, so the emulator has to run inside the program that
+    /// launched it. This is that path, on a desktop where it can be watched.
+    ///
+    /// What it costs, and why the spawning path above stays: this blocks
+    /// until the app ends, so the library window does not repaint while a
+    /// game is running, and the app's own output goes to the terminal rather
+    /// than the log panel, because there is no pipe to read it from. Only one
+    /// app can run at a time — `ENVIRONMENT_INSTANCE_EXISTS` says so — where
+    /// spawning can run several, which is what the compatibility work needs.
+    pub fn run_here(&mut self, request: LaunchRequest<'_>) -> Result<i32, String> {
+        let LaunchRequest {
+            app_name,
+            app_path,
+            arguments,
+            environment,
+            ..
+        } = request;
+        // The same environment a spawned run would be given. Set on this
+        // process rather than a child's, so it is set back afterwards: the
+        // frontend outlives the app and must not inherit its settings.
+        let restore: Vec<(String, Option<String>)> = environment
+            .iter()
+            .map(|(name, value)| {
+                let previous = std::env::var(name).ok();
+                std::env::set_var(name, value);
+                ((*name).to_string(), previous)
+            })
+            .collect();
+
+        logstore::note(
+            &self.log,
+            LogLevel::Info,
+            format!("Running {app_name} in this process: {}", app_path.display()),
+        );
+
+        // argv[0] first, because `run_app` parses exactly what the command
+        // line parses and skips it.
+        let args = std::iter::once("tapHLE".to_string())
+            .chain(std::iter::once(app_path.display().to_string()))
+            .chain(arguments.iter().cloned());
+        let outcome = tapHLE::run_app(args);
+
+        for (name, previous) in restore {
+            match previous {
+                Some(value) => std::env::set_var(&name, value),
+                None => std::env::remove_var(&name),
+            }
+        }
+        outcome
+    }
+
     /// Ask a run to stop.
     ///
     /// There is no polite way to ask: the emulator has no control channel,
