@@ -460,7 +460,9 @@ pub fn show_crash(ctx: &egui::Context, notice: &mut CrashNotice, actions: &mut V
             if ui.button("Save Log…").clicked() {
                 actions.push(Action::SaveLog);
             }
-            if ui.button("Compatibility Report…").clicked() {
+            if crate::state::compat::CLIENT_REPORTING_AVAILABLE
+                && ui.button("Compatibility Report…").clicked()
+            {
                 actions.push(Action::OpenCompatibilityReport(notice.entry_id.clone()));
                 notice.open = false;
             }

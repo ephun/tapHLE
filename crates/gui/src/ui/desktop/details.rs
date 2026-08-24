@@ -259,10 +259,11 @@ fn compatibility(
         {
             actions.push(Action::OpenCompatibilityEntry(entry.id.clone()));
         }
-        if ui
-            .button("Report…")
-            .on_hover_text("Assemble a compatibility report for this app")
-            .clicked()
+        if crate::state::compat::CLIENT_REPORTING_AVAILABLE
+            && ui
+                .button("Report…")
+                .on_hover_text("Assemble a compatibility report for this app")
+                .clicked()
         {
             actions.push(Action::OpenCompatibilityReport(entry.id.clone()));
         }

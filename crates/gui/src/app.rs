@@ -933,6 +933,9 @@ impl Frontend {
     }
 
     fn open_report(&mut self, entry_id: &str) {
+        if !compat::CLIENT_REPORTING_AVAILABLE {
+            return;
+        }
         let Some(entry) = self.library.find(entry_id) else {
             return;
         };
@@ -1115,7 +1118,11 @@ impl Frontend {
                     ),
                 }
             }
-            Action::OpenCompatibilityReport(id) => self.open_report(&id),
+            Action::OpenCompatibilityReport(id) => {
+                if crate::state::compat::CLIENT_REPORTING_AVAILABLE {
+                    self.open_report(&id);
+                }
+            }
             Action::SetLocalRating(id, stars) => {
                 if let Some(entry) = self.library.find_mut(&id) {
                     entry.local_rating.set_stars(stars);

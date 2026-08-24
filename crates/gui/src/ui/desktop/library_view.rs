@@ -532,7 +532,9 @@ fn handle_entry_interaction(
             actions.push(Action::OpenCompatibilityEntry(entry.id.clone()));
             ui.close();
         }
-        if ui.button("Compatibility Report…").clicked() {
+        if crate::state::compat::CLIENT_REPORTING_AVAILABLE
+            && ui.button("Compatibility Report…").clicked()
+        {
             actions.push(Action::OpenCompatibilityReport(entry.id.clone()));
             ui.close();
         }
