@@ -714,6 +714,13 @@
   press the one you want — and a stick zone can be steered with the arrow keys
   or with W, A, S and D, diagonals included. On the command line these are
   `--key-to-touch=` and `--key-dpad-to-touch=`.
+- Developer mode can now run a game inside the tapHLE window's own process
+  rather than starting a second one. It is how tapHLE will have to work on a
+  phone, where an app is a single process, and it is off by default on a
+  desktop because a second process is better there in every way that matters:
+  the library window keeps working while you play, the game's log reaches the
+  log panel, a crash cannot take the library with it, and you can run more than
+  one game at once.
 - Starting the tapHLE window from a terminal now shows you its log there as
   well as in the log panel. A windowed program on Windows has no console at
   all, so anything it had to say before it got as far as the panel — a settings

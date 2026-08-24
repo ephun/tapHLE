@@ -44,6 +44,30 @@ ended in a bare abort with no message at all. Their stacks are leaked, which is
 safe — corosensei's drop-time bookkeeping exists so a stack can be reused, and
 none of these is.
 
+### Running an app in this process
+
+An app can run inside the frontend's own process, which is what the mobile
+frontends will have no choice about: an app bundle is one process there.
+Developer mode offers it on the desktop, under "Run apps inside this window's
+process", off by default.
+
+Two things had to give way. `Environment::run` had to stop ending the process,
+which is above. And SDL allows exactly **one `EventPump` in a process**, so
+the emulator cannot make one while the shell is holding its own — the first
+attempt panicked with "there can only be one `EventPump` in use at a time".
+The shell asks the application each frame whether it wants to hand over; if
+so it drops its pump, lets the app run, and takes a new one afterwards. That
+is why Play records the request during a frame and the shell carries it out
+after — the same "ask, do not act" rule the rest of the interface follows,
+for a different reason.
+
+What it costs, and why spawning stays the desktop default: the library window
+does not repaint while a game runs, the app's output goes to the terminal
+rather than the log panel because there is no pipe to read it from, a crash
+takes the library with it, and only one app can run at a time —
+`ENVIRONMENT_INSTANCE_EXISTS` says so — where spawning can run several, which
+is what compatibility work needs.
+
 ### The teardown abort
 
 Returning from a run means the process reaches normal termination after
