@@ -23,13 +23,11 @@
 //!
 //! ## What is not
 //!
-//! Submitting is not implemented, and the interface says so rather than
-//! offering a button that does nothing. The database accepts reports from an
-//! agent token that belongs to the maintainer, not from arbitrary users; a
-//! user-facing submission needs the GitHub sign-in that the project has not
-//! built yet. Until it exists, [ReportDraft] assembles the exact contents of
-//! a report so it can be copied into the web form, which is a real workflow
-//! rather than a placeholder.
+//! Submitting is not implemented. All client-reporting controls are hidden
+//! until a secure GitHub-authenticated human workflow exists. [ReportDraft] and
+//! the retained dialog code stay behind [CLIENT_REPORTING_AVAILABLE] so the
+//! unfinished path cannot be mistaken for a product feature, and no privileged
+//! agent credential is ever embedded in a distributed build.
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -42,6 +40,10 @@ pub const DATABASE_SITE: &str = "https://taphle.ephun.net";
 pub const DATABASE_APPS_URL: &str = "https://taphle.ephun.net/compatibility/api/apps";
 /// Where a person goes to read or submit records.
 pub const DATABASE_WEB_URL: &str = "https://taphle.ephun.net/compatibility";
+
+/// Hidden until the distributed client has a secure GitHub-authenticated human
+/// submission flow. Agent credentials are never embedded in tapHLE builds.
+pub const CLIENT_REPORTING_AVAILABLE: bool = false;
 
 /// One app as the database describes it.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -157,9 +159,8 @@ fn absolute_url(url: &str) -> String {
 pub trait CompatibilityProvider: Send + Sync {
     fn describe(&self) -> String;
     fn fetch(&self) -> Result<DatabaseSnapshot, String>;
-    /// Why the frontend cannot submit a report yet. Shown in the report
-    /// window, so the limitation is visible rather than implied by a button
-    /// that does nothing.
+    /// Why reporting remains unavailable. Retained with the disabled dialog
+    /// until a secure human submission workflow replaces it.
     fn submission_limitation(&self) -> &'static str;
 }
 
@@ -193,10 +194,9 @@ impl CompatibilityProvider for TapHledbProvider {
     }
 
     fn submission_limitation(&self) -> &'static str {
-        "Submitting a report from tapHLE is not implemented. The database \
-         accepts reports from the maintainer's own credentials, and a \
-         sign-in for other people has not been built yet. Copy this report \
-         and paste it into the database's web form."
+        "Client reporting is hidden until tapHLE has a secure \
+         GitHub-authenticated human submission workflow. Privileged agent \
+         credentials are never embedded in distributed builds."
     }
 }
 
@@ -357,6 +357,11 @@ mod tests {
     fn a_broken_response_is_an_error() {
         assert!(parse_snapshot("{\"apps\":", 0).is_err());
         assert!(parse_snapshot("<html>404</html>", 0).is_err());
+    }
+
+    #[test]
+    fn unfinished_client_reporting_is_hidden() {
+        assert!(!CLIENT_REPORTING_AVAILABLE);
     }
 
     /// A rating outside one to five stars is not a rating tapHLE uses.

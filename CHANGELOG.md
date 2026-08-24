@@ -34,10 +34,9 @@
 
 - Compatibility ratings from the tapHLE database are shown beside each app,
   and you can keep your own rating separately without either overwriting the
-  other. Reporting a result assembles everything a report needs — including
-  whether the app already has a record, so a second one is not created by
-  accident — ready to paste into the database. Submitting from inside tapHLE
-  is not built yet and says so.
+  other. Unfinished report-submission controls are hidden until tapHLE can offer
+  a secure GitHub-authenticated human workflow; distributed builds never contain
+  a privileged agent credential.
 
 - Every option that could be switched on can now be switched off again:
   `--windowed`, `--portrait`, `--no-landscape-native` and seven more. This
