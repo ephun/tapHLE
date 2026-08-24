@@ -118,6 +118,9 @@ pub struct Environment {
     pub env_vars: HashMap<Vec<u8>, MutPtr<u8>>,
     pub dump_file: Option<std::fs::File>,
     shutdown_requested_by: Option<ThreadId>,
+    /// Set when the run should end, and with what status. Read by [Self::run]
+    /// once the guest thread that asked has handed control back.
+    exit_status: Option<i32>,
     yielder: *const Yielder<Environment, Environment>,
     // The amount of ticks to run for Some(value), or single-stepping for None.
     // Sadly, setting ticks to 1 does not step properly, so Option is required.
@@ -698,6 +701,7 @@ impl Environment {
             env_vars: Default::default(),
             dump_file: None,
             shutdown_requested_by: None,
+            exit_status: None,
             yielder: std::ptr::null(),
             remaining_ticks: None,
             panic_cell: Rc::new(Cell::new(None)),
@@ -789,6 +793,7 @@ impl Environment {
             env_vars: HashMap::new(),
             dump_file: None,
             shutdown_requested_by: None,
+            exit_status: None,
             yielder: std::ptr::null(),
             remaining_ticks: None,
             panic_cell: Rc::new(Cell::new(None)),
@@ -1191,9 +1196,13 @@ impl Environment {
         self.yield_thread(ThreadBlock::Joining(joinee_thread, ptr));
     }
 
-    /// Run the emulator. This is the main loop and won't return until app exit.
-    /// Only `main.rs` should call this.
-    pub fn run(mut self) {
+    /// Run the emulator. This is the main loop and returns when the app ends,
+    /// with the status the app ended with.
+    ///
+    /// It used to end the process instead. It cannot any more: the frontend
+    /// and the emulator share one process, so ending the app has to leave the
+    /// program running.
+    pub fn run(mut self) -> i32 {
         let mut curr_host_context = self.threads[0].host_context.take().unwrap();
         let panic_cell = self.panic_cell.clone();
         let mut stepping = false;
@@ -1279,15 +1288,26 @@ impl Environment {
                 w.on_main_stack = true;
             }
 
+            // A guest exit cannot unwind — the stack under it holds dynarmic
+            // frames — so [Self::exit_run] marks the run as over and hands
+            // control back here instead. This is the first point at which the
+            // stack is Rust's again.
+            if let Some(status) = self.exit_status {
+                log_dbg!("App ended with status {}", status);
+                self.abandon_host_contexts(old_context.take());
+                return status;
+            }
+
             // A lifecycle callback can legitimately terminate its current
-            // pthread before UIKit reaches its final process::exit call. The
-            // quit event has already been consumed, so complete the persisted
-            // host shutdown here instead of resuming unrelated guest threads.
-            // Match UIKit's existing process-exit behavior rather than trying
-            // to unwind every remaining suspended coroutine during shutdown.
+            // pthread before UIKit reaches its final exit. The quit event has
+            // already been consumed, so complete the persisted shutdown here
+            // instead of resuming unrelated guest threads. Match UIKit's
+            // existing behavior rather than trying to unwind every remaining
+            // suspended coroutine during shutdown.
             if kill_current_thread && self.shutdown_requested_by == Some(self.current_thread) {
                 log_dbg!("Exited callback thread completed the requested host shutdown");
-                std::process::exit(0);
+                self.abandon_host_contexts(old_context.take());
+                return self.exit_status.unwrap_or(0);
             }
 
             let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1629,6 +1649,66 @@ impl Environment {
     /// Persist a host close request across guest lifecycle callbacks.
     pub fn request_shutdown(&mut self) {
         self.shutdown_requested_by = Some(self.current_thread);
+    }
+
+    /// Abandon every suspended guest coroutine instead of unwinding it.
+    ///
+    /// Dropping one force-unwinds it, and that unwind has to cross the
+    /// dynarmic frames its stack is made of. Unwinding through non-Rust
+    /// frames is undefined, and what it does in practice is take the process
+    /// down with no diagnostic whatsoever: corosensei guards the unwind in
+    /// its `Drop` with a scope guard that double-panics, so a perfectly
+    /// ordinary quit ended in a bare abort rather than an exit code. Both
+    /// halves of that were found by closing a window and reading the exit
+    /// code, and neither shows up in a log.
+    ///
+    /// Leaking the stacks is the safe answer. The bookkeeping corosensei does
+    /// on drop exists so a stack can be reused, and none of these is; the
+    /// guest memory they refer to goes away with the environment. One app's
+    /// worth of stacks is the cost of ending that app without undefined
+    /// behaviour.
+    ///
+    /// Afterwards no thread holds a context, which is the case `Drop for
+    /// Environment` already treats as nothing to clean up.
+    fn abandon_host_contexts(&mut self, current: Option<HostContext>) {
+        if let Some(context) = current {
+            std::mem::forget(context);
+        }
+        for thread in &mut self.threads {
+            if let Some(context) = thread.host_context.take() {
+                std::mem::forget(context);
+            }
+        }
+    }
+
+    /// End the run. The only way a guest exit is carried out.
+    ///
+    /// It cannot be a panic, a `?` or a value threaded back up the stack,
+    /// because the stack below guest code holds dynarmic frames and unwinding
+    /// through non-Rust frames is undefined — the note at the top of this
+    /// module is about exactly that. So the run is marked as over and the
+    /// calling thread hands control to the executor, which sees the mark and
+    /// returns from [Self::run] without resuming anything. Everything still
+    /// suspended is cleaned up by `Drop`.
+    ///
+    /// This is the change the `UIApplicationMain` TODO asked for: "set some
+    /// global flag that changes how the execution works from this point
+    /// onwards".
+    pub fn exit_run(&mut self, status: i32) -> ! {
+        self.request_shutdown();
+        self.exit_status = Some(status);
+        // Before the first thread is running there is no executor to hand
+        // control to, so there is nothing to do but end the process. This is
+        // start-up failure territory rather than an app exiting.
+        if !self.yielder.is_null() {
+            // `NotBlocked` because the thread is not waiting for anything; it
+            // is simply never resumed. Yielding is how every other host
+            // function hands control back, and the executor returns before it
+            // would schedule anybody.
+            self.yield_thread(ThreadBlock::NotBlocked);
+        }
+        log_no_panic!("A thread that asked to exit was resumed; ending the process.");
+        std::process::exit(status);
     }
 
     /// Find the next thread to execute, and set it up to be switched to.

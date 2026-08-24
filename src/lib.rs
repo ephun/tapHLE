@@ -486,6 +486,26 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
             std::panic::resume_unwind(e)
         }
     };
-    env.run();
-    Ok(())
+    // The run ends rather than the process, so the status has to be carried
+    // out to the command line deliberately. Zero is the ordinary ending and
+    // returns; anything else is what the app asked `exit()` for and has to
+    // reach whoever ran tapHLE from a terminal.
+    let status = env.run();
+    // Exiting here rather than returning, even for a successful run.
+    //
+    // Two reasons, and only the first is about the status. The run's status
+    // is the app's, and whoever ran tapHLE from a terminal is owed it.
+    //
+    // The second is a defect this change made reachable rather than caused.
+    // The process had never run to normal termination after emulating an app,
+    // because the emulator used to exit from deep inside the run; now that it
+    // returns, the C runtime's teardown runs for the first time and aborts —
+    // after `main` has returned Ok, with no message and no backtrace, at
+    // 0xC0000409. Everything before it is clean: the run returns, the
+    // environment drops, `main` finishes. Exiting first steps over it.
+    //
+    // This has to be found before the frontend can host a run in its own
+    // process, because there is no `exit` to hide behind there. Recorded in
+    // docs/architecture.md.
+    std::process::exit(status);
 }

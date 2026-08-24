@@ -24,9 +24,56 @@ structure layout, and every calling convention crosses that boundary somewhere.
 
 tapHLE builds two binaries, and the split is deliberate.
 
-`tapHLE` is the emulator. It owns its process: `Environment` maps guest memory at
-addresses it chooses, drives an SDL event loop, and ends a run by calling
-`std::process::exit`. One of those per process is the design.
+`tapHLE` is the emulator. `Environment` maps guest memory, drives an SDL event
+loop, and runs one app at a time — `ENVIRONMENT_INSTANCE_EXISTS` enforces that.
+
+**Ending an app does not end the process.** `Environment::run` returns the
+status the app finished with. It used to call `std::process::exit`, which it
+cannot do once the frontend shares the process: a game closing must not close
+the window that launched it.
+
+The exit cannot unwind. The stack below guest code holds dynarmic frames and
+unwinding through non-Rust frames is undefined, so `Environment::exit_run`
+marks the run as over and hands control to the executor instead; `run` sees the
+mark at the top of its loop, where the stack is Rust's again, and returns.
+
+The suspended coroutines are then **abandoned rather than unwound**. Dropping
+one force-unwinds it, and that unwind has to cross the same dynarmic frames;
+corosensei guards it with a scope guard that double-panics, so an ordinary quit
+ended in a bare abort with no message at all. Their stacks are leaked, which is
+safe — corosensei's drop-time bookkeeping exists so a stack can be reused, and
+none of these is.
+
+### The teardown abort
+
+**Known defect, and a blocker for the single-process frontend.** Now that a run
+returns, the process reaches normal termination after emulating an app for the
+first time, and the C runtime's teardown aborts: after `main` has returned
+`Ok`, with no message, no backtrace and status `0xC0000409`. Everything before
+it is clean — the run returns, the environment drops, `main` finishes.
+
+`tapHLE` steps over it by calling `std::process::exit` at the end of `main`,
+which is also how it carries the app's status to the command line. That works
+for a program whose job is done. It will not work for the frontend, which has
+to keep running after a game closes, so this has to be found before the two
+share a process.
+
+What is known so far:
+
+- **Returning from `main` is fine until an `Environment` has existed.**
+  `--copyright` and `--dump=symbols --headless` both return normally and exit
+  0. Whatever aborts needs a run to have happened.
+- **It is not the run, and not the environment's own teardown.** Traced: `run`
+  returns, `Drop for Environment` completes, `main` returns `Ok`, and the abort
+  comes after all of that.
+- Suspects are therefore the static destructors of the statically linked
+  dynarmic, SDL and OpenAL Soft, none of which had ever run after a guest had
+  executed. The `static` feature is what links them that way, so building
+  without it is the next discriminator to try.
+
+It reproduces in about twenty seconds without a window on anybody's desktop:
+replay a one-step clickmap with `--replay-quit`, which injects an ordinary quit
+once the step settles.
 
 `tapHLE-gui` is the desktop frontend — app library, details panel, settings,
 integrated log. It launches `tapHLE` as a child process with the same arguments
