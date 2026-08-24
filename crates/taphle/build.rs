@@ -66,10 +66,17 @@ pub fn main() {
 
     // Summarise the licensing of Dynarmic
 
-    let dynarmic_readme_path = package_root.join("vendor/dynarmic/README.md");
+    // The vendored sources live at the workspace root, which is above this
+    // package. Found rather than counted, for the reason the wrapper build
+    // scripts give.
+    let root = package_root
+        .ancestors()
+        .find(|dir| dir.join("vendor").is_dir())
+        .unwrap_or(package_root);
+    let dynarmic_readme_path = root.join("vendor/dynarmic/README.md");
     let dynarmic_readme = std::fs::read_to_string(&dynarmic_readme_path).unwrap();
     rerun_if_changed(&dynarmic_readme_path);
-    let dynarmic_license_path = package_root.join("vendor/dynarmic/LICENSE.txt");
+    let dynarmic_license_path = root.join("vendor/dynarmic/LICENSE.txt");
     let dynarmic_license = std::fs::read_to_string(&dynarmic_license_path).unwrap();
     rerun_if_changed(&dynarmic_license_path);
 

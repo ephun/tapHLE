@@ -125,6 +125,7 @@ from the PowerVR SDK, which is available under the following license:
 
 const PVRTD_LICENSE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
+    "/../..",
     "/vendor/PVRTDecompress/LICENSE.md"
 ));
 

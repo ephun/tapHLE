@@ -34,7 +34,7 @@ owner instead of restating the fact. This table is what makes that checkable.
 | The test ladder | `docs/development.md` | Link |
 | Code style | `docs/development.md` | Link |
 | Copyright and reverse-engineering rules | `docs/development.md` | `AGENTS.md` carries the normative summary |
-| TestApp fixture, LLVM and SDK setup | `tests/README.md` | `docs/development.md` links |
+| TestApp fixture, LLVM and SDK setup | `crates/taphle/tests/README.md` | `docs/development.md` links |
 | What a compatibility result means | `docs/compatibility.md` | Link |
 | Artifact identity and provenance protocol | `docs/compatibility.md` | Link |
 | Availability / archive / DMCA policy | `docs/compatibility.md` | Link |

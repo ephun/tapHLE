@@ -25,7 +25,7 @@ TEXT_SUFFIXES = {
 }
 
 TRACKED_DIRS = (
-    "docs", "dev-scripts", "compatibility", "tests", "src", "res", "android",
+    "docs", "dev-scripts", "compatibility", "crates", "platforms", "runtime",
     r"\.github",
 )
 

@@ -11,7 +11,7 @@ not.
 
 ## Logging
 
-`src/log.rs` provides two logging macros, `log!()` and `log_dbg!()`. The former
+`crates/taphle/src/log.rs` provides two logging macros, `log!()` and `log_dbg!()`. The former
 always prints; the latter only prints if the containing module is listed in
 `ENABLED_MODULES` in the same file.
 
@@ -190,9 +190,9 @@ an app might need that tapHLE does not implement. Check with
 `dev-scripts/log-unimplemented.sh [name of app to check]` — make sure `jq` is
 installed.
 
-The JSON schemas are described in `ObjC::dump_classes` (`src/objc/classes.rs`),
-`ObjC::dump_selectors` (`src/objc/selectors.rs`), and `Dyld::dump_lazy_symbols`
-(`src/dyld.rs`).
+The JSON schemas are described in `ObjC::dump_classes` (`crates/taphle/src/objc/classes.rs`),
+`ObjC::dump_selectors` (`crates/taphle/src/objc/selectors.rs`), and `Dyld::dump_lazy_symbols`
+(`crates/taphle/src/dyld.rs`).
 
 ## Before implementing a stub, check whether tapHLE already ships the real thing
 
@@ -229,7 +229,7 @@ normally win, which is right: they are the ones that know about the emulator. Bu
 a *set* of functions sharing hidden state has to come from one place, and the two
 binding paths disagreed about which — a non-lazy symbol pointer already preferred
 a guest dylib's definition, while a lazy stub preferred the host's.
-`guest_definition_wins` in `src/dyld.rs` is where that exception is stated;
+`guest_definition_wins` in `crates/taphle/src/dyld.rs` is where that exception is stated;
 extend it only for the same shape of problem, and say why.
 
 ## The GDB remote serial protocol server
@@ -290,7 +290,7 @@ won't help.
 
 More generally, and especially outside the OpenGL realm, sometimes the most
 effective solution is dumping image data to a file. There are functions in
-[`crate::debug`](../src/debug.rs) for this, and `std::fs::write` works too. GIMP
+[`crate::debug`](../crates/taphle/src/debug.rs) for this, and `std::fs::write` works too. GIMP
 and some other tools can read raw pixel data, easiest if the filename ends in
 `.data`.
 

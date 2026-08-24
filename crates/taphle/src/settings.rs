@@ -811,7 +811,7 @@ mod tests {
     fn many_shipped_defaults_depend_on_locking_an_orientation() {
         let shipped = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/runtime/default_options.txt"
+            "/../../runtime/default_options.txt"
         ));
         let locking = shipped
             .lines()

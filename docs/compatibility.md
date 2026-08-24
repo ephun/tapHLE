@@ -285,7 +285,7 @@ Typical boundaries are:
 - loader/linker: `bundle`, `mach_o`, `dyld`, and missing-symbol logs;
 - CPU/ABI/memory: `cpu`, `abi`, `mem`, and crashes near guest calls;
 - Objective-C dispatch: `objc` and unknown class/selector logs;
-- framework behavior: the matching module under `src/frameworks`;
+- framework behavior: the matching module under `crates/taphle/src/frameworks`;
 - files and preferences: `fs`, `paths`, and Foundation file APIs;
 - graphics/input/windowing: `gles`, UIKit views, and `window`;
 - audio: `audio`, AudioToolbox, AVFoundation, and OpenAL.
@@ -336,7 +336,7 @@ Stop at the highest affordable level and report where you stopped:
 1. A unit test next to deterministic logic.
 2. A TestApp probe for a guest-visible API or ABI behavior.
 3. `cargo test -- --skip test_app` when the custom SDK is unavailable.
-4. Full `cargo test` with the SDK and LLVM from `tests/README.md`.
+4. Full `cargo test` with the SDK and LLVM from `crates/taphle/tests/README.md`.
 5. A release build and launch of the exact target app on the claimed host.
 
 The fifth level is the only proof that a compatibility claim is true. Passing

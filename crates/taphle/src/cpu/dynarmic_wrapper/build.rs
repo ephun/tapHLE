@@ -36,7 +36,7 @@ fn main() {
     // build script.
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let package_root = Path::new(&manifest_dir);
-    let workspace_root = package_root.join("../../..");
+    let workspace_root = workspace_root(package_root);
     let dynarmic_root = workspace_root.join("vendor/dynarmic");
 
     let mut build = cmake::Config::new(&dynarmic_root);
@@ -137,4 +137,17 @@ fn main() {
         .include(dynarmic_out.join("include"))
         .compile("dynarmic_wrapper");
     rerun_if_changed(&package_root.join("lib.cpp"));
+}
+
+/// The workspace root, found rather than counted.
+///
+/// This used to be `package_root.join("../../..")`, which was correct until
+/// the crate moved and then silently pointed somewhere with no `vendor` in
+/// it. Walking up until the vendored sources appear cannot drift.
+fn workspace_root(package_root: &std::path::Path) -> std::path::PathBuf {
+    package_root
+        .ancestors()
+        .find(|dir| dir.join("vendor").is_dir())
+        .unwrap_or_else(|| panic!("no vendor directory above {}", package_root.display()))
+        .to_path_buf()
 }

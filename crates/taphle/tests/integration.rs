@@ -246,8 +246,11 @@ fn test_app() -> Result<(), Box<dyn Error>> {
     // Create the stubs dir
     std::fs::create_dir(&stubs_dir).unwrap();
 
-    let bundled_libs_search_arg =
-        "-L".to_owned() + current_dir()?.join("runtime/dylibs").to_str().unwrap();
+    let bundled_libs_search_arg = "-L".to_owned()
+        + current_dir()?
+            .join("../../runtime/dylibs")
+            .to_str()
+            .unwrap();
     let stubs_lib_search_arg = "-L".to_owned() + stubs_lib_dir.to_str().unwrap();
     let stubs_frameworks_search_arg = "-F".to_owned() + stubs_frameworks_dir.to_str().unwrap();
     let mut extra_linker_args = Vec::<String>::new();

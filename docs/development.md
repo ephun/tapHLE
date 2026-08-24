@@ -148,7 +148,7 @@ Stop at the highest level you can afford and say where you stopped.
 | --- | --- | --- |
 | 1. Rust unit tests | `cargo test --workspace --lib` | nothing extra |
 | 2. Everything but the guest app | `cargo test -- --skip test_app` | nothing extra |
-| 3. Full integration | `cargo test` | LLVM and the custom SDK, see `tests/README.md` |
+| 3. Full integration | `cargo test` | LLVM and the custom SDK, see `crates/taphle/tests/README.md` |
 | 4. Lint and format | `bash dev-scripts/lint.sh` | clang-format |
 | 5. The actual app | release build, launch the exact target | the app, on the claimed host |
 
@@ -170,7 +170,7 @@ A quick metadata sanity check that catches a malformed manifest early:
 cargo metadata --no-deps --format-version 1
 ```
 
-`tests/README.md` is the canonical reference for the TestApp fixture: what it
+`crates/taphle/tests/README.md` is the canonical reference for the TestApp fixture: what it
 is, which Clang version CI uses, where the custom SDK goes, and the checksums it
 is pinned to.
 
@@ -207,7 +207,7 @@ looks like:
 
 > Surveyed 900 apps. Top causes: 40 want `-[UIAlertView setMessage:]`, 31 die on
 > an unbound `UIApplicationLaunchOptionsURLKey`, 22 hit the same assertion at
-> `src/objc/messages.rs:402`.
+> `crates/taphle/src/objc/messages.rs:402`.
 
 That is an issue anyone can act on, and it discloses nothing about your library.
 
@@ -218,7 +218,7 @@ button, so an app waiting on a tap looks stuck.
 ### What the collection asks for
 
 The survey needs a build and runs every app. `dev-scripts/demand.py` needs
-neither — it reads the import tables out of each binary and subtracts what `src/`
+neither — it reads the import tables out of each binary and subtracts what `crates/taphle/src/`
 exports, which takes minutes rather than a night:
 
 ```
@@ -396,7 +396,7 @@ guidelines:
   documentation. For example, the type `UILineBreakMode` and its associated
   constants have the same names in [Apple's
   documentation](https://developer.apple.com/documentation/uikit/uilinebreakmode)
-  and in [tapHLE's implementation](../src/frameworks/uikit/ui_font.rs). Note
+  and in [tapHLE's implementation](../crates/taphle/src/frameworks/uikit/ui_font.rs). Note
   that due to [copyright concerns](#copyright-and-reverse-engineering) you must
   not copy the names of non-public API implementation details, including
   internal macros and types in C headers.
@@ -408,7 +408,7 @@ guidelines:
   this macro is not used. For example, `UIGraphicsPushContext` has the same name
   in [Apple's
   documentation](https://developer.apple.com/documentation/uikit/1623921-uigraphicspushcontext?language=objc)
-  and in [tapHLE's implementation](../src/frameworks/uikit/ui_graphics.rs).
+  and in [tapHLE's implementation](../crates/taphle/src/frameworks/uikit/ui_graphics.rs).
 * The names of parameters for C functions and Objective-C methods (not to be
   confused with any relevant parts of the _selector_) are neither part of the
   API nor of the ABI, so in general the external names do not need to be

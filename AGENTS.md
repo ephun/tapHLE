@@ -372,7 +372,7 @@ explicitly.
 after an abort as unverified, not passing.
 
 The full `cargo test` needs the custom test SDK and LLVM described in
-`tests/README.md`. If a dependency or platform tool is unavailable, run the
+`crates/taphle/tests/README.md`. If a dependency or platform tool is unavailable, run the
 checks that do work and state the exact limitation. **Do not claim an app works
 without launching that exact app version.**
 
@@ -399,7 +399,7 @@ is a sample, not a check.
 
 ### No app is named in the emulator's source
 
-Code under `src/` must not name a specific app — not in a comment, not in an
+Code under `crates/taphle/src/` must not name a specific app — not in a comment, not in an
 identifier, not in a log message, and above all not in a condition. Describe the
 behaviour instead: what an app did, what iPhone OS guarantees, what shape of call
 arrives. "A game that keeps its scene layout in a property list stores rectangles
@@ -423,7 +423,7 @@ bundle identifier, for the things apps genuinely differ on — orientation,
 native-landscape rendering, control mapping. That file is *supposed* to name
 apps. The app-specific narrative belongs in `compatibility/notes/` and the
 compatibility database. Name apps freely there, in commit messages, and in the
-changelog. Not in `src/`.
+changelog. Not in `crates/taphle/src/`.
 
 A handful of identifier-keyed behavioural hacks predate this rule and are still
 in the tree — memory-zeroing and allocation-quarantine choices in
@@ -450,7 +450,7 @@ rendered wrong the whole time.
 Run this before every commit. It is short because every line on it is a rule
 stated elsewhere in this guide that has actually been broken in practice.
 
-1. **No app is named in anything under `src/`.** Grep the files you changed for
+1. **No app is named in anything under `crates/taphle/src/`.** Grep the files you changed for
    the app you were working on before you stage them.
 2. **One branch, one subject.** `git status` before committing and `git show
    --stat` after: an unrelated file in the diff means it belongs on another
@@ -625,4 +625,4 @@ handoff distinguishes verified results from assumptions.
 - [`docs/maintaining.md`](docs/maintaining.md) — releases, packaging, upstream
 - `compatibility/notes/` — per-app work notes; not compatibility claims
 - `compatibility/clickmaps/` — replayable routes to a rating milestone
-- `tests/README.md` — the TestApp fixture and its toolchain
+- `crates/taphle/tests/README.md` — the TestApp fixture and its toolchain

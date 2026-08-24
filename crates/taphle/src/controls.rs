@@ -573,7 +573,7 @@ mod tests {
     fn every_shipped_mapping_survives_normalisation() {
         let shipped = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/runtime/default_options.txt"
+            "/../../runtime/default_options.txt"
         ));
 
         let mut apps_checked = 0;

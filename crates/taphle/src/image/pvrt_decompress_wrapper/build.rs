@@ -18,13 +18,27 @@ fn main() {
     // building.
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let package_root = Path::new(&manifest_dir);
-    let workspace_root = package_root.join("../../..");
+    let workspace_root = workspace_root(package_root);
 
     cc::Build::new()
+        .include(&workspace_root)
         .file(package_root.join("lib.cpp"))
         .cpp(true)
         .compile("pvrt_decompress_wrapper");
     rerun_if_changed(&package_root.join("lib.cpp"));
     rerun_if_changed(&workspace_root.join("vendor/PVRTDecompress/PVRTDecompress.cpp"));
     rerun_if_changed(&workspace_root.join("vendor/PVRTDecompress/PVRTDecompress.h"));
+}
+
+/// The workspace root, found rather than counted.
+///
+/// This used to be `package_root.join("../../..")`, which was correct until
+/// the crate moved and then silently pointed somewhere with no `vendor` in
+/// it. Walking up until the vendored sources appear cannot drift.
+fn workspace_root(package_root: &std::path::Path) -> std::path::PathBuf {
+    package_root
+        .ancestors()
+        .find(|dir| dir.join("vendor").is_dir())
+        .unwrap_or_else(|| panic!("no vendor directory above {}", package_root.display()))
+        .to_path_buf()
 }

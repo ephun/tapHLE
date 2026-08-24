@@ -244,14 +244,17 @@ pub fn prepopulate_user_data_dir() {
     if !apps_dir_readme.is_file() {
         let content = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/runtime/apps/README.txt"
+            "/../../runtime/apps/README.txt"
         ));
         create_file(&apps_dir_readme, content);
     }
 
     let user_options = base_path.join(USER_OPTIONS_FILE);
     if !user_options.is_file() {
-        let content = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/runtime/options.txt"));
+        let content = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../runtime/options.txt"
+        ));
         create_file(&user_options, content);
     }
 

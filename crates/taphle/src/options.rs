@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 pub const OPTIONS_HELP: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/runtime/OPTIONS_HELP.txt"
+    "/../../runtime/OPTIONS_HELP.txt"
 ));
 
 /// Game controller button for `--button-to-touch=` option.
