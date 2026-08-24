@@ -274,7 +274,7 @@ asks for afterwards. `crates/gui/src/shell.rs` is that, and `eframe` was that
 before it.
 
 **SDL, not winit.** The emulator already opens an SDL window with a GL context
-on every platform tapHLE targets, iOS and Android included, and `android/` is
+on every platform tapHLE targets, iOS and Android included, and `platforms/android/` is
 already an `SDLActivity`. One window system for the whole product means one
 input, lifecycle and graphics layer rather than one for the desktop and a
 different one per phone — and `eframe` is a desktop and web framework whose

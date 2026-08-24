@@ -715,7 +715,7 @@
   or with W, A, S and D, diagonals included. On the command line these are
   `--key-to-touch=` and `--key-dpad-to-touch=`.
 - The folders tapHLE ships alongside itself have lost their `tapHLE_` prefix:
-  `dylibs`, `fonts`, `apps`, `sandbox`, `options.txt`, `settings.json`. They
+  dylibs, fonts, apps, sandbox, options.txt, settings.json. They
   carried one because an install folder is not necessarily one tapHLE owns, and
   a bare `apps` or `fonts` can collide with whatever else is in there. They now
   live in a folder of tapHLE's own, so there is nothing to collide with.

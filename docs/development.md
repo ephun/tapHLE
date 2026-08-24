@@ -123,7 +123,7 @@ cargo build --release
 Running from the repository root lets tapHLE find `runtime/dylibs`,
 `runtime/fonts`, and `tapHLE_default_options.txt`. To run elsewhere, copy those
 resources beside the executable, or use
-`dev-scripts/make-windows-bundle.sh` from Git Bash to assemble a complete
+`platforms/windows/make-bundle.sh` from Git Bash to assemble a complete
 portable directory.
 
 Run `tapHLE` with no arguments to pick an app from the library instead of
