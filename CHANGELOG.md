@@ -714,6 +714,11 @@
   press the one you want — and a stick zone can be steered with the arrow keys
   or with W, A, S and D, diagonals included. On the command line these are
   `--key-to-touch=` and `--key-dpad-to-touch=`.
+- Starting the tapHLE window from a terminal now shows you its log there as
+  well as in the log panel. A windowed program on Windows has no console at
+  all, so anything it had to say before it got as far as the panel — a settings
+  file it could not read, the compatibility database refusing a connection —
+  went nowhere. Double-clicking the program is unchanged: no console appears.
 - A stick zone is now drawn as a circle, and a new one is a circle rather than
   whatever shape the app's screen happens to be. It stands for a thumb sweeping
   a stick, which reaches every direction equally; the old zone was a quarter of

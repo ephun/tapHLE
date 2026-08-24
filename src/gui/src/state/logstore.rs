@@ -172,6 +172,13 @@ pub struct LogStore {
     dropped: u64,
     errors: u64,
     warnings: u64,
+    /// Also write each line to stderr.
+    ///
+    /// Set when the frontend was started from a terminal and managed to
+    /// borrow it. The log panel is the place to read this normally; somebody
+    /// who ran the program from a prompt is asking to watch it go by instead,
+    /// and until now a windowed program could not answer that at all.
+    mirror_to_stderr: bool,
 }
 
 impl Default for LogStore {
@@ -183,6 +190,7 @@ impl Default for LogStore {
             dropped: 0,
             errors: 0,
             warnings: 0,
+            mirror_to_stderr: false,
         }
     }
 }
@@ -227,7 +235,18 @@ impl LogStore {
         self.push_line(line);
     }
 
+    /// Send every line to stderr as well as to the panel.
+    pub fn mirror_to_stderr(&mut self, mirror: bool) {
+        self.mirror_to_stderr = mirror;
+    }
+
     fn push_line(&mut self, line: LogLine) {
+        if self.mirror_to_stderr {
+            // stderr rather than stdout: this is a running commentary, not the
+            // program's output, and a script reading from tapHLE-gui wants the
+            // two apart.
+            eprintln!("{}", line.full_text());
+        }
         match line.level {
             LogLevel::Error => self.errors += 1,
             LogLevel::Warning => self.warnings += 1,

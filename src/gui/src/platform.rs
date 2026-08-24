@@ -15,6 +15,7 @@
 //! concern. A folder per operating system would mean five copies of a
 //! three-line function.
 
+pub mod console;
 pub mod http;
 pub mod process;
 pub mod storage;

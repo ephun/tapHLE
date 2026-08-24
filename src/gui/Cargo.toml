@@ -40,6 +40,12 @@ serde_json = "1.0"
 flate2 = "1.0"
 plist = "1.8.0"
 
+[target.'cfg(windows)'.dependencies]
+# Only to reattach to the terminal that started the frontend. A windowed
+# program has no console of its own, which is right when it is double-clicked
+# and wrong when it is run from a prompt.
+windows-sys = { version = "0.61.0", features = ["Win32_System_Console"] }
+
 [target.'cfg(windows)'.build-dependencies]
 # Attaches the icon and the version properties Explorer and the Start menu
 # show. Windows-only, and a build dependency, so it is not in the shipped

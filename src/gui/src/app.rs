@@ -1297,6 +1297,18 @@ fn report_load_or_default<T: serde::de::DeserializeOwned + Default>(file: &str) 
     storage::load(file).unwrap_or_default()
 }
 
+impl Frontend {
+    /// Send every log line to stderr as well as to the panel.
+    ///
+    /// Only when the frontend was started from a terminal — see
+    /// [crate::platform::console].
+    pub fn mirror_log_to_stderr(&self, mirror: bool) {
+        if let Ok(mut store) = self.log.lock() {
+            store.mirror_to_stderr(mirror);
+        }
+    }
+}
+
 impl crate::shell::Application for Frontend {
     fn update(&mut self, ctx: &egui::Context) {
         self.drain_background(ctx);
