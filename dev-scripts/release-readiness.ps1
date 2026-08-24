@@ -19,12 +19,10 @@ $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-# The first numbered release waits for the new GUI; see "The first release is
-# on hold" in docs/maintaining.md. Set this to $false when the GUI ships and
-# delete that section - after the first release the changelog trigger applies
-# on its own. A held release is stated rather than left to look like a rule
-# that mysteriously never fires.
-$FirstReleaseHeldForGui = $true
+# The first release is held until five real installable products and the frozen
+# 24-app by five-host matrix pass for one exact commit. This stays explicit until
+# tapHLEdb's release-verification API can be queried mechanically here.
+$FirstReleaseHeldForMatrix = $true
 
 $blockers = @()
 $notes = @()
@@ -45,10 +43,11 @@ function Invoke-Capture {
     try { & cargo @CargoArgs 2>&1 | Out-String } finally { $ErrorActionPreference = $previous }
 }
 
-# 0. The standing hold, checked before anything else so a held release is never
-#    reported as ready no matter how green the rest of the run is.
-if ($FirstReleaseHeldForGui) {
-    Add-Blocker 'The first release is held until the new GUI ships (docs/maintaining.md).'
+# 0. The standing matrix hold is checked first so green desktop checks can never
+#    be mistaken for a five-platform release result.
+if ($FirstReleaseHeldForMatrix) {
+    Add-Blocker 'The 0.2.4 release is held until all five installable products and all 120 frozen-cohort host checks pass (docs/maintaining.md).'
+    Add-Blocker 'Mechanical tapHLEdb release-verification matrix read-back is not implemented yet.'
 }
 
 # 1. Is there anything to release? This is the trigger, not a formality: an
@@ -78,9 +77,13 @@ $behind = (git rev-list --count 'HEAD..origin/trunk' 2>$null)
 if ($behind -ne '0') { Add-Blocker "trunk is $behind commits behind origin/trunk." }
 if ($ahead -ne '0') { Add-Note "trunk is $ahead commits ahead of origin; push before tagging." }
 
-# 3. The version must be a real prerelease and must not already be tagged.
+# 3. A taggable version is an ordinary X.Y.Z release and must not already exist.
 $version = (Select-String -Path 'Cargo.toml' -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
 Add-Note "Cargo version is $version."
+python dev-scripts/release_version.py check-version *> $null
+if ($LASTEXITCODE -ne 0) {
+    Add-Blocker "Cargo version '$version' is not a canonical numbered X.Y.Z release; development versions and leading-zero components cannot be tagged."
+}
 if (git tag --list "taphle-v$version") {
     Add-Blocker "taphle-v$version already exists; bump the version rather than moving a published tag."
 }

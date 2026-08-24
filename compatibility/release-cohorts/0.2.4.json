@@ -1,0 +1,829 @@
+{
+  "schema_version": 1,
+  "release": "0.2.4",
+  "freeze_date": "2026-08-24",
+  "snapshot_created": "2026-08-24T14:44:09-06:00",
+  "source_trunk_commit": "2b5b4089e0c02a7bbf83b3971a3a0d2b384a0fa3",
+  "selection_rule": "Every exact app version with an approved 3-star Windows report, plus pending 3-star reports from the Ethan-controlled agent identity agent:claude-code that pass the current three-star evidence and rendering rules, as present in this immutable database snapshot.",
+  "legacy_platform_caveat": "Platform was implicit at freeze time because the schema and production guidance accepted Windows results only.",
+  "counts": {
+    "cohort_versions": 24,
+    "approved_basis": 22,
+    "trusted_pending_basis": 2
+  },
+  "cohort": [
+    {
+      "app_id": 4,
+      "app_name": "Baby Monkey (going backwards on a pig)",
+      "bundle_identifier": "com.kihon.babymonkey",
+      "version_id": 4,
+      "version_name": "1.01",
+      "version_identity": {
+        "bundle_version": "1.01",
+        "minimum_os_version": "4.2"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 8,
+      "all_qualifying_report_ids": [
+        8
+      ],
+      "report_created_utc_database_value": "2026-07-23 14:49:46",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code (Opus 4.8)"
+      },
+      "tested_taphle_commit_reported": "59d4d97b",
+      "tested_taphle_commit_full": "59d4d97b1cda04a94873d04865bc7fbfa4c7d75f",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "CORRECTS THE EARLIER REPORT FOR THIS SAME COMMIT, WHICH SAID THERE WAS NO AUDIO - PLEASE REJECT THAT ONE. Audio does work: an OpenAL wave capture shows continuous signal in both the menu and gameplay (mean -30.4 dB, max -16.5 dB over 48 s) and the maintainer confirms hearing it. Gameplay loop starts and persists: scene renders, world scrolls, tutorial fires, bananas spawn, in-game taps accepted, still animating after a minute. Known gaps: 30 AudioFileOpenURL() loads fail with FileReadError on bundle-relative audio/<name>.wav paths, so that loader is not finding its files and which sounds are missing is not yet established; Chartboost/Flurry faked; only the first level segment and tutorial observed.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 5,
+      "app_name": "Cops & Robbers",
+      "bundle_identifier": "com.glu.thief3d",
+      "version_id": 5,
+      "version_name": "1.3",
+      "version_identity": {
+        "bundle_version": "1.3",
+        "short_version": "1.3",
+        "minimum_os_version": "2.0"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 9,
+      "all_qualifying_report_ids": [
+        9
+      ],
+      "report_created_utc_database_value": "2026-07-23 15:49:39",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code (Opus 4.8)"
+      },
+      "tested_taphle_commit_reported": "c4d56964",
+      "tested_taphle_commit_full": "c4d56964d9d8bb1db2826d563e0144f945b90202",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Gameplay runs. Language select, sound prompt, title, 3D intro cutscene, main menu, 3D character customisation and the tilt tutorial all work; in a run the countdown went 2:48.1 to 2:31.3 while the score rose 300 to 800, with obstacles, collectibles and a PAUSE button. Untested: steering is by accelerometer and was never exercised, so tilt/jump/boost are unknown; only the first run of the first mode was seen, for under a minute; death, timer expiry, score screen, PAUSE, HIDEOUT, EXTRAS and OPTIONS untested; audio not measured. Archive file is named 1.5 but the bundle reports 1.3.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 33,
+      "app_name": "Crafted",
+      "bundle_identifier": "com.Pickl.Crafted",
+      "version_id": 34,
+      "version_name": "1.0.1",
+      "version_identity": {
+        "bundle_version": "1.0.1",
+        "short_version": "1.0.1",
+        "minimum_os_version": "4.0"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 65,
+      "all_qualifying_report_ids": [
+        65
+      ],
+      "report_created_utc_database_value": "2026-08-05 08:08:50",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code (Opus 5)"
+      },
+      "tested_taphle_commit_reported": "10075dc6",
+      "tested_taphle_commit_full": "10075dc633b9fdee8a672a8ac2c2aad263d20297",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Playable. Main menu -> Singleplayer -> Create New World generates a world; player, terrain, health bar, hotbar and touch controls render, the world is written to Documents/saves, and the game keeps responding to input afterwards. Needs --landscape-left (now in tapHLE_default_options.txt): the app declares no orientation, and tapHLE only consults shouldAutorotateToInterfaceOrientation: when the window is already non-portrait. Not tested beyond generating a world and moving: no mining, placing, or save-and-resume.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 32,
+      "app_name": "Cubed Rally Redline",
+      "bundle_identifier": "com.nocanwin.redline",
+      "version_id": 33,
+      "version_name": "1.32",
+      "version_identity": {
+        "bundle_version": "1.32",
+        "minimum_os_version": "5.0"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 64,
+      "all_qualifying_report_ids": [
+        64
+      ],
+      "report_created_utc_database_value": "2026-08-04 20:08:29",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code (Opus 5)"
+      },
+      "tested_taphle_commit_reported": "dd52c7de",
+      "tested_taphle_commit_full": "dd52c7de844b47b6cf32e9014eaf3fd1db3d2d6f",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Plays end to end. Menus, car select, voxel landscape, dirt road, grass verges, water, fences, clouds, particles and HUD all render correctly, and a full race reaches the RESULT screen with no panic or abort. Tilt steering is dead (Core Motion is a no-op) but the on-screen left/right controls steer fine; some compressed audio is silent (AudioQueueOfflineRender unimplemented). Unblocked by no longer advertising GL_OES_vertex_array_object, and by letting mprotect report success.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 2,
+      "app_name": "Fantastic Mr. Fox",
+      "bundle_identifier": "com.fox.fmf",
+      "version_id": 2,
+      "version_name": "1.0",
+      "version_identity": {
+        "bundle_version": "1.0",
+        "minimum_os_version": "2.2.1"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 2,
+      "all_qualifying_report_ids": [
+        2
+      ],
+      "report_created_utc_database_value": "2026-07-23 00:47:52",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code (Opus 4.8)"
+      },
+      "tested_taphle_commit_reported": "25dcc7b692360f66931471b191c04ed8600cbbaa",
+      "tested_taphle_commit_full": "25dcc7b692360f66931471b191c04ed8600cbbaa",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Gameplay controls, audio coverage, death and restart behaviour, saving, later levels, and long-session stability are unvalidated.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 9,
+      "app_name": "Flight Control HD",
+      "bundle_identifier": "com.firemint.flightcontrolipad",
+      "version_id": 9,
+      "version_name": "1.07",
+      "version_identity": {
+        "bundle_version": "1.07",
+        "minimum_os_version": "3.2"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 14,
+      "all_qualifying_report_ids": [
+        14,
+        75
+      ],
+      "report_created_utc_database_value": "2026-07-25 22:49:09",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code"
+      },
+      "tested_taphle_commit_reported": "186e18ab",
+      "tested_taphle_commit_full": "186e18abd8a5c5e72c1d20d96b97c0fe5046e4c3",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Boots to the full main menu; tapping PLAY! enters live gameplay: island map and HUD render, aircraft spawn and fly across the map (movement confirmed across captures). Gameplay loop starts and persists.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 11,
+      "app_name": "Glass Tower 2",
+      "bundle_identifier": "com.idevua.glasstower2",
+      "version_id": 11,
+      "version_name": "1.7",
+      "version_identity": {
+        "bundle_version": "1.7"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 19,
+      "all_qualifying_report_ids": [
+        19
+      ],
+      "report_created_utc_database_value": "2026-07-26 13:38:33",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code"
+      },
+      "tested_taphle_commit_reported": "a490a841",
+      "tested_taphle_commit_full": "a490a841de6ed7d93fbc8ac8564beb8368eadf08",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Menus now navigate and Free Level Pack level 1 plays; blocks fall, score and lives update",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 12,
+      "app_name": "Glass Tower 3",
+      "bundle_identifier": "com.idevua.glasstower3",
+      "version_id": 12,
+      "version_name": "2.0.1",
+      "version_identity": {
+        "bundle_version": "2.0.1",
+        "short_version": "2.0.1",
+        "minimum_os_version": "4.0"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 20,
+      "all_qualifying_report_ids": [
+        20
+      ],
+      "report_created_utc_database_value": "2026-07-26 15:49:59",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code"
+      },
+      "tested_taphle_commit_reported": "1db8dcea",
+      "tested_taphle_commit_full": "1db8dcea84f8a438ad21d967716a07aae2e0622a",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Menu, SELECT LEVEL and level 1 gameplay all work: blocks are removed, physics and particles run, score updates",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 10,
+      "app_name": "Glass Tower HD",
+      "bundle_identifier": "ru.idigger.Glass-Tower",
+      "version_id": 10,
+      "version_name": "1.0",
+      "version_identity": {
+        "bundle_version": "1.0"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 18,
+      "all_qualifying_report_ids": [
+        18
+      ],
+      "report_created_utc_database_value": "2026-07-26 12:59:58",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code"
+      },
+      "tested_taphle_commit_reported": "6eab1c98",
+      "tested_taphle_commit_full": "6eab1c98e0dba383875cef6767b1dd6fb68eb315",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Menu taps work after viewDidLoad fix; level 1 plays, blocks fall and score rises (needs --force-composition)",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 30,
+      "app_name": "JellyCar 2",
+      "bundle_identifier": "com.disney.jellyCar2foriPad",
+      "version_id": 30,
+      "version_name": "1.1",
+      "version_identity": {
+        "bundle_version": "1.1"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 39,
+      "all_qualifying_report_ids": [
+        39
+      ],
+      "report_created_utc_database_value": "2026-07-27 00:59:58",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code"
+      },
+      "tested_taphle_commit_reported": "d335f7bd",
+      "tested_taphle_commit_full": "d335f7bdf43f7ee4850ae5a381a3fdba5103f351",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Classic mode level Lance plays: terrain, jelly car, drive controls, timer running 18.720 to 69.601 over ~50s",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 17,
+      "app_name": "Mr. AahH!!",
+      "bundle_identifier": "com.ponos.mraahh",
+      "version_id": 17,
+      "version_name": "1.2.0",
+      "version_identity": {
+        "bundle_version": "1.2.0",
+        "short_version": "1.2.0",
+        "minimum_os_version": "3.0"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 25,
+      "all_qualifying_report_ids": [
+        25
+      ],
+      "report_created_utc_database_value": "2026-07-26 19:34:33",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code"
+      },
+      "tested_taphle_commit_reported": "f26722c0",
+      "tested_taphle_commit_full": "f26722c0b61e8b5ebf2f86e59aeac66ae9348b8a",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Plays: levels advance A-1 to A-4 and lives are lost. Known defect: the three title-screen menu buttons render as blank dark bars with no label text",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 18,
+      "app_name": "Mr. Oops!!",
+      "bundle_identifier": "jp.co.ponos.mroops",
+      "version_id": 18,
+      "version_name": "1.2.2",
+      "version_identity": {
+        "bundle_version": "1.2.2",
+        "short_version": "1.2.2",
+        "minimum_os_version": "4.3"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 68,
+      "all_qualifying_report_ids": [
+        68
+      ],
+      "report_created_utc_database_value": "2026-08-13 03:31:42",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code (Opus 5)"
+      },
+      "tested_taphle_commit_reported": "6d54d36d",
+      "tested_taphle_commit_full": "6d54d36d05a2447d12ce997b2fe585f5ae599275",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Plays. From the title screen the upper menu bar starts a stage, and stage 1 'Rolling Stones' runs a real loop: the player is drawn on the grid, stones spawn with entry arrows and roll across, and the character dies if left alone, returning to the title. The maintainer play-tested it directly and confirmed the loop persists across sustained play; unattended it lasts about five seconds before the player is hit. Remaining problems: the two title-screen menu bars render no label text, though the app draws them with drawInRect:withFont:lineBreakMode:alignment: and the neighbouring artwork button is fine; audio does not load; and Twitter/Chartboost network paths fail offline, which the app survives.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 41,
+      "app_name": "Omium",
+      "bundle_identifier": "com.eeenmachine.",
+      "version_id": 42,
+      "version_name": "1.0",
+      "version_identity": {
+        "bundle_version": "1.0",
+        "minimum_os_version": "3.2"
+      },
+      "freeze_basis": "audited_trusted_agent_pending_windows_three_star_report",
+      "selected_report_id": 88,
+      "all_qualifying_report_ids": [
+        88
+      ],
+      "report_created_utc_database_value": "2026-08-17 21:36:23",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code (Opus 5)"
+      },
+      "tested_taphle_commit_reported": "02687d70",
+      "tested_taphle_commit_full": "02687d70681f285f2e08c1342dcaf0a23ecf68c0",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Dodge mode plays. Replayed dev-docs/clickmaps/omium.json end to end: menu, Dodge, then Press here to play. The round runs with the ship, the AMMO and BAD GUYS gauges, particle effects and the timer counting from 0.00 to 8.11. No launch options. The screen being half upside-down is the app's two-player layout, not a rendering fault.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "pending"
+    },
+    {
+      "app_id": 14,
+      "app_name": "Parachute Panic HD",
+      "bundle_identifier": "com.FDGMobileGamesGbR.ParachutePanic",
+      "version_id": 14,
+      "version_name": "1.9.1",
+      "version_identity": {
+        "bundle_version": "1.9.1",
+        "short_version": "1.9.1",
+        "minimum_os_version": "3.0"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 49,
+      "all_qualifying_report_ids": [
+        49
+      ],
+      "report_created_utc_database_value": "2026-07-27 09:17:49",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "claude-code-opus-5"
+      },
+      "tested_taphle_commit_reported": "a85548d6",
+      "tested_taphle_commit_full": "a85548d63abaecdca8ce2c8d95ca07d904234621",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "In game. Title, What's New dialog, main menu and theme/difficulty select all render, and Easy starts a round: the plane, a falling parachutist, the boat and the score HUD animate, with three captures six seconds apart all distinct. Previously it produced no frame at all. Not assessed beyond the first round.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 3,
+      "app_name": "Percy Jackson & The Olympians: The Lightning Thief",
+      "bundle_identifier": "com.deluxe.Pipes",
+      "version_id": 3,
+      "version_name": "1.0",
+      "version_identity": {
+        "bundle_version": "1.0",
+        "minimum_os_version": "3.1.2"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 3,
+      "all_qualifying_report_ids": [
+        3
+      ],
+      "report_created_utc_database_value": "2026-07-23 00:47:53",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code (Opus 4.8)"
+      },
+      "tested_taphle_commit_reported": "ad6d2ccdd9fc53f9a6c4baff8b9731ad71dae4d8",
+      "tested_taphle_commit_full": "ad6d2ccdd9fc53f9a6c4baff8b9731ad71dae4d8",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Level completion, the remaining controls and levels, saving, other game modes, and long-session stability are unvalidated.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 1,
+      "app_name": "Ricky",
+      "bundle_identifier": "com.nabilchatbi.Ricky",
+      "version_id": 1,
+      "version_name": "2.1",
+      "version_identity": {
+        "bundle_version": "2.1",
+        "minimum_os_version": "3.0"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 5,
+      "all_qualifying_report_ids": [
+        5
+      ],
+      "report_created_utc_database_value": "2026-07-23 00:48:12",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code (Opus 4.8)"
+      },
+      "tested_taphle_commit_reported": "e2d51c6c3f892275cdcfad8e43235d54d34eac11",
+      "tested_taphle_commit_full": "e2d51c6c3f892275cdcfad8e43235d54d34eac11",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Audio audibility on default Windows devices, action buttons, level completion, hazards/death/restart, saving, and long-session stability are unvalidated.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 26,
+      "app_name": "Scoops",
+      "bundle_identifier": "com.eeenmachine.scoops",
+      "version_id": 26,
+      "version_name": "2.5.1",
+      "version_identity": {
+        "bundle_version": "2.5.1",
+        "minimum_os_version": "3.0"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 59,
+      "all_qualifying_report_ids": [
+        59
+      ],
+      "report_created_utc_database_value": "2026-07-28 03:04:30",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code (Opus 5)"
+      },
+      "tested_taphle_commit_reported": "09dbc970",
+      "tested_taphle_commit_full": "09dbc970ab7826bb35c9bb2202556d35e01793f5",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "PLEASE REJECT REPORTS 53-58 FOR THIS APP - they are incomplete API schema probes, not results. This is the real one. Plays: sound prompt, main menu and gameplay all render; the cone catches scoops, the stack grows, score and multiplier update, and it stays interactive across repeated drags. Was 1 star, dying at launch on the unbound UIApplicationLaunchOptionsURLKey. Not exercised: audio, Plus+ online (unreachable, handled gracefully), Themes/Scores/Help screens.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 19,
+      "app_name": "Shot Shot Shoot",
+      "bundle_identifier": "com.eriksvedang.shotshotshoot",
+      "version_id": 19,
+      "version_name": "1.0",
+      "version_identity": {
+        "bundle_version": "1.0",
+        "short_version": "1.0"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 27,
+      "all_qualifying_report_ids": [
+        27
+      ],
+      "report_created_utc_database_value": "2026-07-26 20:22:03",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code"
+      },
+      "tested_taphle_commit_reported": "730f2c29",
+      "tested_taphle_commit_full": "730f2c298666c63564db8f2c083391dd45ce0c9a",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Menu and tutorial play: START enters the level, tapping the shoot region fires, ammo is consumed and an enemy block is destroyed",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 7,
+      "app_name": "Snappers",
+      "bundle_identifier": "ru.emergingmobile.snappers",
+      "version_id": 7,
+      "version_name": "1.08",
+      "version_identity": {
+        "minimum_os_version": "3.1",
+        "short_version": "1.08",
+        "bundle_version": "1.08"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 11,
+      "all_qualifying_report_ids": [
+        11
+      ],
+      "report_created_utc_database_value": "2026-07-24 23:21:53",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "OpenAI GPT-5 Codex"
+      },
+      "tested_taphle_commit_reported": "169bf157cefad351a0ef4a5cab00cbc90d2d2a2f",
+      "tested_taphle_commit_full": "169bf157cefad351a0ef4a5cab00cbc90d2d2a2f",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Level 1 completes at Score: 50; further levels untested.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 6,
+      "app_name": "SPYmouseHD",
+      "bundle_identifier": "com.ea.spymouse.ipad.inc",
+      "version_id": 6,
+      "version_name": "1.1.1",
+      "version_identity": {
+        "bundle_version": "1.1.1",
+        "short_version": "1.1.1",
+        "minimum_os_version": "3.2"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 47,
+      "all_qualifying_report_ids": [
+        10,
+        47
+      ],
+      "report_created_utc_database_value": "2026-07-27 08:20:41",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "claude-code-opus-5"
+      },
+      "tested_taphle_commit_reported": "b953ef9c",
+      "tested_taphle_commit_full": "b953ef9c7bbf4cf3f3dbb40aca6c9cee5c111bbe",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Regression fixed; supersedes report 46. A tap on the splash enters a level and the game runs: the mouse, the cheese, the drawn route and the HUD all render, and successive captures differ, so the loop is live rather than a frozen frame. The cause was that the app subclasses NSArray, and tapHLE's array primitives live on the concrete class rather than on NSArray, so the subclass had no storage and lost its own methods. Class registration now splices the concrete class in under such a subclass, metaclass included so that +alloc resolves correctly.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 13,
+      "app_name": "Tap Tap Revenge 2",
+      "bundle_identifier": "com.tapulous.taptaprevengeII",
+      "version_id": 13,
+      "version_name": "2.6.4",
+      "version_identity": {
+        "bundle_version": "2.6.4",
+        "short_version": "2.6.4",
+        "minimum_os_version": "2.0"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 43,
+      "all_qualifying_report_ids": [
+        43
+      ],
+      "report_created_utc_database_value": "2026-07-27 06:18:28",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "claude-code-opus-5"
+      },
+      "tested_taphle_commit_reported": "b1de9e9e",
+      "tested_taphle_commit_full": "b1de9e9ede209304d701f511392b0fc4d1e78788",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Gameplay runs: notes fall on all three lanes, taps register and light the targets, score/streak/multiplier update and the audio queue drives the chart. It hangs after roughly one to two minutes of play - the frame stops changing (five byte-identical captures) and touches stop registering, while the process stays alive. Reaching gameplay required a UIKit fix: a view added to a window hierarchy after launch never got layoutSubviews, which is where the standard EAGLView creates and binds its renderbuffer, so the game view presented every frame into no drawable.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 20,
+      "app_name": "The Jim and Frank Mysteries: The Blood River Files HD",
+      "bundle_identifier": "com.chillingo.thejimandfrankmysterieshd",
+      "version_id": 20,
+      "version_name": "1.1",
+      "version_identity": {
+        "bundle_version": "1.1",
+        "short_version": "1.1"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 69,
+      "all_qualifying_report_ids": [
+        69
+      ],
+      "report_created_utc_database_value": "2026-08-13 15:26:43",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code (Opus 5)"
+      },
+      "tested_taphle_commit_reported": "d2121078",
+      "tested_taphle_commit_full": "d21210789a0aadc9c5d90ac80391e8558467651a",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Plays: profile creation, the ~185 s intro cutscene, chapter one's dialogue and tutorials, tapping the arrow-marked object, reading the letter, collecting both hidden Eurekas (the game counts them), and walking into the next room. Chapters were black because CGRectFromString rejected the compact {{0,0},{1024,768}} spelling the scene plists use, so every element was a zero-sized quad. Four more aborts on ordinary input followed. Not reached: any puzzle, chapter two on. ENABLE CRYSTAL still dies on a nil string; NO THANKS is the tested path.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 8,
+      "app_name": "Warlords HD: Call to Arms",
+      "bundle_identifier": "greyhoundgames.warlordshdapp",
+      "version_id": 8,
+      "version_name": "3.065",
+      "version_identity": {
+        "bundle_version": "3.065",
+        "minimum_os_version": "3.2"
+      },
+      "freeze_basis": "approved_windows_three_star_report",
+      "selected_report_id": 13,
+      "all_qualifying_report_ids": [
+        13
+      ],
+      "report_created_utc_database_value": "2026-07-25 22:18:21",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code"
+      },
+      "tested_taphle_commit_reported": "47557f25",
+      "tested_taphle_commit_full": "47557f250b89a8fe1ed9f0883a662aecb1459e27",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "Foreground input drives the full campaign loop to a live real-time battle: menu -> Play -> Campaign -> race select -> Upgrade Army -> strategic map -> attack a territory -> battle. Selecting a unit and touching a lane spawns it into combat; battle renders and persists.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "approved"
+    },
+    {
+      "app_id": 38,
+      "app_name": "Zombieville USA",
+      "bundle_identifier": "com.KelliNoda.Zombieville",
+      "version_id": 39,
+      "version_name": "1.0",
+      "version_identity": {
+        "bundle_version": "1.0",
+        "minimum_os_version": "2.0"
+      },
+      "freeze_basis": "audited_trusted_agent_pending_windows_three_star_report",
+      "selected_report_id": 87,
+      "all_qualifying_report_ids": [
+        80,
+        87
+      ],
+      "report_created_utc_database_value": "2026-08-17 06:44:32",
+      "source_identity": "agent:claude-code",
+      "producer": {
+        "source_type": "agent",
+        "source_name": "Claude Code (Opus 5)"
+      },
+      "tested_taphle_commit_reported": "e7138f01",
+      "tested_taphle_commit_full": "e7138f01938e9b26608d4a1a53ef22d9d09784c9",
+      "commit_is_ancestor_of_freeze_trunk": true,
+      "frontier": "A level plays: title screen, menu, then the street with the character and his gun, two zombies walking in and taking hits, ammo x100, the health bar, the money counter and the walk arrows, with the background scrolling as he moves. Route in dev-docs/clickmaps/zombieville.json, verified from a desktop screen capture.",
+      "legacy_host_basis": "Windows (the live schema had no platform field; production guidance required Windows for every rating at freeze time)",
+      "app_artifact_hash": null,
+      "app_artifact_hash_status": "not represented in the live database; recover and reverify before candidate-matrix execution",
+      "audit_passed": true,
+      "rating": 3,
+      "report_moderation_status": "pending"
+    }
+  ],
+  "source_database_snapshot": {
+    "operator_backup_id": "20260824T144409-0600/app_db.sqlite3",
+    "sha256": "06cd5a645ec0abee4540b6c71dc52598f0b30eee9be756125fefd780e2e550b2",
+    "storage": "operator-retained outside the public repository",
+    "public_manifest_scope": "sanitized selected-report extract; screenshot blobs and non-cohort moderation-private rows are not redistributed"
+  },
+  "excluded_pending_reports": [
+    {
+      "report_id": 85,
+      "app_name": "MazeFinger+",
+      "bundle_identifier": "com.ngmoco.MazeFinger",
+      "version_name": "1.5.1",
+      "reason": "Mirrored in-game text violates the three-star rendering requirement."
+    },
+    {
+      "report_id": 86,
+      "app_name": "OLO",
+      "bundle_identifier": "com.Sennep.OLOgame",
+      "version_name": "1.23",
+      "reason": "Quarter-turned board and mirrored menu text violate the three-star rendering requirement."
+    },
+    {
+      "report_id": 79,
+      "app_name": "PapiJump",
+      "bundle_identifier": "net.sunflat.iphone.PapiJump",
+      "version_name": "1.6.1.0.4",
+      "reason": "Mirrored score readout violates the three-star rendering requirement."
+    },
+    {
+      "report_id": 83,
+      "app_name": "Warlords: Call to Arms",
+      "bundle_identifier": "greyhoundgames.warlordsapp",
+      "version_name": "3.086",
+      "reason": "Mirrored button and overlay text violate the three-star rendering requirement."
+    }
+  ]
+}

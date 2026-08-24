@@ -103,7 +103,11 @@ pub fn main() {
                     "cargo:warning=Cargo.toml version ({toml_version}) does not match `git describe` version ({git_version})!"
                 );
             }
-            version_logic::display_git_description(&git_version).to_string()
+            let (git_revision, dirty) = git_version
+                .strip_suffix("-dirty")
+                .map_or((git_version.as_str(), false), |revision| (revision, true));
+            version_logic::display_development_version(&toml_version, git_revision, dirty)
+                .unwrap_or_else(|| version_logic::display_git_description(&git_version).to_string())
         }
         _ => {
             rerun_if_changed(&workspace_root.join("Cargo.toml"));

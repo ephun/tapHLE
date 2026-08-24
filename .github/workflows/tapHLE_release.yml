@@ -51,6 +51,11 @@ jobs:
             ""|0000000000000000000000000000000000000000) ;;
             *) python dev-scripts/compatibility.py check --baseline-ref "$BASE" ;;
           esac
+      - name: Reject release tags until the five-host matrix gate is implemented
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo "Release tags are blocked until all five products and all 120 release verifications are checked mechanically." >&2
+          exit 1
       - name: Validate release tag and exact trunk commit
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -350,9 +355,11 @@ jobs:
         name: TestApp_built_on_Windows
         path: tests/TestApp.app
 
+  # Deliberately disabled until Windows, Linux, macOS, Android and iOS products
+  # plus the frozen release-verification matrix are all mechanical prerequisites.
   stage-release:
-    name: Stage draft GitHub release
-    if: startsWith(github.ref, 'refs/tags/taphle-v')
+    name: Stage draft GitHub release (five-host gate not implemented)
+    if: false
     runs-on: ubuntu-latest
     needs: build-windows
     permissions:
@@ -386,14 +393,8 @@ jobs:
             exit 1
           fi
           (cd release && sha256sum --check "$checksum")
-          prerelease=()
-          precedence_version="${version%%+*}"
-          case "$precedence_version" in
-            *-*) prerelease=(--prerelease) ;;
-          esac
           gh release create "$RELEASE_TAG" "${files[@]}" \
             --verify-tag \
             --title "tapHLE $version" \
-            --notes "Draft created by CI. Replace this text with curated CHANGELOG notes before publishing." \
-            --draft \
-            "${prerelease[@]}"
+            --notes "Draft created by CI. Replace this text with the finalized CHANGELOG section before publishing." \
+            --draft

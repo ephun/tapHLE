@@ -30,15 +30,72 @@ def workspace_version(cargo_toml: Path = REPOSITORY_ROOT / "Cargo.toml") -> str:
     raise ValueError(f"could not find [workspace.package] version in {cargo_toml}")
 
 
+SEMVER_NUMBER = r"(?:0|[1-9]\d*)"
+DEVELOPMENT_VERSION = re.compile(
+    rf"^{SEMVER_NUMBER}\.{SEMVER_NUMBER}\.{SEMVER_NUMBER}"
+    r"-dev\.[1-9]\d*(?:\+g[0-9A-Fa-f]{7,40})?$"
+)
+RELEASE_VERSION = re.compile(
+    rf"^{SEMVER_NUMBER}\.{SEMVER_NUMBER}\.{SEMVER_NUMBER}$"
+)
+ARTIFACT_SHAPES = {
+    ("Windows", "x86_64", "zip"),
+    ("Linux", "x86_64", "tar.gz"),
+    ("macOS", "x86_64", "dmg"),
+    ("Android", "arm64-v8a", "apk"),
+    ("iOS", "arm64", "ipa"),
+}
+
+
+def validate_development_version(version: str) -> None:
+    if DEVELOPMENT_VERSION.fullmatch(version) is None:
+        raise ValueError(
+            f"development version {version!r} must use X.Y.Z-dev.N with N >= 1 "
+            "and optional +g<commit> metadata"
+        )
+
+
+def validate_release_version(version: str) -> None:
+    if RELEASE_VERSION.fullmatch(version) is None:
+        raise ValueError(
+            f"numbered release {version!r} must use X.Y.Z with no alpha, beta, "
+            "release-candidate, development, or build-metadata suffix"
+        )
+
+
 def release_tag(version: str) -> str:
+    validate_release_version(version)
     return f"{TAG_PREFIX}{version}"
 
 
+def artifact_name(version: str, host: str, architecture: str, extension: str) -> str:
+    validate_release_version(version)
+    shape = (host, architecture, extension)
+    if shape not in ARTIFACT_SHAPES:
+        raise ValueError(f"unsupported release artifact shape: {shape!r}")
+    return f"tapHLE-v{version}-{host}-{architecture}.{extension}"
+
+
 def windows_archive_name(version: str) -> str:
-    return f"tapHLE-v{version}-Windows-x86_64.zip"
+    return artifact_name(version, "Windows", "x86_64", "zip")
+
+
+def windows_installer_name(version: str) -> str:
+    validate_release_version(version)
+    return f"tapHLE-v{version}-Windows-x86_64-setup.exe"
+
+
+def release_artifact_names(version: str) -> list[str]:
+    names = [
+        artifact_name(version, host, architecture, extension)
+        for host, architecture, extension in sorted(ARTIFACT_SHAPES)
+    ]
+    names.append(windows_installer_name(version))
+    return sorted(names)
 
 
 def validate_tag(tag: str, version: str) -> None:
+    validate_release_version(version)
     expected = release_tag(version)
     if tag != expected:
         raise ValueError(
@@ -76,7 +133,9 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument("tag")
 
     subparsers.add_parser("version")
+    subparsers.add_parser("check-version")
     subparsers.add_parser("archive-name")
+    subparsers.add_parser("artifact-names")
 
     args = parser.parse_args(argv)
     version = workspace_version()
@@ -90,8 +149,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Validated tapHLE release tag {args.tag} and changelog heading")
     elif args.command == "version":
         print(version)
+    elif args.command == "check-version":
+        try:
+            validate_release_version(version)
+        except ValueError as error:
+            print(f"Error: {error}", file=sys.stderr)
+            return 1
+        print(f"Validated numbered release version {version}")
     elif args.command == "archive-name":
         print(windows_archive_name(version))
+    elif args.command == "artifact-names":
+        for name in release_artifact_names(version):
+            print(name)
     return 0
 
 

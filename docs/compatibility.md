@@ -479,6 +479,31 @@ What lives where, so the two never duplicate each other:
 The two frontiers are different facts, not duplicates: one is history, one is
 present.
 
+### Host, artifact and verification identity
+
+Compatibility is platform-specific. Every new record identifies:
+
+- host platform, architecture and OS version;
+- the full tapHLE Git commit;
+- the tested binary or package SHA-256 and reproducible build provenance,
+  including build profile and toolchain/runner identity;
+- the exact app artifact identity: bundle identifier and version fields from
+  `tapHLE --info`, plus the lawfully obtained app artifact hash;
+- rating and frontier;
+- producer and submitter identity; and
+- verification type.
+
+The Git commit is the canonical source identity. A product hash is still required
+because it proves which output from that source was installed and run.
+
+`compatibility` is the verification type for ordinary rating history. Submit one
+when the rating changes in either direction, following the boundary rules below.
+`release_verification` is a reconfirmation for a named release candidate: it says
+an existing rating was reproduced on a particular platform, commit and product.
+It does not create a new rating boundary and must remain distinguishable in the
+API and UI. Never use a release reconfirmation to reconstruct a boundary that was
+missed.
+
 A record exists only because tapHLE actually ran that app and produced a rating.
 Apps are never listed speculatively.
 
@@ -500,17 +525,18 @@ The agent token lives at `~/.taphledb-token` (on Windows,
 `C:\Users\<your-username>\.taphledb-token`) and nowhere else: read it inline as
 `$(cat ~/.taphledb-token)` at the moment of use, never echo it, and never copy it
 into this repository, a commit message, a work note, or any command whose output
-is recorded. That file must stay off GitHub. The token only lets the agent submit
-on its own; it does not raise the star limit and it does not skip moderation.
-Submissions always land unapproved and appear publicly only after the maintainer
-approves them.
+is recorded. That file must stay off GitHub. The credential never raises the
+three-star agent limit. Ordinary credentials land pending moderation. An exact
+Ethan-controlled credential may be configured as trusted and then approves only
+its own transaction immediately; treat it as a publish credential and keep it off
+shared machines and CI.
 
 ### Submit every boundary, as it is crossed
 
-Record a report when the star rating changes, **in either direction** — an app
-that got worse is worth knowing about too. Do not record one when a rerun just
-repeats a rating already listed for the same tapHLE commit; the endpoint does not
-deduplicate, so that is pure moderation noise.
+Record a compatibility report when the star rating changes, **in either
+direction** — an app that got worse is worth knowing about too. A rerun that
+repeats a rating is submitted only as `release_verification` for a named release
+candidate, never as another compatibility boundary.
 
 **Every star boundary gets its own report, at the time it is crossed.** An app
 taken from one star to three earns a report at two *and* a report at three, not a
@@ -545,20 +571,22 @@ reject. The accepted shape, confirmed against the deployment:
 ```json
 {
   "app_id": 26,
-  "version": {
-    "name": "2.5.1",
-    "extra": {"bundle_version": "2.5.1", "minimum_os_version": "3.0"}
-  },
+  "version_id": 26,
   "report": {
     "rating": 3,
-    "supersedes": 53,
     "extra": {
       "source_type": "agent",
-      "source_name": "Claude Code (Opus 5)",
-      "taphle_version": "09dbc970",
-      "cpu": "...",
-      "gpu": "...",
-      "frontier": "..."
+      "source_name": "tapHLE Lead",
+      "platform": "Windows",
+      "architecture": "x86_64",
+      "os_version": "11 24H2",
+      "taphle_commit": "0123456789abcdef0123456789abcdef01234567",
+      "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "app_artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "build_provenance": "clean checkout; Rust 1.97.1; release profile",
+      "build_profile": "release",
+      "verification_type": "compatibility",
+      "frontier": "gameplay loop starts and persists"
     }
   }
 }
@@ -576,14 +604,17 @@ holding at least `bundle_identifier`.
 **An app_id from a work note may no longer exist.** Rows are removed in
 moderation, and the note does not find out: Omium's recorded app 25 returned
 `app_id does not exist`, because the moderator had removed it along with a bad
-neighbouring row. Check with `GET /api/apps/<id>` before trusting an id a note
-gives you, and create the app rather than guessing another number.
+neighbouring row. Read `GET /api/apps` and confirm that exact `app_id` and bundle identifier before
+trusting an id a note gives you. Create the app rather than guessing another
+number when it is absent.
 
-`source_type`, `source_name` and `taphle_version` are the required `extra`
-fields. `cpu`, `gpu`, `frontier` and `supersedes` are optional. **`os` and
-`booted` are not accepted keys** and cause a flat `report was rejected (check
-rating, extra fields and screenshot)`, which names no field — so does any other
-unknown key.
+New reports require source type/name, platform, architecture, OS version, full
+40-hex tapHLE commit, tested product SHA-256, tested app SHA-256, build provenance,
+build profile and verification type. `platform` is one of Windows, Linux, macOS,
+Android or iOS. `release_verification` also requires `release_version`; an
+ordinary `compatibility` report must omit it. Unknown keys and malformed hashes
+are rejected. The complete current schema and release-verification read endpoint
+are in tapHLEdb's `API.md`.
 
 `frontier` tolerates at least 500 characters, and exceeding its limit is rejected
 with a flat `{"error":"invalid_submission"}` that names no field — so a
@@ -601,17 +632,21 @@ front-end proxy with HTTP 403 code 1010.
 
 ### Include a screenshot when you have one
 
-A screenshot of the milestone is welcome and makes the rating much easier for a
-human to confirm or overturn — a picture of the running app settles "in game"
-faster than any amount of prose. Prefer the OS-level screenshot of tapHLE's
-window over tapHLE's own frame capture, for the reason in "A frame capture is not
-necessarily the screen" in `docs/debugging.md`.
+A screenshot of the milestone is welcome and makes the rating easier to confirm
+or overturn. Prefer an OS-level capture of the real visible tapHLE/app window over
+tapHLE's own frame capture, for the reason in "A frame capture is not necessarily
+the screen" in `docs/debugging.md`.
 
-It is **not required**. Some milestones are not visual at all, desktop capture
-sometimes returns a black client area, and a report is perfectly valid without
-one. Never hold back or delay a verified result because a screenshot could not be
-obtained, and never describe a screen you did not actually look at in order to
-have something to say — an accurate report with no image beats an illustrated
+Capture only the tapHLE/app window or a tightly cropped relevant area. Do not
+submit the full private desktop when the app window can prove the same fact.
+Inspect the final crop for notifications, account names, file paths, unrelated
+windows and other sensitive information before attaching it. Never alter the app
+content to make evidence look better.
+
+A screenshot is **not required**. Some milestones are not visual, a safe crop may
+not prove them, and desktop capture can return a black client area. Never delay a
+verified result because no safe useful image exists, and never describe a screen
+you did not inspect. An accurate report without an image beats an illustrated
 guess. Say what you observed and how you observed it.
 
 ### Choosing what to work on

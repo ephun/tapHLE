@@ -48,7 +48,7 @@ fn branding_for(
         return "";
     }
     if (repository, ref_name) == (Some("ephun/tapHLE"), Some("trunk")) {
-        "PREVIEW"
+        "DEVELOPMENT"
     } else {
         "UNOFFICIAL"
     }
@@ -62,10 +62,10 @@ mod tests {
     fn only_exact_official_fork_tag_is_unbranded() {
         let args = (
             true,
-            "v0.3.0-alpha.1",
-            "0.3.0-alpha.1",
+            "v0.2.4",
+            "0.2.4",
             Some("ephun/tapHLE"),
-            Some("taphle-v0.3.0-alpha.1"),
+            Some("taphle-v0.2.4"),
             Some("tag"),
             Some("push"),
         );
@@ -77,10 +77,10 @@ mod tests {
         assert_eq!(
             branding_for(
                 true,
-                "v0.3.0-alpha.1",
-                "0.3.0-alpha.1",
+                "v0.2.4",
+                "0.2.4",
                 Some("ephun/tapHLE"),
-                Some("v0.3.0-alpha.1"),
+                Some("v0.2.4"),
                 Some("tag"),
                 Some("push"),
             ),
@@ -89,10 +89,10 @@ mod tests {
         assert_eq!(
             branding_for(
                 true,
-                "v0.3.0-alpha.1-dirty",
-                "0.3.0-alpha.1",
+                "v0.2.4-dirty",
+                "0.2.4",
                 Some("ephun/tapHLE"),
-                Some("taphle-v0.3.0-alpha.1"),
+                Some("taphle-v0.2.4"),
                 Some("tag"),
                 Some("push"),
             ),
@@ -105,20 +105,20 @@ mod tests {
         assert_eq!(
             branding_for(
                 true,
-                "abc1234",
-                "0.3.0-alpha.1",
+                "0.2.4-dev.1+gabc1234",
+                "0.2.4-dev.1",
                 Some("ephun/tapHLE"),
                 Some("trunk"),
                 Some("branch"),
                 Some("push"),
             ),
-            "PREVIEW"
+            "DEVELOPMENT"
         );
         assert_eq!(
             branding_for(
                 true,
-                "abc1234",
-                "0.3.0-alpha.1",
+                "0.2.4-dev.1+gabc1234",
+                "0.2.4-dev.1",
                 Some("someone/fork"),
                 Some("branch"),
                 Some("branch"),
@@ -127,7 +127,7 @@ mod tests {
             "UNOFFICIAL"
         );
         assert_eq!(
-            branding_for(false, "abc1234", "0.3.0-alpha.1", None, None, None, None,),
+            branding_for(false, "abc1234", "0.2.4", None, None, None, None,),
             ""
         );
     }

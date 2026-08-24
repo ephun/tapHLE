@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased for 0.3.0-alpha.1
+## Unreleased for 0.2.4
 
 - tapHLE now has a proper window. Open it, see your apps laid out with their
   icons, click one, and press Play. The app opens in its own window and the

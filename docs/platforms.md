@@ -31,7 +31,7 @@ and compatibility claims earned there. It never means "the code compiled once."
 *published artifact*, whichever you actually mean.
 
 The rest of tapHLE's controlled vocabulary — app versus game, host versus
-guest, numbered release versus trunk preview — is in
+guest, numbered release versus development build — is in
 [`docs/README.md`](README.md#words-taphle-uses-precisely).
 
 ## Current state
@@ -104,29 +104,43 @@ so the route back to `trunk` is to build and run it, not to relax the standard.
 
 ## Release eligibility
 
-The first numbered release ships on all five platforms. Nothing is released
-until every row above reaches "yes" in build, runtime and package tooling.
-`dev-scripts/release-readiness.ps1` reports this as a blocker so the rule is
-visibly held rather than quietly not working.
+The first numbered release is `0.2.4` and ships on all five hosts. Nothing is
+released or tagged until every row above reaches yes for build, visible runtime
+and installable package tooling, and the frozen app matrix is complete.
+`dev-scripts/release-readiness.ps1` must keep this gate visible.
 
-Three requirements follow, and they are requirements rather than aspirations:
+The `0.2.4` cohort froze on 2026-08-24. Its exact 24 app versions are the records
+in `compatibility/release-cohorts/0.2.4.json`; do not add or remove an app after
+the freeze because a later database rating changed. Every one of those app
+versions must independently reach at least three stars on Windows, Linux, macOS,
+Android and iOS.
 
-- **A shared version number has to be earned.** Platforms may carry the same
-  version only where testing has independently established that an app rated
-  three stars on one platform is three stars on the others. Where that has not
-  been established, the platforms get different version numbers. The rule
-  exists so that one version number never implies compatibility nobody
-  measured.
-- **The mobile frontends are in scope, not a later port.** Each needs the
-  report-submission options, whichever settings apply on that platform, and the
-  help/about sections — the same product, not a cut-down viewer.
-- **The design is one design.** Mobile and all three desktops must read as two
-  sides of the same coin, with consistent branding across the five. A frontend
-  that works but looks like a different project does not meet the bar.
+All five products for a candidate must be built from one full Git commit. Each
+verification records the host, architecture, OS version, full commit, binary or
+package SHA-256, build provenance and profile, exact app artifact identity,
+rating/frontier, producer identity and verification type. The commit is the
+canonical source identity; a package hash proves which output was actually run.
 
-None of this lowers the evidence standard; it raises the amount of evidence
-owed. "Builds on a platform" is still not "works on a platform", and a release
-claim for a platform still needs somebody to have run it there.
+A development-candidate matrix is followed by the final changelog and release
+identity commit. Because that changes the source and package hashes, the final
+five-host matrix must be rerun on the exact final commit before it is tagged.
+Evidence from the development candidate is a discriminator, not release evidence
+for the later commit.
+
+Three requirements follow:
+
+- **One version is earned by one complete matrix.** A shared version never
+  implies compatibility copied from another host.
+- **The mobile products are real products, not later ports.** Android and iOS
+  must build, install and run visibly on their assigned devices. Each includes
+  the library, applicable settings, and help/about surfaces. Reporting is shown
+  only when its secure authentication workflow is complete.
+- **The design is one design.** Mobile and all three desktops carry consistent
+  tapHLE branding and product identity.
+
+A successful build is not a runtime result. GUI claims require the target's real
+visible session and inspected window evidence; a background or SSH-only process
+is not visible-runtime evidence.
 
 ## Compatibility results are host-qualified
 
