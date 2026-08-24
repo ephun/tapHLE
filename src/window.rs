@@ -329,6 +329,9 @@ pub struct Window {
     _sdl_ctx: sdl2::Sdl,
     video_ctx: sdl2::VideoSubsystem,
     window: sdl2::video::Window,
+    /// SDL's id for [Self::window], so the shared event queue can be sorted
+    /// into what belongs to this window and what belongs to somebody else's.
+    window_id: u32,
     event_pump: sdl2::EventPump,
     event_queue: VecDeque<Event>,
     last_polled: Instant,
@@ -496,6 +499,7 @@ impl Window {
         let mut window = Window {
             _sdl_ctx: sdl_ctx,
             video_ctx,
+            window_id: window.id(),
             window,
             event_pump,
             event_queue: VecDeque::new(),
@@ -602,6 +606,19 @@ impl Window {
                 }
                 e
             } else if let Some(e) = self.event_pump.poll_event() {
+                // SDL has one event queue for the whole process, and this
+                // process may own more than one window — the frontend's
+                // library window sits beside this one once the two share a
+                // process. An event addressed to somebody else's window is
+                // not this one's to act on: a click meant for the library
+                // would be delivered to the guest as a touch, and the
+                // library's own close button would end the app.
+                //
+                // Events with no window at all — a controller, a quit — carry
+                // no id and are left alone.
+                if e.get_window_id().is_some_and(|id| id != self.window_id) {
+                    continue;
+                }
                 match e {
                     E::Unknown { .. } => (),
                     _ => log_dbg!("Consuming new event: {:?}", e),
@@ -641,7 +658,16 @@ impl Window {
             }
 
             self.event_queue.push_back(match event {
-                E::Quit { .. } => Event::Quit,
+                // Quit is the process being asked to end, and the close
+                // button on this window is this app being asked to end. They
+                // were the same thing while the emulator was a process of its
+                // own; they are not once it shares one, and only the second
+                // is reliably about the app.
+                E::Quit { .. }
+                | E::Window {
+                    win_event: sdl2::event::WindowEvent::Close,
+                    ..
+                } => Event::Quit,
                 E::MouseButtonDown {
                     x,
                     y,

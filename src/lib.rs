@@ -136,7 +136,26 @@ Special options:
         Print basic information about the app bundle without running the app.
 ";
 
-pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
+/// The `tapHLE` command, for a program whose whole job is one app.
+///
+/// Ends the process with the app's status, because a command has nowhere else
+/// to report it. Anything that outlives the app — the frontend — wants
+/// [run_app] instead.
+pub fn main<T: Iterator<Item = String>>(args: T) -> Result<(), String> {
+    let status = run_app(args)?;
+    if status != 0 {
+        std::process::exit(status);
+    }
+    Ok(())
+}
+
+/// Run one app to completion and give back the status it ended with.
+///
+/// The same arguments the command line takes, `argv[0]` included, so the
+/// frontend cannot drift into a different dialect from the one every script
+/// and compatibility report uses. Returns rather than exits: the caller may
+/// well have a window still open.
+pub fn run_app<T: Iterator<Item = String>>(mut args: T) -> Result<i32, String> {
     echo!(
         "tapHLE {}{}{} — https://github.com/ephun/tapHLE",
         branding(),
@@ -177,10 +196,10 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         } else if arg == "--help" {
             echo!("{}", USAGE);
             echo!("{}", options::OPTIONS_HELP);
-            return Ok(());
+            return Ok(0);
         } else if arg == "--copyright" {
             echo!("{}", licenses::get_text());
-            return Ok(());
+            return Ok(0);
         } else if arg == "--info" {
             just_info = true;
         // Parse an option and store a backup in option_args so that we can
@@ -200,7 +219,7 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
     if options.dumping_options.symbols {
         let mut file = std::fs::File::create(&options.dumping_file).map_err(|e| e.to_string())?;
         dyld::Dyld::dump_host_symbols(&mut file).unwrap();
-        return Ok(());
+        return Ok(0);
     }
 
     let Some(bundle_path) = bundle_path else {
@@ -294,7 +313,7 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
     }
 
     if just_info {
-        return Ok(());
+        return Ok(0);
     }
 
     // Apply options from files
@@ -486,17 +505,5 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
             std::panic::resume_unwind(e)
         }
     };
-    // The run ends rather than the process, so the status has to be carried
-    // out to the command line deliberately. Zero is the ordinary ending and
-    // returns; anything else is what the app asked `exit()` for and has to
-    // reach whoever ran tapHLE from a terminal.
-    let status = env.run();
-    // A non-zero status is the app's own, and whoever ran tapHLE from a
-    // terminal is owed it; returning `Ok` would report success. Zero returns
-    // normally, which runs the process teardown — the thing the frontend will
-    // do too, so it is the path worth exercising here.
-    if status != 0 {
-        std::process::exit(status);
-    }
-    Ok(())
+    Ok(env.run())
 }
