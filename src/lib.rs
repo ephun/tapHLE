@@ -122,8 +122,8 @@ Usage:
     tapHLE [PATH] [OPTIONS]
 
 PATH should be a path to a .app bundle or .ipa file, and is required unless a
-special option below is used. For a library, settings and a log, run tapHLE-gui
-instead.
+special option below is used. Start tapHLE with no arguments instead, for
+a library, settings and a log.
 
 Special options:
     --help
@@ -225,8 +225,8 @@ pub fn run_app<T: Iterator<Item = String>>(mut args: T) -> Result<i32, String> {
     let Some(bundle_path) = bundle_path else {
         echo!("{}", USAGE);
         return Err(
-            "No app specified. Pass the path to a .app bundle or .ipa file, or run tapHLE-gui \
-             to pick one from a library."
+            "No app specified. Pass the path to a .app bundle or .ipa file, or start tapHLE with no \
+             arguments to pick one from a library."
                 .to_string(),
         );
     };

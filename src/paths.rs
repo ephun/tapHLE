@@ -115,7 +115,7 @@ impl std::fmt::Debug for ResourceFile {
 pub const RESOURCES_ARE_EXTERNAL_FILES: bool = cfg!(not(target_os = "android"));
 
 /// Name of the directory where the user can put apps if they want them to
-/// appear in the tapHLE-gui library.
+/// appear in tapHLE's library.
 pub const APPS_DIR: &str = "tapHLE_apps";
 
 /// Name of the file intended for the user's own options.

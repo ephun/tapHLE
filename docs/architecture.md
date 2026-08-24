@@ -100,7 +100,7 @@ which injects an ordinary quit once the step settles.
 
 | Path | What it holds |
 | --- | --- |
-| `src/bin.rs`, `src/lib.rs` | Emulator entry point and main control flow |
+| `src/lib.rs` | Emulator entry points and main control flow |
 | `src/app_bundle.rs` | The narrow public reader other tapHLE programs use to learn what an app says about itself |
 | `src/options.rs`, `src/paths.rs`, `src/log.rs` | Configuration, host paths, diagnostic output |
 | `src/bundle.rs`, `src/mach_o.rs`, `src/dyld.rs`, `src/abi.rs` | Guest app loading, linking, symbols, ABI boundaries |

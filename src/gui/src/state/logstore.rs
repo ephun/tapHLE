@@ -243,7 +243,7 @@ impl LogStore {
     fn push_line(&mut self, line: LogLine) {
         if self.mirror_to_stderr {
             // stderr rather than stdout: this is a running commentary, not the
-            // program's output, and a script reading from tapHLE-gui wants the
+            // program's output, and a script reading from tapHLE wants the
             // two apart.
             eprintln!("{}", line.full_text());
         }

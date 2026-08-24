@@ -191,7 +191,6 @@ jobs:
           name: tapHLE_Linux_x86_64
           path: |
             target/release/tapHLE
-            target/release/tapHLE-gui
 
   build-windows:
     name: Windows build and tests

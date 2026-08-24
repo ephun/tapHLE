@@ -714,6 +714,11 @@
   press the one you want — and a stick zone can be steered with the arrow keys
   or with W, A, S and D, diagonals included. On the command line these are
   `--key-to-touch=` and `--key-dpad-to-touch=`.
+- tapHLE is one program now. `tapHLE.exe` opens the app library when you start
+  it with nothing, and runs an app when you give it one — the same command line
+  it always took. There is no separate `tapHLE-gui.exe` to know about, and
+  nothing to keep in step: one thing to pin to a taskbar, one thing in the
+  installer, one thing to copy somewhere else.
 - Developer mode can now run a game inside the tapHLE window's own process
   rather than starting a second one. It is how tapHLE will have to work on a
   phone, where an app is a single process, and it is off by default on a

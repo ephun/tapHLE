@@ -10,14 +10,21 @@ follow, and Linux is built in CI but has not been run by anyone.
 
 ## What you get
 
-`cargo build` produces two programs:
+`cargo build` produces one program, `tapHLE`, which does two jobs depending on
+whether it was given anything to do:
 
-- `tapHLE` — the emulator. Takes an app path and runs it.
-- `tapHLE-gui` — the desktop frontend: app library, settings, integrated log.
-  It launches the emulator as a child process.
+- with an app path and options, it runs that app — the emulator;
+- with nothing, it shows the app library, settings and log — the frontend.
 
-Both are workspace default members, so an ordinary build makes both and the lint
-and format scripts cover both. To build one on its own, use `cargo build -p
+The window starts a game by starting another copy of itself, which is how more
+than one app can run at once. It can also run one inside its own process,
+which is what a phone will have to do; that is developer mode's "Run apps
+inside this window's process".
+
+The binary is built by the `tapHLE_gui` package, because that is the package
+that depends on the other. Both packages are workspace default members, so an
+ordinary build covers both and so do the lint and format scripts. To build one
+on its own, use `cargo build -p
 tapHLE` or `cargo build -p tapHLE_gui`.
 
 ## Prerequisites
@@ -119,7 +126,8 @@ resources beside the executable, or use
 `dev-scripts/make-windows-bundle.sh` from Git Bash to assemble a complete
 portable directory.
 
-The emulator needs an app path; run `tapHLE-gui` to pick one from a library.
+Run `tapHLE` with no arguments to pick an app from the library instead of
+naming one.
 Keep local playtest files in `tapHLE_apps`, which is the directory the frontend
 scans. It is ignored by Git, and app binaries must not be committed or
 redistributed.

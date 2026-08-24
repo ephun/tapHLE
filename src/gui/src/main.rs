@@ -42,11 +42,25 @@ const DEFAULT_SIZE: [f32; 2] = [1120.0, 720.0];
 const MINIMUM_SIZE: [f32; 2] = [720.0, 440.0];
 
 fn main() -> Result<(), String> {
-    // Before anything prints: the frontend is a windowed program, so it has no
-    // console unless it borrows the one it was started from.
+    // Before anything prints: this is a windowed program, so it has no console
+    // unless it borrows the one it was started from.
     let on_a_terminal = platform::console::attach_to_parent();
-
     let (data_dir, notes) = platform::storage::locate_data_dir();
+
+    // One executable with two jobs, told apart by whether it was given
+    // anything to do. An app and its options mean "run this", which is how
+    // the emulator has always been driven and what every script, options file
+    // and compatibility report expects. Nothing means "show me the library".
+    //
+    // The emulator's argument handling is used verbatim rather than copied,
+    // so the window cannot drift into a dialect of its own.
+    let mut args = std::env::args();
+    let argv0 = args.next();
+    let rest: Vec<String> = args.collect();
+    if !rest.is_empty() {
+        return tapHLE::main(argv0.into_iter().chain(rest));
+    }
+
     install_panic_hook();
 
     let state: state::settings::UiState =
