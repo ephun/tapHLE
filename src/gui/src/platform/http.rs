@@ -42,7 +42,7 @@ pub trait Transport: Send + Sync {
 /// The user agent sent with every request, so the maintainer can tell
 /// frontend traffic apart in a server log.
 fn user_agent() -> String {
-    format!("tapHLE-gui/{}", tapHLE_version::VERSION.trim())
+    format!("tapHLE/{}", tapHLE_version::VERSION.trim())
 }
 
 /// A transport that runs the system's `curl`.

@@ -11,8 +11,11 @@ authors = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
 
+# One executable, and it keeps the emulator's name because that is the name
+# every script, options file and compatibility report already drives. It is
+# built by this package because this is the package that depends on the other.
 [[bin]]
-name = "tapHLE-gui"
+name = "tapHLE"
 path = "src/main.rs"
 
 [dependencies]

@@ -125,8 +125,9 @@ example `v0.3.0-alpha.1`. A host's archive is named for its host:
 tapHLE-v0.3.0-alpha.1-Windows-x86_64.zip
 ```
 
-A desktop release artifact contains both programs: `tapHLE-gui`, the desktop
-frontend, and `tapHLE`, the emulator it launches. A Windows release should also
+A desktop release artifact contains one program, `tapHLE`, which shows the app
+library when started with nothing and runs an app when given one. A Windows
+release should also
 carry the installer built from `dev-scripts/tapHLE.iss`, which has been written
 but not yet built — do not publish one without checking its shortcut, its
 uninstall entry and an upgrade over an existing installation.
@@ -201,10 +202,9 @@ cd dev-scripts
 ./make-windows-bundle.sh ../target/release/tapHLE.exe
 ```
 
-It takes the emulator and picks up `tapHLE-gui.exe` from beside it, so a build
-that has not produced a frontend still yields a working bundle. The result holds
-both programs, `tapHLE_dylibs`, `tapHLE_fonts`, `res/icon.png`, the two options
-files, `OPTIONS_HELP.txt`, the readme, the changelog and the licence.
+The result holds the executable, `tapHLE_dylibs`, `tapHLE_fonts`,
+`res/icon.png`, the two options files, `OPTIONS_HELP.txt`, the readme, the
+changelog and the licence.
 
 That directory is already a complete portable installation: unpack it anywhere
 and run either program.
@@ -253,8 +253,8 @@ extra is needed.
 `dev-scripts/make-macos-bundle.sh` is inherited from touchHLE and produces a
 `.app` for the emulator. It predates the frontend and does **not** include it.
 
-A frontend-carrying bundle needs, at minimum: `tapHLE-gui` as the bundle
-executable with `tapHLE` beside it in `Contents/MacOS`, an `.icns` icon, an
+A window-carrying bundle needs, at minimum: `tapHLE` as the bundle
+executable in `Contents/MacOS`, an `.icns` icon, an
 `Info.plist` naming the bundle identifier and version, and — because
 `paths::user_data_base_path` sends a bundled build to a preferences directory
 rather than the executable's own — a check that the frontend's `locate_data_dir`

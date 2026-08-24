@@ -332,27 +332,26 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(stream: R, log: SharedLog, or
 
 /// Where the emulator executable is.
 ///
-/// The frontend and the emulator are built and installed side by side, so the
-/// answer is almost always "next to this program". The current directory is
-/// tried as well, which is what makes an unpacked release directory work when
-/// the frontend was started from somewhere else.
+/// This one: tapHLE is a single executable that runs an app when given one
+/// and shows the library when not, so starting a second run means starting
+/// another copy of this program. A configured path is still honoured, for
+/// somebody pointing the window at a build somewhere else.
 pub fn find_emulator(configured: Option<&Path>, data_dir: &Path) -> Option<PathBuf> {
     if let Some(path) = configured {
         return path.exists().then(|| path.to_path_buf());
     }
+    if let Ok(exe) = std::env::current_exe() {
+        return Some(exe);
+    }
+    // Only if the operating system will not say what is running, which is not
+    // something that happens on a platform tapHLE targets.
     let name = if cfg!(windows) {
         "tapHLE.exe"
     } else {
         "tapHLE"
     };
-    let mut candidates = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            candidates.push(dir.join(name));
-        }
-    }
-    candidates.push(data_dir.join(name));
-    candidates.into_iter().find(|path| path.is_file())
+    let beside = data_dir.join(name);
+    beside.is_file().then_some(beside)
 }
 
 /// The message shown when a run ends badly.

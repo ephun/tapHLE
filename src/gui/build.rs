@@ -29,7 +29,7 @@ fn windows_resources() {
         // A missing icon is not worth failing a build over, but it should not
         // pass unremarked either.
         println!(
-            "cargo:warning=No icon at {}; tapHLE-gui will use the default one.",
+            "cargo:warning=No icon at {}; tapHLE will use the default one.",
             icon.display()
         );
         return;
@@ -45,7 +45,7 @@ fn windows_resources() {
             "LegalCopyright",
             "Mozilla Public License 2.0; distributed binaries under GPL-3.0-or-later",
         )
-        .set("OriginalFilename", "tapHLE-gui.exe");
+        .set("OriginalFilename", "tapHLE.exe");
     if let Err(e) = resource.compile() {
         println!("cargo:warning=Could not attach Windows resources: {e}");
     }

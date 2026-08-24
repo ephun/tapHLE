@@ -69,9 +69,10 @@ cd tapHLE
 cargo build --release
 ```
 
-That produces `tapHLE-gui.exe`, the desktop frontend, and `tapHLE.exe`, the
-emulator it launches. Full prerequisites, troubleshooting and the test ladder
-are in **[docs/development.md](docs/development.md)**.
+That produces `tapHLE.exe`. Start it with nothing and it shows the app
+library; give it an app and it runs that app. Full prerequisites,
+troubleshooting and the test ladder are in
+**[docs/development.md](docs/development.md)**.
 
 ## Contributing
 

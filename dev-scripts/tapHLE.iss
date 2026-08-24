@@ -52,7 +52,7 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 SetupIconFile=..\res\icon.ico
-UninstallDisplayIcon={app}\tapHLE-gui.exe
+UninstallDisplayIcon={app}\tapHLE.exe
 UninstallDisplayName=tapHLE
 LicenseFile={#BundleDir}\COPYING.txt
 ; The emulator is experimental and its compatibility is per app; saying so
@@ -68,10 +68,9 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; \
   GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
-; The frontend, and the emulator it launches. Both are installed: the
-; emulator is a usable program on its own and the command line is not a
+; One executable: it shows the library when started with nothing to do,
+; and runs an app when given one, so the command line is not a
 ; second-class way to run tapHLE.
-Source: "{#BundleDir}\tapHLE-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleDir}\tapHLE.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleDir}\tapHLE_dylibs\*"; DestDir: "{app}\tapHLE_dylibs"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
@@ -96,12 +95,12 @@ Name: "{app}\tapHLE_apps"
 Name: "{app}\tapHLE_sandbox"
 
 [Icons]
-Name: "{group}\tapHLE"; Filename: "{app}\tapHLE-gui.exe"; \
+Name: "{group}\tapHLE"; Filename: "{app}\tapHLE.exe"; \
   WorkingDir: "{app}"; Comment: "Run early iPhone OS apps"
 Name: "{group}\tapHLE apps folder"; Filename: "{app}\tapHLE_apps"
-Name: "{autodesktop}\tapHLE"; Filename: "{app}\tapHLE-gui.exe"; \
+Name: "{autodesktop}\tapHLE"; Filename: "{app}\tapHLE.exe"; \
   WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\tapHLE-gui.exe"; Description: "Start tapHLE"; \
+Filename: "{app}\tapHLE.exe"; Description: "Start tapHLE"; \
   WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent

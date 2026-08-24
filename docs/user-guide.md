@@ -33,7 +33,7 @@ anywhere public.**
 ## Running an app
 
 ```powershell
-.\tapHLE-gui.exe
+.\tapHLE.exe
 ```
 
 Select an app and press **Play**. It opens in its own window; the library stays

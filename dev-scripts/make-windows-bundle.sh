@@ -17,13 +17,6 @@ if [ "$#" -eq 1 ]; then
     mkdir tapHLE_windows_bundle
     cp "$PATH_TO_BINARY" tapHLE_windows_bundle/
 
-    BINARY_DIR=$(dirname "$PATH_TO_BINARY")
-    for FRONTEND in tapHLE-gui.exe tapHLE-gui; do
-        if [ -f "$BINARY_DIR/$FRONTEND" ]; then
-            cp "$BINARY_DIR/$FRONTEND" tapHLE_windows_bundle/
-        fi
-    done
-
     cp -r ../tapHLE_dylibs tapHLE_windows_bundle/
     cp -r ../tapHLE_fonts tapHLE_windows_bundle/
     mkdir tapHLE_windows_bundle/tapHLE_apps
