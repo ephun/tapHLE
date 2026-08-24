@@ -42,6 +42,10 @@ const DEFAULT_SIZE: [f32; 2] = [1120.0, 720.0];
 const MINIMUM_SIZE: [f32; 2] = [720.0, 440.0];
 
 fn main() -> Result<(), String> {
+    // Before anything prints: the frontend is a windowed program, so it has no
+    // console unless it borrows the one it was started from.
+    let on_a_terminal = platform::console::attach_to_parent();
+
     let (data_dir, notes) = platform::storage::locate_data_dir();
     install_panic_hook();
 
@@ -57,7 +61,11 @@ fn main() -> Result<(), String> {
     };
 
     shell::run(settings, move |ctx| {
-        app::Frontend::new(ctx, data_dir, notes)
+        let frontend = app::Frontend::new(ctx, data_dir, notes);
+        // Somebody who started this from a prompt is asking to watch the log
+        // go by, rather than to read it in the panel afterwards.
+        frontend.mirror_log_to_stderr(on_a_terminal);
+        frontend
     })
 }
 
