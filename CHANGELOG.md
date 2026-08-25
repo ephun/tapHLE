@@ -32,6 +32,9 @@
   stops unexpectedly, tapHLE now says so and offers you the log, instead of
   its window simply disappearing.
 
+- Linux has a complete portable-bundle layout matching the Windows package:
+  executable, guest libraries, fonts, app directory, options, icon and licence.
+
 - Compatibility ratings from the tapHLE database are shown beside each app,
   and you can keep your own rating separately without either overwriting the
   other. Unfinished report-submission controls are hidden until tapHLE can offer

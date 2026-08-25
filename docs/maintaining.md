@@ -276,20 +276,21 @@ platforms/macos/make-bundle.sh \
 
 ### Linux
 
-Not attempted as a package. The frontend's dependencies are the obstacle to be
-aware of rather than the emulator's:
+`platforms/linux/make-bundle.sh` assembles the same portable layout as Windows:
 
-- SDL needs X11 or Wayland development libraries at build time, for the
-  frontend's window as well as the emulator's;
-- `rfd` uses GTK 3 by default for its dialogs. Its `xdg-portal` feature is the
-  alternative and avoids the GTK dependency, at the cost of needing an async
-  runtime;
-- the emulator already needs a C++ toolchain, CMake and Boost.
+```sh
+cd platforms/linux
+./make-bundle.sh ../../target/release/tapHLE
+```
 
-A first attempt should be an AppImage or a tarball of the portable layout,
-because both keep the "everything beside the executable" arrangement the
-emulator expects. A distribution package that scatters files into `/usr` would
-need `paths::user_data_base_path` to learn about XDG directories first.
+The result is `tapHLE_linux_bundle`, containing the executable, guest libraries,
+fonts, app directory, options, icon, readme, changelog and licence. Archive that
+directory as `tapHLE-v<version>-Linux-x86_64.tar.gz`; do not scatter it into
+`/usr`, because tapHLE's data paths expect the portable layout.
+
+Build prerequisites remain host packages rather than bundled dependencies: SDL
+needs the X11/Wayland development stacks, the XDG portal path used by `rfd` needs
+D-Bus, and the emulator needs a C++ toolchain, CMake and Boost.
 
 ### Android and iOS
 

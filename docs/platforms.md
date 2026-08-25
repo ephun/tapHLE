@@ -47,7 +47,7 @@ Intent is not state. What is true today:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Windows x86_64 | yes | yes | yes, continuously | yes | bundle yes; installer written, never built | pending the all-five bar | **canonical** |
 | macOS x86_64 | yes | yes, in CI | no — nobody has played an app on it | yes | emulator-only bundle script, inherited | pending the all-five bar | no |
-| Linux x86_64 | yes | attempted in CI, not confirmed | no | yes, `continue-on-error` | no | pending the all-five bar | no |
+| Linux x86_64 | yes | attempted in CI, not confirmed | no | yes, `continue-on-error` | portable bundle script, real build pending | pending the all-five bar | no |
 | Android | yes | no | no | no | no | pending the all-five bar | no |
 | iOS | yes | branch only | no | no | no | pending the all-five bar | no |
 
@@ -76,8 +76,8 @@ frontend, and bundles the emulator only.
 
 CI runs a `Linux x86_64 build` job on `ubuntu-latest` that installs the SDL2,
 Wayland, X11 and GTK 3 dependencies, then runs `dev-scripts/lint.sh`,
-`cargo test --workspace --lib` and `cargo build --release`, uploading both
-binaries. It carries `continue-on-error: true` with an instruction to remove
+`cargo test --workspace --lib` and `cargo build --release`, then uploads the
+portable bundle. It carries `continue-on-error: true` with an instruction to remove
 that once it passes twice, so a green run has not yet been established as
 routine — read "attempted in CI" literally and check the workflow's recent runs
 before claiming Linux builds.
