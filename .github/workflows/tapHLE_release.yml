@@ -170,8 +170,8 @@ jobs:
       # tapHLE's default "static" feature builds SDL2 and OpenAL Soft from
       # source, so this is mostly SDL2's build dependencies rather than
       # tapHLE's: the X11 and Wayland stacks it can target, and the audio
-      # backends it can use. Boost is for dynarmic. GTK 3 is for the frontend's
-      # native file dialogs (rfd), which is why a headless build still needs it.
+      # backends it can use. Boost is for dynarmic. The frontend uses rfd's
+      # default XDG portal backend rather than linking GTK 3 directly.
       #
       # cmake comes from the distribution rather than being pinned and checksummed
       # the way the Windows and macOS jobs pin theirs. That is a deliberate
@@ -181,7 +181,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends             cmake ninja-build libboost-dev             libasound2-dev libpulse-dev libudev-dev libdbus-1-dev             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev             libxinerama-dev libxss-dev libxkbcommon-dev             libwayland-dev wayland-protocols libdecor-0-dev             libgl1-mesa-dev libegl1-mesa-dev             libgtk-3-dev
+          sudo apt-get install -y --no-install-recommends             cmake ninja-build libboost-dev             libasound2-dev libpulse-dev libudev-dev libdbus-1-dev             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev             libxinerama-dev libxss-dev libxkbcommon-dev             libwayland-dev wayland-protocols libdecor-0-dev             libgl1-mesa-dev libegl1-mesa-dev
       - name: Lint
         run: dev-scripts/lint.sh
       # Not the full `cargo test`: the integration test builds TestApp with the
@@ -191,11 +191,17 @@ jobs:
         run: cargo test --workspace --lib
       - name: Build
         run: cargo build --release
+      - name: Create portable bundle archive
+        run: |
+          cd platforms/linux
+          ./make-bundle.sh ../../target/release/tapHLE
+          tar -czf ../../tapHLE_Linux_x86_64.tar.gz tapHLE_linux_bundle
+      # Upload the tarball rather than the directory: upload-artifact normalises
+      # file modes, while the archive preserves tapHLE's executable bit.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: tapHLE_Linux_x86_64
-          path: |
-            target/release/tapHLE
+          path: tapHLE_Linux_x86_64.tar.gz
 
   build-windows:
     name: Windows build and tests
