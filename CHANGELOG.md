@@ -35,6 +35,9 @@
 - Linux and Android can reserve tapHLE's sparse 32-bit guest address space on
   low-memory hosts without pretending all four gigabytes need physical backing.
 
+- Windows portable bundles now include the runtime libraries needed when
+  launched from Explorer, and the installer mirrors the bundle layout.
+
 - Linux has a complete portable-bundle layout matching the Windows package:
   executable, guest libraries, fonts, app directory, options, icon and licence.
 
