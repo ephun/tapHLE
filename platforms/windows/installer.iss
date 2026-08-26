@@ -72,6 +72,9 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; \
 ; and runs an app when given one, so the command line is not a
 ; second-class way to run tapHLE.
 Source: "{#BundleDir}\tapHLE.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BundleDir}\libgcc_s_seh-1.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BundleDir}\libstdc++-6.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BundleDir}\libwinpthread-1.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleDir}\dylibs\*"; DestDir: "{app}\dylibs"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#BundleDir}\fonts\*"; DestDir: "{app}\fonts"; \

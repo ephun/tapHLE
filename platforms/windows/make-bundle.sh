@@ -21,6 +21,16 @@ if [ "$#" -eq 1 ]; then
     mkdir tapHLE_windows_bundle
     cp "$PATH_TO_BINARY" tapHLE_windows_bundle/
 
+    # Rust GNU builds need these MinGW runtime libraries when launched from
+    # Explorer, whose PATH does not include Git for Windows.
+    for library in libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll; do
+        if [ ! -f "/mingw64/bin/$library" ]; then
+            echo "Required Windows runtime library is missing: /mingw64/bin/$library" >&2
+            exit 1
+        fi
+        cp "/mingw64/bin/$library" tapHLE_windows_bundle/
+    done
+
     cp -r "$REPO"/runtime/dylibs tapHLE_windows_bundle/
     cp -r "$REPO"/runtime/fonts tapHLE_windows_bundle/
     mkdir tapHLE_windows_bundle/apps
