@@ -51,7 +51,7 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-SetupIconFile=..\res\icon.ico
+SetupIconFile=..\..\runtime\res\icon.ico
 UninstallDisplayIcon={app}\tapHLE.exe
 UninstallDisplayName=tapHLE
 LicenseFile={#BundleDir}\COPYING.txt
@@ -72,32 +72,35 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; \
 ; and runs an app when given one, so the command line is not a
 ; second-class way to run tapHLE.
 Source: "{#BundleDir}\tapHLE.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#BundleDir}\tapHLE_dylibs\*"; DestDir: "{app}\tapHLE_dylibs"; \
+Source: "{#BundleDir}\libgcc_s_seh-1.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BundleDir}\libstdc++-6.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BundleDir}\libwinpthread-1.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BundleDir}\dylibs\*"; DestDir: "{app}\dylibs"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#BundleDir}\tapHLE_fonts\*"; DestDir: "{app}\tapHLE_fonts"; \
+Source: "{#BundleDir}\fonts\*"; DestDir: "{app}\fonts"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#BundleDir}\tapHLE_default_options.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BundleDir}\default_options.txt"; DestDir: "{app}"; Flags: ignoreversion
 ; The user's own options file is only placed if there is not one already, so
 ; an upgrade never discards what somebody put in it.
-Source: "{#BundleDir}\tapHLE_options.txt"; DestDir: "{app}"; Flags: onlyifdoesntexist
+Source: "{#BundleDir}\options.txt"; DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "{#BundleDir}\OPTIONS_HELP.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleDir}\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleDir}\COPYING.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\res\icon.png"; DestDir: "{app}\res"; Flags: ignoreversion
-Source: "{#BundleDir}\tapHLE_apps\README.txt"; DestDir: "{app}\tapHLE_apps"; \
+Source: "..\..\runtime\res\icon.png"; DestDir: "{app}\res"; Flags: ignoreversion
+Source: "{#BundleDir}\apps\README.txt"; DestDir: "{app}\apps"; \
   Flags: onlyifdoesntexist
 
 [Dirs]
 ; Created up front so that the first run has somewhere to put an app and its
 ; saved data without having to create it.
-Name: "{app}\tapHLE_apps"
-Name: "{app}\tapHLE_sandbox"
+Name: "{app}\apps"
+Name: "{app}\sandbox"
 
 [Icons]
 Name: "{group}\tapHLE"; Filename: "{app}\tapHLE.exe"; \
   WorkingDir: "{app}"; Comment: "Run early iPhone OS apps"
-Name: "{group}\tapHLE apps folder"; Filename: "{app}\tapHLE_apps"
+Name: "{group}\tapHLE apps folder"; Filename: "{app}\apps"
 Name: "{autodesktop}\tapHLE"; Filename: "{app}\tapHLE.exe"; \
   WorkingDir: "{app}"; Tasks: desktopicon
 
