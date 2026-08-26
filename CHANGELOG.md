@@ -32,8 +32,9 @@
   stops unexpectedly, tapHLE now says so and offers you the log, instead of
   its window simply disappearing.
 
-- Linux and Android can reserve tapHLE's sparse 32-bit guest address space on
-  low-memory hosts without pretending all four gigabytes need physical backing.
+- Linux and Android can map tapHLE's sparse 32-bit guest address space without
+  charging the full writable mapping against commit limits; pages remain subject
+  to ordinary host memory pressure when the guest first writes them.
 
 - Windows portable bundles now include the runtime libraries needed when
   launched from Explorer, and the installer mirrors the bundle layout.
