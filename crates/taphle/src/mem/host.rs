@@ -39,8 +39,8 @@ pub(super) unsafe fn allocate_memory(size: usize) -> std::io::Result<*mut core::
 
     // Linux and Android account anonymous writable mappings against commit
     // limits unless MAP_NORESERVE is set. Guest memory covers the 32-bit address
-    // space but remains sparse, so reserving four GiB of physical backing makes
-    // tapHLE fail on otherwise adequate low-memory hosts.
+    // space but remains sparse; pages are still faulted in on first write and
+    // remain subject to host memory pressure.
     #[cfg(any(target_os = "linux", target_os = "android"))]
     const RESERVATION_FLAG: i32 = libc::MAP_NORESERVE;
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
@@ -108,12 +108,23 @@ pub(super) unsafe fn free_memory(
     Ok(())
 }
 
-#[cfg(all(test, any(target_os = "linux", target_os = "android")))]
+#[cfg(all(
+    test,
+    target_pointer_width = "64",
+    any(target_os = "linux", target_os = "android")
+))]
 mod tests {
     #[test]
     fn sparse_guest_address_space_can_be_reserved() {
         let size = std::mem::size_of::<crate::mem::Bytes>();
         let ptr = unsafe { super::allocate_memory(size) }.expect("reserve guest address space");
-        unsafe { super::free_memory(ptr, size) }.expect("release guest address space");
+        let bytes = ptr.cast::<u8>();
+        unsafe {
+            *bytes = 0xA5;
+            *bytes.add(size - crate::mem::PAGE_SIZE as usize) = 0x5A;
+            assert_eq!(*bytes, 0xA5);
+            assert_eq!(*bytes.add(size - crate::mem::PAGE_SIZE as usize), 0x5A);
+            super::free_memory(ptr, size).expect("release guest address space");
+        }
     }
 }
