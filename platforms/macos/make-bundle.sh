@@ -4,13 +4,15 @@ set -e
 # Creates the .app bundle containing the basic set of files needed for tapHLE
 # to run. Also adds an icon and standard application metadata.
 
-if [[ $# == 3 ]]; then
+REPO=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
+
+if [ "$#" -eq 3 ]; then
     PATH_TO_BINARY="$1"
     VERSION="$2"
     BRANDING="$3"
     shift 3
 
-    if [[ "x$BRANDING" == "x" ]]; then
+    if [ -z "$BRANDING" ]; then
         APP_NAME=tapHLE
         ICON_NAME=icon
     else
@@ -20,15 +22,15 @@ if [[ $# == 3 ]]; then
     fi
     rm -rf "$ICON_NAME.icns" "$ICON_NAME.iconset"
     mkdir "$ICON_NAME.iconset"
-    cp "$(cd "$(dirname "$0")/../.." && pwd)"/runtime/res/"$ICON_NAME.png" "$ICON_NAME.iconset"/icon_512x512.png
+    cp "$REPO/runtime/res/$ICON_NAME.png" "$ICON_NAME.iconset/icon_512x512.png"
     iconutil -c icns -o "$ICON_NAME.icns" "$ICON_NAME.iconset"
 
     rm -rf "$APP_NAME.app"
     mkdir -p "$APP_NAME.app"/Contents/MacOS "$APP_NAME.app"/Contents/Resources
     cp $PATH_TO_BINARY "$APP_NAME.app"/Contents/MacOS/tapHLE
-    cp -r "$(cd "$(dirname "$0")/../.." && pwd)"/runtime/dylibs "$APP_NAME.app"/Contents/Resources/
-    cp -r ../tapHLE_fonts "$APP_NAME.app"/Contents/Resources/
-    cp -r ../tapHLE_default_options.txt "$APP_NAME.app"/Contents/Resources/
+    cp -r "$REPO/runtime/dylibs" "$APP_NAME.app"/Contents/Resources/
+    cp -r "$REPO/runtime/fonts" "$APP_NAME.app"/Contents/Resources/
+    cp "$REPO/runtime/default_options.txt" "$APP_NAME.app"/Contents/Resources/
     cp "$ICON_NAME.icns" "$APP_NAME.app"/Contents/Resources/
 
     plutil -create xml1 "$APP_NAME.app"/Contents/Info.plist

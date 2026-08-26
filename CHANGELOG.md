@@ -39,6 +39,9 @@
 - Windows portable bundles now include the runtime libraries needed when
   launched from Explorer, and the installer mirrors the bundle layout.
 
+- macOS application bundles now use the current runtime fonts and default options
+  layout instead of the retired tapHLE-prefixed paths.
+
 - Linux has a complete portable-bundle layout matching the Windows package:
   executable, guest libraries, fonts, app directory, options, icon and licence.
 
