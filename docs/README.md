@@ -53,21 +53,10 @@ owner instead of restating the fact. This table is what makes that checkable.
 | Settings precedence | `docs/user-guide.md` | Link |
 | Where user files live | `docs/user-guide.md` | Link |
 | Agent policy, safety, attribution, required checks | `AGENTS.md` | Link |
-| Persistent agent topology and delegation model | `docs/README.md`, below | Link |
 | Agent provenance and capability history | `docs/project-history.md` | Never normative |
 | What changed in a version | `CHANGELOG.md` | Never a current-state claim |
 | App working state | `compatibility/notes/<app>.md` | Explicitly non-canonical |
 | Project terminology | this file, below | `docs/platforms.md` defines the status axes |
-
-## Agent topology
-
-tapHLE has one persistent coordinating agent: tapHLE Lead. Platform work is
-performed by ephemeral subagents delegated by that lead when parallel execution
-helps. There are no dedicated platform bots or platform agent profiles. The lead
-owns the authoritative checkout, source edits, commits, merges, pushes and final
-reconciliation; subagents operate as disposable workers and return evidence to
-the lead. A platform result still requires evidence from that platform's real
-build and visible runtime, regardless of which subagent collected it.
 
 ## Words tapHLE uses precisely
 

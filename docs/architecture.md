@@ -405,11 +405,11 @@ two definitions of one type is how they stop agreeing.
 
 ### One store, read by both programs
 
-`runtime/settings.json` holds `global` and `apps`, and belongs to neither
+The runtime settings file holds `global` and `apps`, and belongs to neither
 program: the frontend writes it, the emulator reads it directly at startup.
 
 It replaced an arrangement where the frontend kept its settings in
-`runtime/frontend/settings.json` and `library.json` and handed them to the
+a frontend settings file and `library.json` and handed them to the
 emulator as command-line arguments, while the emulator separately read
 `tapHLE_default_options.txt` and `tapHLE_options.txt` underneath. The two
 systems met only at argv, and because an unset setting emits no argument, a

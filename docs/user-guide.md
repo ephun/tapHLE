@@ -50,8 +50,8 @@ letting its window vanish.
 ### Where settings come from
 
 Everything you set, at either scope, is stored in one file:
-**`runtime/settings.json`**, beside the emulator. The frontend writes it and the
-emulator reads it directly, so a run started from a terminal behaves exactly
+the runtime settings file, `settings.json`, beside the emulator. The frontend
+writes it and the emulator reads it directly, so a run started from a terminal
 like one started from the library.
 
 Options are read in layers, and **a later layer wins**:
@@ -59,9 +59,9 @@ Options are read in layers, and **a later layer wins**:
 | Priority | Layer | What it is |
 | --- | --- | --- |
 | 1 (lowest) | The emulator's own default | Compiled in |
-| 2 | Your global settings | `global` in `runtime/settings.json` — applies to every app |
+| 2 | Your global settings | `global` in the runtime settings file — applies to every app |
 | 3 | `tapHLE_default_options.txt` | Per-app entries that ship with tapHLE and make particular apps work |
-| 4 | Your settings for this app | `apps` in `runtime/settings.json` |
+| 4 | Your settings for this app | `apps` in the runtime settings file |
 | 5 (highest) | The command line | For a run you start yourself |
 
 **The more specific setting wins.** A setting tapHLE ships for one app beats
