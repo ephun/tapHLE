@@ -32,6 +32,9 @@
   stops unexpectedly, tapHLE now says so and offers you the log, instead of
   its window simply disappearing.
 
+- Linux and Android can reserve tapHLE's sparse 32-bit guest address space on
+  low-memory hosts without pretending all four gigabytes need physical backing.
+
 - Linux has a complete portable-bundle layout matching the Windows package:
   executable, guest libraries, fonts, app directory, options, icon and licence.
 
