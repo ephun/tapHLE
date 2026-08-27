@@ -339,6 +339,17 @@ Nesting either inside the other produces the wrong tree: `ui/desktop/windows/`
 would be an empty folder, and `platform/ios/ui/` would be a second
 implementation of the interface.
 
+That boundary is a product requirement, not only a source-layout preference.
+Android and iOS build the same Rust/egui frontend from `crates/gui` and the same
+emulator library as the desktop product. `ui/mobile.rs` rearranges the shared
+frontend components for phone and tablet rectangles in portrait and landscape;
+it does not reimplement the library, settings, activity or app-detail surfaces
+in SwiftUI, UIKit, Android Views, Compose or another platform toolkit. A mobile
+platform layer may bootstrap SDL and OpenGL ES, translate lifecycle and safe-area
+state, provide unavoidable operating-system integrations such as file import,
+and package or sign the product. It must not become a second frontend with the
+emulator inserted into it.
+
 | Path | What it holds |
 | --- | --- |
 | `main.rs` | Entry point, window geometry, panic hook |
