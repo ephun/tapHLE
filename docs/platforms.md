@@ -48,8 +48,8 @@ Intent is not state. What is true today:
 | Windows x86_64 | yes | yes | yes, continuously | yes | bundle yes; installer written, never built | pending the all-five bar | **canonical** |
 | macOS x86_64 | yes | yes, in CI | no — nobody has played an app on it | yes | emulator-only bundle script, inherited | pending the all-five bar | no |
 | Linux x86_64 | yes | attempted in CI, not confirmed | no | yes, `continue-on-error` | portable bundle script, real build pending | pending the all-five bar | no |
-| Android | yes | no | no | no | no | pending the all-five bar | no |
-| iOS | yes | branch only | no | no | no | pending the all-five bar | no |
+| Android | yes | yes | yes — synthetic app launch, touch and library return | no | debug APK tooling | pending the all-five bar | no |
+| iOS | yes | yes — Intel simulator | partial — frontend visible; synthetic guest UI incomplete | no | Xcode app-bundle tooling; no signed IPA | pending the all-five bar | no |
 
 ### Windows x86_64
 
@@ -86,21 +86,30 @@ Nobody has run tapHLE on Linux. Write portable code; do not claim it works.
 
 ### Android
 
-The source in `android/` is active work as of 2026-08-17, not inherited
-material to leave alone. It has no frontend, which is the substantial piece.
+`platforms/android/` builds an APK whose SDL activity loads `tapHLE_gui`. The
+library, settings, emulator and guest-app runtime are the same Rust components
+used by the desktop product; only the Android bootstrap, document provider and
+packaging are platform code. The development APK has been run visibly in
+Cuttlefish on x86_64: the adaptive frontend rendered in portrait and landscape,
+the synthetic TestApp rendered and accepted touch input, and Android Back ended
+the guest run and returned to the library. CI and release packaging remain
+outstanding.
 
 ### iOS
 
-Work lives on `feat/ios-host`. An experimental host was merged to `trunk` on
-2026-08-01 and withdrawn on 2026-08-04.
+`platforms/ios/` is a thin Objective-C/SDL process bootstrap and Xcode host for
+the same `tapHLE_gui` Rust library. Xcode 16.4 on Intel macOS builds an x86_64
+iOS 18.5 simulator app containing the guest libraries, fonts and default
+options. The shared frontend has been inspected in the real Simulator session
+in portrait and landscape, including safe-area handling, and it can launch the
+synthetic TestApp into the emulator.
 
-**Read why it was withdrawn before merging it back.** It was half-finished and
-broken, and nothing on Windows could build or test it, so it sat on `trunk` as
-untested code claiming a capability tapHLE did not have. That objection was
-never about iOS being unwanted, and the 2026-08-17 direction does not answer
-it — a branch is still the right home for a host nobody can run, and `trunk` is
-still for what works. What changed is that making it runnable is now the job,
-so the route back to `trunk` is to build and run it, not to relax the standard.
+This is not yet a complete guest runtime result. The iOS simulator needs the
+OpenAL Soft null backend when its virtual audio device is unavailable, and the
+synthetic guest currently reaches CPU emulation and a presented frame but does
+not render its UIKit controls or visibly react to touch. No physical-device,
+signed IPA or return-to-library result has been earned. Keep those gaps visible;
+a simulator frontend is not a release-eligible iOS product.
 
 ## Release eligibility
 

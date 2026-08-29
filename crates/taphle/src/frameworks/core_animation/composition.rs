@@ -137,11 +137,17 @@ pub fn recomposite_if_necessary(env: &mut Environment, force: bool) -> Option<In
     let scale_hack: u32 = env.options.scale_hack.get();
     let fb_width = screen_bounds.size.width as u32 * scale_hack;
     let fb_height = screen_bounds.size.height as u32 * scale_hack;
-    let present_frame_args = (
-        env.window().viewport(),
-        env.window().rotation_matrix(),
-        env.window().virtual_cursor_visible_at(),
-    );
+    let (present_frame_args, host_drawable) = {
+        let window = env.window.as_mut().unwrap();
+        (
+            (
+                window.viewport(),
+                window.rotation_matrix(),
+                window.virtual_cursor_visible_at(),
+            ),
+            window.host_drawable_bindings(),
+        )
+    };
     let frame_capture_request = env.framework_state.take_triggered_frame_capture();
 
     // TODO: draw status bar if it's not hidden
@@ -362,7 +368,8 @@ pub fn recomposite_if_necessary(env: &mut Environment, force: bool) -> Option<In
     // host window framebuffer, so we need to unbind our internal framebuffer.
     let rearm_capture_request = unsafe {
         gles.BindTexture(gles11::TEXTURE_2D, texture);
-        gles.BindFramebufferOES(gles11::FRAMEBUFFER_OES, 0);
+        gles.BindFramebufferOES(gles11::FRAMEBUFFER_OES, host_drawable.0);
+        gles.BindRenderbufferOES(gles11::RENDERBUFFER_OES, host_drawable.1);
         present_frame(
             gles.as_mut(),
             present_frame_args.0,

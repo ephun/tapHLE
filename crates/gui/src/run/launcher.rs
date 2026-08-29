@@ -206,7 +206,11 @@ impl Launcher {
     /// than the log panel, because there is no pipe to read it from. Only one
     /// app can run at a time — `ENVIRONMENT_INSTANCE_EXISTS` says so — where
     /// spawning can run several, which is what the compatibility work needs.
-    pub fn run_here(&mut self, request: LaunchRequest<'_>) -> Result<i32, String> {
+    pub fn run_here(
+        &mut self,
+        request: LaunchRequest<'_>,
+        lease: Option<tapHLE::AppWindowLease>,
+    ) -> Result<i32, String> {
         let LaunchRequest {
             app_name,
             app_path,
@@ -237,7 +241,10 @@ impl Launcher {
         let args = std::iter::once("tapHLE".to_string())
             .chain(std::iter::once(app_path.display().to_string()))
             .chain(arguments.iter().cloned());
-        let outcome = tapHLE::run_app(args);
+        let outcome = match lease {
+            Some(lease) => tapHLE::run_app_in_window(args, lease),
+            None => tapHLE::run_app(args),
+        };
 
         for (name, previous) in restore {
             match previous {

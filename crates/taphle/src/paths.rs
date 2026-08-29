@@ -35,19 +35,14 @@ pub const FONTS_DIR: &str = "fonts";
 /// Name of the file containing tapHLE's default options for various apps.
 pub const DEFAULT_OPTIONS_FILE: &str = "default_options.txt";
 
-/// macOS-only: If tapHLE is located in a .app bundle, return the path of the
-/// Resources directory. If tapHLE is not located in a .app bundle, return
-/// [None].
+/// Resources inside an Apple application bundle, when there is one.
 #[allow(dead_code)]
-fn get_macos_bundled_resources_path() -> Option<PathBuf> {
-    if std::env::consts::OS != "macos" {
-        return None;
-    }
+fn bundled_resources_path() -> Option<PathBuf> {
     let base_path = PathBuf::from(sdl2::filesystem::base_path().ok()?);
-    if base_path.file_name().is_some_and(|p| p == "Resources") {
-        Some(base_path)
-    } else {
-        None
+    match std::env::consts::OS {
+        "macos" if base_path.file_name().is_some_and(|p| p == "Resources") => Some(base_path),
+        "ios" => Some(base_path),
+        _ => None,
     }
 }
 
@@ -70,7 +65,7 @@ impl ResourceFile {
             // On other OSes, resources are accessed as ordinary files.
             #[cfg(not(target_os = "android"))]
             file: {
-                let base_path = get_macos_bundled_resources_path();
+                let base_path = bundled_resources_path();
                 // When not in a bundle, look in the current directory.
                 let path = base_path.as_deref().unwrap_or(Path::new(".")).join(path);
                 std::fs::File::open(path).map_err(|e| e.to_string())?
@@ -92,7 +87,7 @@ impl ResourceFile {
         }
         #[cfg(not(target_os = "android"))]
         {
-            let base_path = get_macos_bundled_resources_path();
+            let base_path = bundled_resources_path();
             let path = base_path.as_deref().unwrap_or(Path::new(".")).join(path);
             let modified = std::fs::metadata(path).ok()?.modified().ok()?;
             modified
@@ -112,7 +107,8 @@ impl std::fmt::Debug for ResourceFile {
 
 /// Whether various resources are in user-accessible files. If they aren't,
 /// tapHLE has to be able to display their license terms.
-pub const RESOURCES_ARE_EXTERNAL_FILES: bool = cfg!(not(target_os = "android"));
+pub const RESOURCES_ARE_EXTERNAL_FILES: bool =
+    cfg!(not(any(target_os = "android", target_os = "ios")));
 
 /// Name of the directory where the user can put apps if they want them to
 /// appear in tapHLE's library.
@@ -161,12 +157,18 @@ pub fn user_data_base_path() -> Cow<'static, Path> {
         }
         Cow::from(Path::new(std::ffi::CStr::from_ptr(path).to_str().unwrap()))
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "ios")]
+    {
+        Cow::from(PathBuf::from(
+            sdl2::filesystem::pref_path("org.taphle", "tapHLE").unwrap(),
+        ))
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         // When tapHLE is run from a .app bundle on macOS, the user might not
         // be able to control the current directory, so user data needs to go in
         // a standard location.
-        if get_macos_bundled_resources_path().is_some() {
+        if bundled_resources_path().is_some() {
             return Cow::from(PathBuf::from(
                 sdl2::filesystem::pref_path("org.taphle", "tapHLE").unwrap(),
             ));
@@ -209,7 +211,7 @@ pub fn url_for_opening_user_data_dir() -> Result<String, String> {
 /// doesn't exist, and populate it with templates or README files. (On other
 /// platforms these are simply bundled with tapHLE in a ZIP file.)
 pub fn prepopulate_user_data_dir() {
-    if !matches!(std::env::consts::OS, "android" | "macos") {
+    if !matches!(std::env::consts::OS, "android" | "ios" | "macos") {
         return;
     }
     let base_path = user_data_base_path();

@@ -59,6 +59,7 @@ pub fn icon_cache_dir() -> PathBuf {
 /// `tapHLE_dylibs` is the marker: the emulator cannot run without it, so its
 /// presence is what distinguishes an installation directory from whatever
 /// directory a shortcut happened to start in.
+#[cfg(not(target_os = "ios"))]
 fn looks_like_data_dir(path: &Path) -> bool {
     path.join(tapHLE::paths::DYLIBS_DIR).is_dir()
 }
@@ -75,6 +76,12 @@ fn looks_like_data_dir(path: &Path) -> bool {
 /// The candidates, in order, are the current directory, the directory holding
 /// this executable, and that directory's grandparent — which is where a
 /// `target/debug` or `target/release` build sits relative to the checkout.
+#[cfg(target_os = "ios")]
+pub fn locate_data_dir() -> (PathBuf, Vec<String>) {
+    (data_dir(), Vec::new())
+}
+
+#[cfg(not(target_os = "ios"))]
 pub fn locate_data_dir() -> (PathBuf, Vec<String>) {
     let mut notes = Vec::new();
     let mut candidates: Vec<PathBuf> = Vec::new();

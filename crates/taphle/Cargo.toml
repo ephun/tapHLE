@@ -18,6 +18,8 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["static"]
 static = ["sdl2/bundled", "sdl2/static-link", "tapHLE_openal_soft_wrapper/static"]
+android = ["sdl2/bundled", "tapHLE_openal_soft_wrapper/static"]
+ios = ["sdl2/bundled", "sdl2/static-link", "tapHLE_openal_soft_wrapper/static"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

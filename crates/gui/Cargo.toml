@@ -11,6 +11,17 @@ authors = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
 
+[lib]
+name = "tapHLE_gui"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib", "staticlib"]
+
+[features]
+default = ["static"]
+static = ["tapHLE/static"]
+android = ["tapHLE/android"]
+ios = ["tapHLE/ios"]
+
 # One executable, and it keeps the emulator's name because that is the name
 # every script, options file and compatibility report already drives. It is
 # built by this package because this is the package that depends on the other.
@@ -22,7 +33,7 @@ path = "src/main.rs"
 # The frontend links the emulator library so that app bundles, launch options
 # and tapHLE's file locations have exactly one implementation. The reasoning is
 # in docs/architecture.md.
-tapHLE = { path = "../taphle" }
+tapHLE = { path = "../taphle", default-features = false }
 tapHLE_version = { path = "../version" }
 # egui draws the interface. The window, the event loop and the input come from
 # SDL rather than from eframe, because SDL is what the emulator already uses
@@ -32,9 +43,6 @@ egui = "0.33"
 egui_glow = "0.33"
 glow = "0.16"
 sdl2 = { workspace = true }
-# Native file pickers and message boxes. This is the one place where a system
-# control is unambiguously better than a drawn one.
-rfd = "0.15"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 # Both are already in the emulator's dependency tree. flate2 compresses the
@@ -42,6 +50,11 @@ serde_json = "1.0"
 # App Store metadata that sits beside an IPA's bundle.
 flate2 = "1.0"
 plist = "1.8.0"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# Native file pickers and message boxes are a desktop integration. Mobile
+# imports through its operating-system document picker in the platform layer.
+rfd = "0.15"
 
 [target.'cfg(windows)'.dependencies]
 # Only to reattach to the terminal that started the frontend. A windowed

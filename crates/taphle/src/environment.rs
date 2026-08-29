@@ -302,6 +302,7 @@ impl Environment {
         fs: fs::Fs,
         mut options: options::Options,
         app_args: Vec<String>,
+        window_lease: Option<crate::AppWindowLease>,
     ) -> Result<Environment, String> {
         let startup_time = Instant::now();
 
@@ -422,6 +423,7 @@ impl Environment {
                 icon.ok(),
                 launch_image,
                 &options,
+                window_lease,
             )))
         };
 

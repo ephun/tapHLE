@@ -42,6 +42,14 @@
 - macOS application bundles now use the current runtime fonts and default options
   layout instead of the retired tapHLE-prefixed paths.
 
+- Android and iOS now use the same Rust and egui library as the desktop app,
+  rearranged for phone, tablet, portrait and landscape screens rather than
+  reimplemented in Java, SwiftUI or UIKit. Mobile settings, app settings and
+  About use full-screen, scrolling pages with finger-sized controls instead of
+  desktop pop-up dialogs. Android can launch an app in that shared window and
+  return to the library. The iOS frontend also builds, installs and launches
+  apps in the simulator; guest-interface rendering there remains incomplete.
+
 - Linux has a complete portable-bundle layout matching the Windows package:
   executable, guest libraries, fonts, app directory, options, icon and licence.
 

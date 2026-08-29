@@ -12,6 +12,7 @@
 //! window system interaction in general, because it is assumed only one window
 //! will be needed for the runtime of the app.
 
+use crate::gles::gles11_raw as gles11;
 use crate::gles::present::present_frame;
 use crate::gles::{create_gles1_ctx_no_parent_stack, GLESContext, GLES};
 use crate::image::Image;
@@ -375,6 +376,12 @@ pub struct Window {
 }
 
 impl Window {
+    /// Mobile hosts give tapHLE one OS-owned full-screen drawable even when the
+    /// guest's desktop-style `--fullscreen` option is not set.
+    fn mobile_fullscreen() -> bool {
+        env::consts::OS == "android" || env::consts::OS == "ios"
+    }
+
     /// Returns [true] if tapHLE is running on a device where we should always
     /// display fullscreen, but SDL2 will let us control the orientation, i.e.
     /// Android devices.
@@ -386,9 +393,16 @@ impl Window {
         icon: Option<Image>,
         launch_image: Option<Image>,
         options: &Options,
+        lease: Option<crate::AppWindowLease>,
     ) -> Window {
-        let sdl_ctx = sdl2::init().unwrap();
-        let video_ctx = sdl_ctx.video().unwrap();
+        let (sdl_ctx, video_ctx, leased_window) = match lease {
+            Some(lease) => (lease.sdl, lease.video, Some(lease.window)),
+            None => {
+                let sdl = sdl2::init().unwrap();
+                let video = sdl.video().unwrap();
+                (sdl, video, None)
+            }
+        };
 
         // The "hidapi" feature of rust-sdl2 is enabled so that sdl2::sensor
         // is available, but we don't want to enable SDL's HIDAPI controller
@@ -431,7 +445,13 @@ impl Window {
         };
         let fullscreen = options.fullscreen;
 
-        let mut window = if Self::rotatable_fullscreen() {
+        let mut window = if let Some(mut window) = leased_window {
+            if Self::rotatable_fullscreen() {
+                set_sdl2_orientation(device_orientation);
+            }
+            let _ = window.set_title(title);
+            window
+        } else if Self::rotatable_fullscreen() {
             // Without this, SDL will force fullscreen mode to be portrait.
             set_sdl2_orientation(device_orientation);
             let screen_size = video_ctx.display_bounds(0).unwrap().size();
@@ -1417,6 +1437,22 @@ impl Window {
         // onto image so we can rotate later if necessary
     }
 
+    /// Native drawable objects belonging to the SDL window's current context.
+    ///
+    /// Desktop GL uses framebuffer zero. UIKit creates a non-zero framebuffer
+    /// and renderbuffer for its EAGL drawable, so rendering to zero only paints
+    /// an off-screen default surface there.
+    pub fn host_drawable_bindings(&mut self) -> (u32, u32) {
+        let mut gles = self.make_internal_gl_ctx_current();
+        unsafe {
+            let mut framebuffer = 0;
+            let mut renderbuffer = 0;
+            gles.GetIntegerv(gles11::FRAMEBUFFER_BINDING_OES, &mut framebuffer);
+            gles.GetIntegerv(gles11::RENDERBUFFER_BINDING_OES, &mut renderbuffer);
+            (framebuffer as u32, renderbuffer as u32)
+        }
+    }
+
     /// Swap front-buffer and back-buffer so the result of OpenGL rendering is
     /// presented.
     pub fn swap_window(&self) {
@@ -1604,7 +1640,7 @@ impl Window {
             self.scale_hack,
             self.landscape_native,
         );
-        if !self.fullscreen && !Self::rotatable_fullscreen() {
+        if !self.fullscreen && !Self::mobile_fullscreen() {
             return (0, 0, app_width, app_height);
         }
 

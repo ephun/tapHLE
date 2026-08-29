@@ -1,0 +1,31 @@
+PRODUCT_NAME = tapHLE
+PRODUCT_BUNDLE_IDENTIFIER = org.taphle.ios
+MARKETING_VERSION = 0.2.4-dev.1
+CURRENT_PROJECT_VERSION = 1
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
+TARGETED_DEVICE_FAMILY = 1,2
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+SDKROOT = iphoneos
+ARCHS[sdk=iphonesimulator*] = x86_64
+ARCHS[sdk=iphoneos*] = arm64
+CLANG_ENABLE_MODULES = YES
+CLANG_C_LANGUAGE_STANDARD = gnu17
+GCC_PREPROCESSOR_DEFINITIONS = $(inherited) GLES_SILENCE_DEPRECATION=1
+ENABLE_BITCODE = NO
+COPY_PHASE_STRIP = NO
+GENERATE_INFOPLIST_FILE = NO
+INFOPLIST_FILE = Config/Info.plist
+CODE_SIGN_ENTITLEMENTS = Config/TapHLE.entitlements
+TAPHLE_REPO = $(SRCROOT)/../..
+HEADER_SEARCH_PATHS = $(inherited) "$(TAPHLE_REPO)/vendor/SDL/include"
+RUST_BUILD_DIR = $(TAPHLE_REPO)/build/rust-ios
+RUST_LIBRARY[config=Debug][sdk=iphonesimulator*] = $(RUST_BUILD_DIR)/x86_64-apple-ios/debug/libtapHLE_gui.a
+RUST_LIBRARY[config=Release][sdk=iphonesimulator*] = $(RUST_BUILD_DIR)/x86_64-apple-ios/release/libtapHLE_gui.a
+RUST_LIBRARY[config=Debug][sdk=iphoneos*] = $(RUST_BUILD_DIR)/aarch64-apple-ios/debug/libtapHLE_gui.a
+RUST_LIBRARY[config=Release][sdk=iphoneos*] = $(RUST_BUILD_DIR)/aarch64-apple-ios/release/libtapHLE_gui.a
+LIBRARY_SEARCH_PATHS[config=Debug][sdk=iphonesimulator*] = $(inherited) "$(RUST_BUILD_DIR)/x86_64-apple-ios/debug"
+LIBRARY_SEARCH_PATHS[config=Release][sdk=iphonesimulator*] = $(inherited) "$(RUST_BUILD_DIR)/x86_64-apple-ios/release"
+LIBRARY_SEARCH_PATHS[config=Debug][sdk=iphoneos*] = $(inherited) "$(RUST_BUILD_DIR)/aarch64-apple-ios/debug"
+LIBRARY_SEARCH_PATHS[config=Release][sdk=iphoneos*] = $(inherited) "$(RUST_BUILD_DIR)/aarch64-apple-ios/release"
+OTHER_LDFLAGS = $(inherited) -ObjC "$(RUST_LIBRARY)" -lc++ -liconv -framework AVFoundation -framework AudioToolbox -framework CoreBluetooth -framework CoreGraphics -framework CoreHaptics -framework CoreMotion -framework Foundation -framework GameController -framework Metal -framework OpenGLES -framework QuartzCore -framework UIKit
+CODE_SIGN_STYLE = Automatic

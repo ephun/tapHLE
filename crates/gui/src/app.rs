@@ -96,6 +96,20 @@ struct PendingRun {
     environment: Vec<(String, String)>,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum FormFactor {
+    Desktop,
+    Mobile,
+}
+
+fn form_factor_for(mobile_target: bool, preview_mobile: bool) -> FormFactor {
+    if mobile_target || preview_mobile {
+        FormFactor::Mobile
+    } else {
+        FormFactor::Desktop
+    }
+}
+
 pub struct Frontend {
     settings: FrontendSettings,
     /// Set by Play when apps are set to run in this process.
@@ -175,6 +189,9 @@ impl Frontend {
                 }
             }
             Err(e) => logstore::note(&log, LogLevel::Warning, e),
+        }
+        if cfg!(any(target_os = "android", target_os = "ios")) {
+            settings.run_in_process = true;
         }
 
         for note in notes {
@@ -875,15 +892,6 @@ impl Frontend {
             );
             return;
         }
-        let Some(emulator) = self.emulator_path() else {
-            self.note(
-                LogLevel::Error,
-                "The tapHLE emulator program could not be found. Set its \
-                 location in Settings ▸ Paths."
-                    .to_string(),
-            );
-            return;
-        };
         // The emulator reads the shared settings file itself, so a run gets
         // these settings whether it was started here or from a terminal. It
         // has to be on disk before the child starts, and saving is otherwise
@@ -908,6 +916,15 @@ impl Frontend {
             });
             return;
         }
+        let Some(emulator) = self.emulator_path() else {
+            self.note(
+                LogLevel::Error,
+                "The tapHLE emulator program could not be found. Set its \
+                 location in Settings ▸ Paths."
+                    .to_string(),
+            );
+            return;
+        };
         let result = self.launcher.launch(launcher::LaunchRequest {
             emulator: &emulator,
             working_directory: &data_dir,
@@ -970,18 +987,13 @@ impl Frontend {
     fn apply(&mut self, ctx: &egui::Context, action: Action) {
         match action {
             Action::AddApps => {
-                if let Some(files) = rfd::FileDialog::new()
-                    .add_filter("iPhone apps", &["ipa"])
-                    .set_title("Add apps to the tapHLE library")
-                    .pick_files()
-                {
+                if let Some(files) = crate::platform::dialogs::pick_apps() {
                     self.import_paths(files);
                 }
             }
             Action::AddFolder => {
-                if let Some(folder) = rfd::FileDialog::new()
-                    .set_title("Add every app in a folder")
-                    .pick_folder()
+                if let Some(folder) =
+                    crate::platform::dialogs::pick_folder("Add every app in a folder")
                 {
                     match library::scan_folder(&folder) {
                         Ok(paths) if paths.is_empty() => {
@@ -1201,12 +1213,7 @@ impl Frontend {
             "tapHLE-log-{}.txt",
             timefmt::format_file_stamp(timefmt::now_seconds())
         );
-        let Some(path) = rfd::FileDialog::new()
-            .set_title("Save the log")
-            .set_file_name(suggested)
-            .add_filter("Text", &["txt", "log"])
-            .save_file()
-        else {
+        let Some(path) = crate::platform::dialogs::save_log(&suggested) else {
             return;
         };
         let text = match self.log.lock() {
@@ -1355,7 +1362,7 @@ impl crate::shell::Application for Frontend {
         self.pending_in_process.is_some()
     }
 
-    fn hand_over(&mut self) {
+    fn hand_over(&mut self, lease: Option<tapHLE::AppWindowLease>) {
         let Some(run) = self.pending_in_process.take() else {
             return;
         };
@@ -1371,7 +1378,7 @@ impl crate::shell::Application for Frontend {
             arguments: &[],
             environment: &run.environment,
         };
-        match self.launcher.run_here(request) {
+        match self.launcher.run_here(request, lease) {
             Ok(status) => {
                 let level = if status == 0 {
                     LogLevel::Info
@@ -1407,6 +1414,87 @@ impl crate::shell::Application for Frontend {
         // context borrows the rest, so the string is lifted out and put back.
         let mut search = std::mem::take(&mut self.search);
         let context = self.chrome_context();
+
+        let mobile_target = cfg!(any(target_os = "android", target_os = "ios"));
+        if form_factor_for(mobile_target, self.settings.preview_mobile) == FormFactor::Mobile {
+            let about_info = self.about.as_ref().map(|_| self.about_info());
+            let mut global_outcome = Outcome::Continue;
+            let mut app_outcome = Outcome::Continue;
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(theme::LIGHT.content))
+                .show(ctx, |ui| {
+                    let running: Vec<String> = self
+                        .launcher
+                        .running()
+                        .iter()
+                        .map(|run| run.entry_id.clone())
+                        .collect();
+                    let mobile = crate::ui::mobile::MobileContext {
+                        library: &self.library,
+                        groups: &groups,
+                        icons: &self.icons,
+                        selected: self.state.selected_app.as_deref(),
+                        running: &running,
+                    };
+                    let mut pages = crate::ui::mobile::MobilePages {
+                        global_settings: self.global_dialog.as_mut(),
+                        app_settings: self.app_dialog.as_mut(),
+                        about: self.about.as_mut().zip(about_info.as_ref()),
+                    };
+                    let result = crate::ui::mobile::show(
+                        ui,
+                        ui.max_rect(),
+                        &mobile,
+                        &mut self.mobile_screen,
+                        &mut pages,
+                    );
+                    actions.extend(result.actions);
+                    global_outcome = result.global_settings;
+                    app_outcome = result.app_settings;
+                });
+            self.search = search;
+
+            match global_outcome {
+                Outcome::Continue => (),
+                Outcome::Cancel => self.global_dialog = None,
+                outcome => {
+                    if let Some(dialog) = &self.global_dialog {
+                        let draft = dialog.draft.clone();
+                        self.adopt_settings(ctx, draft);
+                    }
+                    if outcome == Outcome::Accept {
+                        self.global_dialog = None;
+                        self.mobile_screen = crate::ui::mobile::Screen::Settings;
+                    }
+                }
+            }
+            match app_outcome {
+                Outcome::Continue => (),
+                Outcome::Cancel => self.app_dialog = None,
+                outcome => {
+                    if let Some(dialog) = &self.app_dialog {
+                        let (id, draft) = (dialog.entry_id.clone(), dialog.draft.clone());
+                        if let Some(entry) = self.library.find_mut(&id) {
+                            entry.overrides = draft;
+                            self.dirty.library = true;
+                        }
+                    }
+                    if outcome == Outcome::Accept {
+                        self.app_dialog = None;
+                        self.mobile_screen = crate::ui::mobile::Screen::Details;
+                    }
+                }
+            }
+            if self.mobile_screen != crate::ui::mobile::Screen::About {
+                self.about = None;
+            }
+            self.handle_close_request(ctx);
+            for action in actions {
+                self.apply(ctx, action);
+            }
+            self.save_if_due(false);
+            return;
+        }
 
         egui::TopBottomPanel::top("menu-bar")
             .frame(chrome_frame(2))
@@ -1510,41 +1598,7 @@ impl crate::shell::Application for Frontend {
                     view,
                     library_is_empty,
                 };
-                if self.settings.preview_mobile {
-                    // A phone's shape, centred, so what is being judged is a
-                    // phone layout rather than a wide one with a phone's
-                    // widgets in it. 390 by 844 points is an iPhone 14.
-                    let available = ui.max_rect();
-                    let size = egui::vec2(390.0, 844.0);
-                    let frame = egui::Rect::from_center_size(
-                        available.center(),
-                        egui::vec2(
-                            size.x.min(available.width()),
-                            size.y.min(available.height()),
-                        ),
-                    );
-                    ui.painter().rect_stroke(
-                        frame.expand(1.0),
-                        0.0,
-                        egui::Stroke::new(1.0_f32, theme::LIGHT.border_strong),
-                        egui::StrokeKind::Outside,
-                    );
-                    let mobile = crate::ui::mobile::MobileContext {
-                        library: &self.library,
-                        groups: &groups,
-                        icons: &self.icons,
-                        selected: self.state.selected_app.as_deref(),
-                        running: &running,
-                    };
-                    actions.extend(crate::ui::mobile::show(
-                        ui,
-                        frame,
-                        &mobile,
-                        &mut self.mobile_screen,
-                    ));
-                } else {
-                    crate::ui::desktop::library_view::show(ui, &context, &mut actions);
-                }
+                crate::ui::desktop::library_view::show(ui, &context, &mut actions);
             });
 
         self.search = search;
@@ -1775,6 +1829,13 @@ impl Frontend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mobile_targets_use_the_mobile_composition_without_a_preview_flag() {
+        assert_eq!(form_factor_for(true, false), FormFactor::Mobile);
+        assert_eq!(form_factor_for(false, true), FormFactor::Mobile);
+        assert_eq!(form_factor_for(false, false), FormFactor::Desktop);
+    }
 
     #[test]
     fn a_build_outside_ci_says_so() {

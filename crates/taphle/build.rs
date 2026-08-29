@@ -99,18 +99,36 @@ pub fn main() {
         let sysroot_libs_path =
             PathBuf::from(std::env::var_os("CARGO_NDK_SYSROOT_LIBS_PATH").unwrap());
         let lib_path = sysroot_libs_path.join("libc++_shared.so");
-        std::fs::copy(
-            lib_path,
-            // cargo-ndk as invoked by cargo-ndk-android-gradle actually
-            // copies from the target directory, using this hacky path
-            // concatenation approach. :(
-            package_root
-                .join("target")
-                .join(std::env::var("TARGET").unwrap())
-                .join(std::env::var("PROFILE").unwrap())
-                .join("libc++_shared.so"),
-        )
-        .unwrap();
+        // OUT_DIR is `<target>/<triple>/<profile>/build/<package>/out` even
+        // when this package is built from a Cargo workspace. Walking back to
+        // the profile directory keeps this beside the library cargo-ndk will
+        // copy, instead of inventing a package-local `target/` directory.
+        let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+        let profile_dir = out_dir.ancestors().nth(3).unwrap();
+        std::fs::copy(lib_path, profile_dir.join("libc++_shared.so")).unwrap();
+    }
+
+    if std::env::var("CARGO_CFG_TARGET_OS").unwrap() == "ios" {
+        // Static SDL carries Objective-C implementations whose platform
+        // dependencies are normally added by SDL's Xcode target. Cargo is
+        // the final native linker here, so declare the same iOS frameworks.
+        for framework in [
+            "AudioToolbox",
+            "AVFoundation",
+            "CoreAudio",
+            "CoreBluetooth",
+            "CoreGraphics",
+            "CoreHaptics",
+            "CoreMotion",
+            "Foundation",
+            "GameController",
+            "Metal",
+            "OpenGLES",
+            "QuartzCore",
+            "UIKit",
+        ] {
+            println!("cargo:rustc-link-lib=framework={framework}");
+        }
     }
 
     if std::env::var("CARGO_CFG_TARGET_OS").unwrap() == "windows" {

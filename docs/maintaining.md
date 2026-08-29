@@ -294,17 +294,25 @@ D-Bus, and the emulator needs a C++ toolchain, CMake and Boost.
 
 ### Android and iOS
 
-Neither has a frontend yet, and that is the substantial piece of work. The
-desktop frontend assumes a window it owns and an emulator it launches as a child
-process (see `docs/architecture.md`), and neither assumption holds on a phone:
-there is no second process to spawn, and the OS owns the window. A mobile
-frontend therefore shares the library model, the settings model and the
-compatibility-database client, but not the process model or the window.
+Both mobile hosts build `tapHLE_gui`, the same Rust and egui frontend used on the
+desktop, as the application library. The compositions share the library,
+settings, actions and emulator runtime and rearrange those components for the
+available phone or tablet rectangle. Android and iOS code is limited to SDL
+bootstrap, lifecycle, safe areas, file integration and packaging; it must not
+become a second Java, SwiftUI or UIKit product interface.
 
-What each mobile frontend owes, per the release bar in `docs/platforms.md`: the
-report-submission options, whichever settings apply on that platform, and the
-help/about sections — and a design consistent with the desktop, so the five
-frontends read as one product.
+`platforms/android/` uses Gradle, cargo-ndk and SDLActivity to produce the APK.
+`platforms/ios/scripts/build-host.sh` builds the Rust static library and Xcode
+app bundle for either the simulator or device SDK. Mobile destinations are
+full-screen pages inside the shared composition, not desktop-style pop-up
+windows: settings, app settings and About must remain inside the safe area,
+scroll when the form factor is short, use at least 16-point body and 14-point
+secondary text, and give every interactive control a 48-point touch target.
+The Xcode resource phase places `dylibs`, `fonts` and `default_options.txt` at
+the app-bundle root, where `ResourceFile` looks for them. A signed IPA,
+physical-device run, CI jobs and
+release artifact publication are still separate work; current status and
+runtime limits belong in [`docs/platforms.md`](platforms.md).
 
 ## Importing upstream changes
 

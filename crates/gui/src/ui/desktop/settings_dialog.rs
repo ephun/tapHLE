@@ -229,6 +229,156 @@ pub fn show_app(ctx: &egui::Context, dialog: &mut AppDialog) -> Outcome {
     outcome
 }
 
+/// Draw global settings as a mobile page rather than a modal dialog.
+///
+/// The caller owns the full safe-area body and scrolls it. Categories are a
+/// horizontal strip, so neither a phone's width nor a long translated label
+/// can squeeze the controls beside a desktop-sized sidebar.
+pub fn show_global_mobile(ui: &mut Ui, dialog: &mut GlobalDialog) -> Outcome {
+    mobile_category_list(
+        ui,
+        "mobile-global-settings-categories",
+        Category::GLOBAL,
+        &mut dialog.category,
+    );
+    ui.add_space(8.0);
+    theme::hairline(ui);
+    ui.add_space(12.0);
+    ui.heading(dialog.category.label());
+    match dialog.category {
+        Category::General => general_page(ui, &mut dialog.draft),
+        Category::Paths => paths_page(ui, &mut dialog.draft),
+        Category::Logging => {
+            logging_page(ui, &mut dialog.draft.emulator, None);
+            ui.add_space(8.0);
+            frontend_logging_page(ui, &mut dialog.draft);
+        }
+        other => emulator_page(ui, other, &mut dialog.draft.emulator, None),
+    }
+    ui.add_space(16.0);
+    mobile_buttons(ui, &mut dialog.draft.emulator, false)
+}
+
+/// Draw one app's settings as a mobile page rather than a modal dialog.
+pub fn show_app_mobile(ui: &mut Ui, dialog: &mut AppDialog) -> Outcome {
+    ui.label(
+        egui::RichText::new("Unset values follow global settings, then the options files.")
+            .size(14.0)
+            .color(theme::LIGHT.text_dim),
+    );
+    ui.add_space(8.0);
+    mobile_category_list(
+        ui,
+        "mobile-app-settings-categories",
+        Category::PER_APP,
+        &mut dialog.category,
+    );
+    ui.add_space(8.0);
+    theme::hairline(ui);
+    ui.add_space(12.0);
+    ui.heading(dialog.category.label());
+    let inherited = Some(&dialog.inherited);
+    match dialog.category {
+        Category::Logging => logging_page(ui, &mut dialog.draft, inherited),
+        Category::Controls => {
+            crate::ui::widgets::section(ui, "This app's controls");
+            let inherited_layout = dialog.inherited.controls.clone().unwrap_or_default();
+            let mut open_editor = dialog.open_control_editor;
+            app_control_layout(ui, &mut dialog.draft, &inherited_layout, &mut open_editor);
+            dialog.open_control_editor = open_editor;
+            ui.add_space(12.0);
+            controls_page(ui, &mut dialog.draft, inherited);
+        }
+        other => emulator_page(ui, other, &mut dialog.draft, inherited),
+    }
+    ui.add_space(16.0);
+    let reset = &mut dialog.draft;
+    mobile_buttons(ui, reset, true)
+}
+
+const MOBILE_TOUCH_TARGET: f32 = 48.0;
+
+fn mobile_category_list(
+    ui: &mut Ui,
+    id: &'static str,
+    categories: &[Category],
+    current: &mut Category,
+) {
+    egui::ScrollArea::horizontal()
+        .id_salt(id)
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                for category in categories {
+                    let selected = *current == *category;
+                    let button = egui::Button::selectable(
+                        selected,
+                        egui::RichText::new(category.label()).size(16.0),
+                    );
+                    if ui.add_sized([112.0, MOBILE_TOUCH_TARGET], button).clicked() {
+                        *current = *category;
+                    }
+                }
+            });
+        });
+}
+
+fn mobile_buttons(ui: &mut Ui, draft: &mut EmulatorSettings, show_reset: bool) -> Outcome {
+    let problems = draft.validate();
+    if !problems.is_empty() {
+        ui.label(
+            egui::RichText::new(problems.join("; "))
+                .size(14.0)
+                .color(theme::LIGHT.error),
+        );
+        ui.add_space(8.0);
+    }
+    if show_reset
+        && ui
+            .add_sized(
+                [ui.available_width(), MOBILE_TOUCH_TARGET],
+                egui::Button::new(egui::RichText::new("Reset to Global").size(16.0)),
+            )
+            .clicked()
+    {
+        *draft = EmulatorSettings::default();
+    }
+    if ui
+        .add_enabled_ui(problems.is_empty(), |ui| {
+            ui.add_sized(
+                [ui.available_width(), MOBILE_TOUCH_TARGET],
+                egui::Button::new(egui::RichText::new("Save").size(16.0)),
+            )
+        })
+        .inner
+        .clicked()
+    {
+        return Outcome::Accept;
+    }
+    if ui
+        .add_enabled_ui(problems.is_empty(), |ui| {
+            ui.add_sized(
+                [ui.available_width(), MOBILE_TOUCH_TARGET],
+                egui::Button::new(egui::RichText::new("Apply").size(16.0)),
+            )
+        })
+        .inner
+        .clicked()
+    {
+        return Outcome::Apply;
+    }
+    if ui
+        .add_sized(
+            [ui.available_width(), MOBILE_TOUCH_TARGET],
+            egui::Button::new(egui::RichText::new("Cancel").size(16.0)),
+        )
+        .clicked()
+    {
+        return Outcome::Cancel;
+    }
+    Outcome::Continue
+}
+
 /// How tall a dialog page is.
 ///
 /// Fixed, and the same for every category. Two other arrangements were tried
@@ -317,43 +467,56 @@ fn optional_row<T: Clone + PartialEq>(
     inherited: Option<String>,
     control: impl FnOnce(&mut Ui, &mut T),
 ) {
-    ui.horizontal(|ui| {
-        let mut set = value.is_some();
-        if ui
-            .checkbox(&mut set, "")
-            .on_hover_text(if inherited.is_some() {
-                "Set this for this app"
-            } else {
-                "Set this. Leave it clear to use tapHLE's own default and the \
-                 options files."
-            })
-            .changed()
-        {
-            *value = set.then(|| value.clone().unwrap_or_else(|| default_value.clone()));
-        }
+    let narrow = ui.available_width() < 460.0;
+    let mut set = value.is_some();
+    let hint = if inherited.is_some() {
+        "Set this for this app"
+    } else {
+        "Set this. Leave it clear to use tapHLE's own default and the options files."
+    };
+    let changed = if narrow {
         ui.add_sized(
-            [150.0, 18.0],
-            egui::Label::new(label).halign(egui::Align::LEFT),
-        );
-        match value {
-            Some(inner) => {
-                control(ui, inner);
-            }
-            None => {
-                ui.add_enabled_ui(false, |ui| {
-                    let mut ghost = default_value.clone();
-                    control(ui, &mut ghost);
-                });
-                if let Some(inherited) = inherited {
-                    ui.label(
-                        egui::RichText::new(inherited)
-                            .small()
-                            .color(theme::LIGHT.text_dim),
-                    );
-                }
+            [ui.available_width(), MOBILE_TOUCH_TARGET],
+            egui::Checkbox::new(&mut set, egui::RichText::new(label).size(16.0)),
+        )
+        .on_hover_text(hint)
+        .changed()
+    } else {
+        ui.horizontal(|ui| {
+            let changed = ui.checkbox(&mut set, "").on_hover_text(hint).changed();
+            ui.add_sized(
+                [150.0, 18.0],
+                egui::Label::new(label).halign(egui::Align::LEFT),
+            );
+            changed
+        })
+        .inner
+    };
+    if changed {
+        *value = set.then(|| value.clone().unwrap_or_else(|| default_value.clone()));
+    }
+
+    let draw_control = |ui: &mut Ui| match value {
+        Some(inner) => control(ui, inner),
+        None => {
+            ui.add_enabled_ui(false, |ui| {
+                let mut ghost = default_value.clone();
+                control(ui, &mut ghost);
+            });
+            if let Some(inherited) = inherited {
+                ui.label(
+                    egui::RichText::new(inherited)
+                        .size(if narrow { 14.0 } else { 12.0 })
+                        .color(theme::LIGHT.text_dim),
+                );
             }
         }
-    });
+    };
+    if narrow {
+        ui.indent(label, draw_control);
+    } else {
+        ui.horizontal(draw_control);
+    }
 }
 
 /// A tri-state group: the "set" checkbox and the name on their own line, and
@@ -1171,9 +1334,8 @@ fn paths_page(ui: &mut Ui, draft: &mut FrontendSettings) {
     ui.horizontal(|ui| {
         ui.add_space(156.0);
         if ui.button("Choose…").clicked() {
-            if let Some(path) = rfd::FileDialog::new()
-                .set_title("Choose the tapHLE emulator program")
-                .pick_file()
+            if let Some(path) =
+                crate::platform::dialogs::pick_file("Choose the tapHLE emulator program")
             {
                 draft.emulator_path = Some(path);
             }
@@ -1207,9 +1369,8 @@ fn paths_page(ui: &mut Ui, draft: &mut FrontendSettings) {
         draft.library_folders.remove(index);
     }
     if ui.button("Add Folder…").clicked() {
-        if let Some(folder) = rfd::FileDialog::new()
-            .set_title("Choose a folder to scan for apps")
-            .pick_folder()
+        if let Some(folder) =
+            crate::platform::dialogs::pick_folder("Choose a folder to scan for apps")
         {
             if !draft.library_folders.contains(&folder) {
                 draft.library_folders.push(folder);

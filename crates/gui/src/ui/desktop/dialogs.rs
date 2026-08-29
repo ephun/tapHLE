@@ -119,6 +119,66 @@ pub fn show_about(
     }
 }
 
+/// Draw About as a full mobile page instead of a modal dialog.
+pub fn show_about_mobile(
+    ui: &mut Ui,
+    dialog: &mut AboutDialog,
+    info: &AboutInfo,
+    actions: &mut Vec<Action>,
+) {
+    ui.horizontal_wrapped(|ui| {
+        ui.heading("tapHLE");
+        ui.label(
+            egui::RichText::new(&info.version)
+                .size(16.0)
+                .color(theme::LIGHT.text_dim),
+        );
+        if !info.branding.is_empty() {
+            ui.label(
+                egui::RichText::new(&info.branding)
+                    .size(14.0)
+                    .color(theme::LIGHT.warning),
+            );
+        }
+    });
+    ui.add_space(8.0);
+    egui::ScrollArea::horizontal()
+        .id_salt("mobile-about-tabs")
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                for (tab, label) in [
+                    (AboutTab::About, "About"),
+                    (AboutTab::Build, "Build"),
+                    (AboutTab::Credits, "Credits"),
+                    (AboutTab::Licenses, "Licences"),
+                ] {
+                    if ui
+                        .add_sized(
+                            [104.0, 48.0],
+                            egui::Button::selectable(
+                                dialog.tab == tab,
+                                egui::RichText::new(label).size(16.0),
+                            ),
+                        )
+                        .clicked()
+                    {
+                        dialog.tab = tab;
+                    }
+                }
+            });
+        });
+    ui.add_space(8.0);
+    theme::hairline(ui);
+    ui.add_space(12.0);
+    match dialog.tab {
+        AboutTab::About => about_tab(ui, actions),
+        AboutTab::Build => build_tab(ui, info, actions),
+        AboutTab::Credits => credits_tab(ui, actions),
+        AboutTab::Licenses => licenses_tab(ui, dialog),
+    }
+}
+
 /// tapHLE's own repository, linked from several places here.
 const PROJECT_URL: &str = "https://github.com/ephun/tapHLE";
 

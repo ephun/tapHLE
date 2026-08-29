@@ -53,7 +53,7 @@ pub trait Application {
     ///
     /// Called with no event pump in existence, so whatever runs here may make
     /// its own. The shell takes its pump back afterwards.
-    fn hand_over(&mut self) {}
+    fn hand_over(&mut self, _lease: Option<tapHLE::AppWindowLease>) {}
 
     /// Called once, after the loop ends and before the window closes.
     fn on_exit(&mut self) {}
@@ -68,6 +68,63 @@ pub struct WindowSettings {
     pub maximized: bool,
     /// RGBA, and its dimensions.
     pub icon: Option<(Vec<u8>, u32, u32)>,
+}
+
+fn create_renderer(
+    video: &sdl2::VideoSubsystem,
+    settings: &WindowSettings,
+) -> Result<
+    (
+        sdl2::video::Window,
+        sdl2::video::GLContext,
+        egui_glow::Painter,
+        Borders,
+    ),
+    String,
+> {
+    request_gl(video);
+    let mut builder = video.window(
+        &settings.title,
+        settings.size[0] as u32,
+        settings.size[1] as u32,
+    );
+    builder.opengl().resizable().allow_highdpi();
+    match settings.position {
+        Some([x, y]) if x > -20_000.0 && y > -20_000.0 => {
+            builder.position(x as i32, y as i32);
+        }
+        _ => {
+            builder.position_centered();
+        }
+    }
+    if settings.maximized {
+        builder.maximized();
+    }
+    let mut window = builder.build().map_err(|e| e.to_string())?;
+    window
+        .set_minimum_size(
+            settings.minimum_size[0] as u32,
+            settings.minimum_size[1] as u32,
+        )
+        .map_err(|e| e.to_string())?;
+    if let Some((rgba, width, height)) = &settings.icon {
+        set_icon(&mut window, rgba, *width, *height);
+    }
+    let borders = Borders::of(&window);
+    if let Some([x, y]) = settings.position {
+        window.set_position(
+            sdl2::video::WindowPos::Positioned((x + borders.left) as i32),
+            sdl2::video::WindowPos::Positioned((y + borders.top) as i32),
+        );
+    }
+    let gl_context = window.gl_create_context()?;
+    window.gl_make_current(&gl_context)?;
+    let _ = video.gl_set_swap_interval(sdl2::video::SwapInterval::VSync);
+    let gl = Arc::new(unsafe {
+        glow::Context::from_loader_function(|name| video.gl_get_proc_address(name) as *const _)
+    });
+    let painter = egui_glow::Painter::new(gl, "", None, false).map_err(|e| e.to_string())?;
+    Ok((window, gl_context, painter, borders))
 }
 
 /// Open a window, draw `build`'s application in it until it is closed.
@@ -89,61 +146,7 @@ pub fn run<A: Application>(
 
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
-    request_gl(&video);
-
-    let mut builder = video.window(
-        &settings.title,
-        settings.size[0] as u32,
-        settings.size[1] as u32,
-    );
-    builder.opengl().resizable().allow_highdpi();
-    match settings.position {
-        // A saved position from a monitor that is no longer attached would
-        // put the window where it cannot be reached.
-        Some([x, y]) if x > -20_000.0 && y > -20_000.0 => {
-            builder.position(x as i32, y as i32);
-        }
-        _ => {
-            builder.position_centered();
-        }
-    }
-    if settings.maximized {
-        builder.maximized();
-    }
-    let mut window = builder.build().map_err(|e| e.to_string())?;
-    window
-        .set_minimum_size(
-            settings.minimum_size[0] as u32,
-            settings.minimum_size[1] as u32,
-        )
-        .map_err(|e| e.to_string())?;
-    if let Some((rgba, width, height)) = &settings.icon {
-        set_icon(&mut window, rgba, *width, *height);
-    }
-    // SDL places the client area at the position it is given, while the
-    // position worth remembering is the frame's — that is the corner somebody
-    // dragged the window to. Left uncorrected, every run moved the window up
-    // by the height of its own title bar. Measured rather than assumed
-    // because it is a theme's decision, and zero where SDL will not say.
-    let borders = Borders::of(&window);
-    if let Some([x, y]) = settings.position {
-        window.set_position(
-            sdl2::video::WindowPos::Positioned((x + borders.left) as i32),
-            sdl2::video::WindowPos::Positioned((y + borders.top) as i32),
-        );
-    }
-
-    let gl_context = window.gl_create_context()?;
-    window.gl_make_current(&gl_context)?;
-    // Vertical sync, and no error if the driver refuses it: a frontend that
-    // renders slightly too often is a smaller problem than one that will not
-    // start.
-    let _ = video.gl_set_swap_interval(sdl2::video::SwapInterval::VSync);
-
-    let gl = Arc::new(unsafe {
-        glow::Context::from_loader_function(|name| video.gl_get_proc_address(name) as *const _)
-    });
-    let mut painter = egui_glow::Painter::new(gl, "", None, false).map_err(|e| e.to_string())?;
+    let (mut window, _gl_context, mut painter, borders) = create_renderer(&video, &settings)?;
 
     // A repaint asked for from a background thread — a finished download, an
     // app that has just exited — has to wake the loop. Without this the
@@ -209,10 +212,9 @@ pub fn run<A: Application>(
         }
         viewport.native_pixels_per_point = Some(ppp);
         let (width, height) = window.drawable_size();
-        raw.screen_rect = Some(Rect::from_min_size(
-            Pos2::ZERO,
-            Vec2::new(width as f32, height as f32) / ppp,
-        ));
+        let screen_rect =
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(width as f32, height as f32) / ppp);
+        raw.screen_rect = Some(safe_area_rect(screen_rect));
         raw.viewports = std::iter::once((ViewportId::ROOT, viewport.take())).collect();
 
         let output = egui_ctx.run(raw, |ctx| app.update(ctx));
@@ -294,8 +296,24 @@ pub fn run<A: Application>(
         // of running an app in here rather than in a process of its own.
         if app.wants_to_hand_over() {
             drop(event_pump);
-            app.hand_over();
-            event_pump = sdl.event_pump()?;
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            {
+                let lease = tapHLE::AppWindowLease::new(sdl.clone(), video.clone(), window.clone());
+                app.hand_over(Some(lease));
+                request_gl(&video);
+                window.gl_make_current(&_gl_context)?;
+                let _ = video.gl_set_swap_interval(sdl2::video::SwapInterval::VSync);
+                event_pump = sdl.event_pump()?;
+                video.text_input().stop();
+                typing = false;
+                viewport.native_pixels_per_point = Some(pixels_per_point(&window));
+                read_geometry(&window, borders, &mut viewport);
+            }
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            {
+                app.hand_over(None);
+                event_pump = sdl.event_pump()?;
+            }
             // Whatever happened while the pump was gone is not this window's
             // to replay, and the frontend has a frame's worth of catching up.
             pending.clear();
@@ -316,6 +334,32 @@ pub fn run<A: Application>(
     app.on_exit();
     painter.destroy();
     Ok(())
+}
+
+#[cfg(target_os = "ios")]
+extern "C" {
+    fn tapHLE_iOS_safe_area(top: *mut f32, right: *mut f32, bottom: *mut f32, left: *mut f32);
+}
+
+fn safe_area_rect(rect: Rect) -> Rect {
+    #[cfg(target_os = "ios")]
+    {
+        let (mut top, mut right, mut bottom, mut left) = (0.0, 0.0, 0.0, 0.0);
+        unsafe { tapHLE_iOS_safe_area(&mut top, &mut right, &mut bottom, &mut left) };
+        if [top, right, bottom, left]
+            .into_iter()
+            .all(|inset| inset.is_finite() && inset >= 0.0)
+        {
+            let safe = Rect::from_min_max(
+                rect.min + Vec2::new(left, top),
+                rect.max - Vec2::new(right, bottom),
+            );
+            if safe.is_positive() {
+                return safe;
+            }
+        }
+    }
+    rect
 }
 
 /// Nothing but a marker: pushing any custom event into SDL ends a wait, and

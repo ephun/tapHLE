@@ -52,6 +52,15 @@ pub struct OpenALContext {
 impl OpenALContext {
     pub fn new(_manager: &mut OpenALManager) -> Result<Self, String> {
         let device = unsafe { al_sys::alcOpenDevice(std::ptr::null()) };
+        #[cfg(target_os = "ios")]
+        let device = if device.is_null() {
+            // The simulator VM can have no CoreAudio output device. OpenAL
+            // Soft's always-built null backend keeps guest timing and callback
+            // behavior intact without pretending that audio is audible.
+            unsafe { al_sys::alcOpenDevice(b"No Output\0".as_ptr().cast()) }
+        } else {
+            device
+        };
         if device.is_null() {
             return Err("Could not open OpenAL device".to_string());
         }
