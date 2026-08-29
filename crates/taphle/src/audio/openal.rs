@@ -17,6 +17,20 @@ pub use al_sys::{alcCloseDevice, alcGetError, alcGetIntegerv, alcGetString, alcO
 
 use al_types::*;
 
+/// Open the default host device, with an iOS simulator-safe fallback.
+pub unsafe fn open_device() -> *mut ALCdevice {
+    let device = unsafe { al_sys::alcOpenDevice(std::ptr::null()) };
+    #[cfg(target_os = "ios")]
+    if device.is_null() {
+        // The simulator VM can have no CoreAudio output device. OpenAL
+        // Soft's always-built null backend keeps guest timing and callback
+        // behavior intact without pretending that audio is audible.
+        std::env::set_var("ALSOFT_DRIVERS", "null");
+        return unsafe { al_sys::alcOpenDevice(std::ptr::null()) };
+    }
+    device
+}
+
 static OPENALMANAGER_INSTANCE_EXISTS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 pub struct OpenALManager {}
@@ -51,16 +65,7 @@ pub struct OpenALContext {
 
 impl OpenALContext {
     pub fn new(_manager: &mut OpenALManager) -> Result<Self, String> {
-        let device = unsafe { al_sys::alcOpenDevice(std::ptr::null()) };
-        #[cfg(target_os = "ios")]
-        let device = if device.is_null() {
-            // The simulator VM can have no CoreAudio output device. OpenAL
-            // Soft's always-built null backend keeps guest timing and callback
-            // behavior intact without pretending that audio is audible.
-            unsafe { al_sys::alcOpenDevice(b"No Output\0".as_ptr().cast()) }
-        } else {
-            device
-        };
+        let device = unsafe { open_device() };
         if device.is_null() {
             return Err("Could not open OpenAL device".to_string());
         }

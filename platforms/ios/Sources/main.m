@@ -5,6 +5,8 @@
  */
 #include <SDL.h>
 #include <SDL_main.h>
+#include <stdlib.h>
+#include <TargetConditionals.h>
 #import <UIKit/UIKit.h>
 
 #ifdef main
@@ -22,5 +24,11 @@ void tapHLE_iOS_safe_area(float *top, float *right, float *bottom, float *left) 
 }
 
 int main(int argc, char *argv[]) {
+#if TARGET_OS_SIMULATOR
+    // OpenAL Soft reads its backend selection before UIKit starts SDL. The
+    // Intel simulator has no usable CoreAudio output, so select its null
+    // backend before any framework can initialize OpenAL.
+    setenv("ALSOFT_DRIVERS", "null", 0);
+#endif
     return tapHLE_iOS_main(argc, argv);
 }

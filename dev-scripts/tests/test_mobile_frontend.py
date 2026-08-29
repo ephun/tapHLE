@@ -129,10 +129,19 @@ class SharedMobileFrontendTests(unittest.TestCase):
         self.assertNotIn("package_root\n                .join(\"target\")", android_block)
 
 
-    def test_ios_guest_falls_back_when_no_audio_device_exists(self):
+    def test_ios_guest_forces_the_null_audio_backend_when_default_open_fails(self):
         openal = (ROOT / "crates/taphle/src/audio/openal.rs").read_text(encoding="utf-8")
         self.assertIn('#[cfg(target_os = "ios")]', openal)
-        self.assertIn('b"No Output\\0"', openal)
+        self.assertIn('std::env::set_var("ALSOFT_DRIVERS", "null")', openal)
+        self.assertNotIn('b"No Output\\0"', openal)
+        framework = (ROOT / "crates/taphle/src/frameworks/openal.rs").read_text(encoding="utf-8")
+        self.assertIn("al::open_device()", framework)
+        gui = (ROOT / "crates/gui/src/lib.rs").read_text(encoding="utf-8")
+        self.assertIn('#[cfg(all(target_os = "ios", target_arch = "x86_64"))]', gui)
+        self.assertIn('std::env::set_var("ALSOFT_DRIVERS", "null")', gui)
+        main = (ROOT / "platforms/ios/Sources/main.m").read_text(encoding="utf-8")
+        self.assertIn("#include <TargetConditionals.h>", main)
+        self.assertIn('setenv("ALSOFT_DRIVERS", "null", 0)', main)
 
     def test_ios_guest_uses_the_full_mobile_drawable(self):
         window = (ROOT / "crates/taphle/src/window.rs").read_text(encoding="utf-8")
@@ -145,6 +154,12 @@ class SharedMobileFrontendTests(unittest.TestCase):
         self.assertIn("host_drawable_bindings", window)
         self.assertIn("BindFramebufferOES(gles11::FRAMEBUFFER_OES, host_drawable.0)", composition)
         self.assertIn("BindRenderbufferOES(gles11::RENDERBUFFER_OES, host_drawable.1)", composition)
+
+    def test_compositor_initializes_delegate_backing_stores_before_drawing(self):
+        composition = (ROOT / "crates/taphle/src/frameworks/core_animation/composition.rs").read_text(encoding="utf-8")
+        self.assertIn("host_obj.cg_context.is_none()", composition)
+        self.assertIn("needs_display = true", composition)
+        self.assertIn("displayIfNeeded", composition)
 
     def test_mobile_handoff_leases_and_restores_the_shared_sdl_window(self):
         shell = (ROOT / "crates/gui/src/shell.rs").read_text(encoding="utf-8")

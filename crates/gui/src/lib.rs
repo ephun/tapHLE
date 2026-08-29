@@ -74,6 +74,8 @@ pub extern "C" fn tapHLE_iOS_main(
     argc: std::ffi::c_int,
     argv: *mut *mut std::ffi::c_char,
 ) -> std::ffi::c_int {
+    #[cfg(all(target_os = "ios", target_arch = "x86_64"))]
+    std::env::set_var("ALSOFT_DRIVERS", "null");
     unsafe { SDL_UIKitRunApp(argc, argv, SDL_main) }
 }
 
