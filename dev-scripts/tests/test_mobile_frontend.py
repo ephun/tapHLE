@@ -155,6 +155,28 @@ class SharedMobileFrontendTests(unittest.TestCase):
         self.assertIn("BindFramebufferOES(gles11::FRAMEBUFFER_OES, host_drawable.0)", composition)
         self.assertIn("BindRenderbufferOES(gles11::RENDERBUFFER_OES, host_drawable.1)", composition)
 
+    def test_compositor_clamps_the_non_power_of_two_composition_texture(self):
+        composition = (ROOT / "crates/taphle/src/frameworks/core_animation/composition.rs").read_text(encoding="utf-8")
+        texture = composition.split("gles.TexImage2D(", 1)[1].split("gles.GenFramebuffersOES", 1)[0]
+        self.assertIn("TEXTURE_WRAP_S", texture)
+        self.assertIn("TEXTURE_WRAP_T", texture)
+        self.assertIn("CLAMP_TO_EDGE", texture)
+
+    def test_ios_guest_exits_only_after_background_transition_commits(self):
+        window = (ROOT / "crates/taphle/src/window.rs").read_text(encoding="utf-8")
+        self.assertLess(
+            window.index("E::AppWillEnterBackground"),
+            window.index("E::AppDidEnterBackground"),
+        )
+        self.assertIn(
+            "Deferring iOS background handling until app-did-enter-background.",
+            window,
+        )
+        self.assertIn(
+            "Received iOS app-did-enter-background event: exiting guest run.",
+            window,
+        )
+
     def test_compositor_initializes_delegate_backing_stores_before_drawing(self):
         composition = (ROOT / "crates/taphle/src/frameworks/core_animation/composition.rs").read_text(encoding="utf-8")
         self.assertIn("host_obj.cg_context.is_none()", composition)
