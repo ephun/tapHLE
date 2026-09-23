@@ -294,6 +294,17 @@ D-Bus, and the emulator needs a C++ toolchain, CMake and Boost.
 
 ### Android and iOS
 
+The iOS product is distributed only by sideloading and is intended to obtain JIT
+access through a separately sideloaded StikDebug installation. App Store and
+TestFlight distribution are not release targets. Preserve `get-task-allow` in
+the installed host's signature and verify JIT on that installation; do not
+remove this entitlement as generic release-signing cleanup. StikDebug readiness
+must be established for the current host process before starting a guest app.
+The [StikJIT integration guide](https://github.com/StikDebug/StikJIT/blob/main/INTEGRATION.md)
+describes the allocator-side protocol required where TXM/SPTM is present;
+debugger attachment alone is not sufficient there. This distribution policy
+does not establish runtime verification; see `docs/platforms.md`.
+
 Both mobile hosts build `tapHLE_gui`, the same Rust and egui frontend used on the
 desktop, as the application library. The compositions share the library,
 settings, actions and emulator runtime and rearrange those components for the
