@@ -140,10 +140,13 @@ the current checkout and does not imply the installed binary was built from it.
 
 Let the runner own polling, replay timing, timeouts, crash detection and capture.
 Do not spend agent turns manually repeating those deterministic steps. Investigate
-failed cases and visually review milestones after the batch. `replay_completed`
-means inputs finished and the process survived the settling interval; it never
-means gameplay, rendering, audio or release readiness passed. Missing captures,
-early exits and timeouts are failures even if no panic appears in the log.
+failed cases and visually review milestones after the batch. The runner records
+log markers as `completion_unverified`; they are not trusted completion evidence
+because guest output shares the console. App routes therefore remain diagnostic
+and fail closed until a host-controlled completion channel is implemented. This
+never means gameplay, rendering, audio or release readiness passed. Missing
+captures, early exits and timeouts are failures even if no panic appears in the
+log.
 Malformed routes fail preflight, and runtime errors use console output rather
 than a modal error dialog that would stall unattended testing.
 

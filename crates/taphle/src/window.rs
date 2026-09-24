@@ -812,6 +812,16 @@ impl Window {
                     }
                 }
                 E::AppWillEnterBackground { .. } => {
+                    // iOS sends the "will" notification for transient focus
+                    // changes as well as for Home/background transitions. Do
+                    // not tear down an in-process guest until UIKit confirms
+                    // that the application actually entered the background;
+                    // otherwise a normal handoff can stop it after a few
+                    // frames.
+                    if cfg!(target_os = "ios") {
+                        log!("Deferring iOS background handling until app-did-enter-background.");
+                        continue;
+                    }
                     log!("Received app-will-resign-active event.");
                     assert!(self.high_priority_event.is_none());
                     self.high_priority_event = Some(Event::AppWillResignActive);
@@ -820,6 +830,15 @@ impl Window {
                     // TODO: Add a mechanism for re-enabling polling, if at some
                     // point we support returning tapHLE to the foreground.
                     self.enable_event_polling = false;
+                    continue;
+                }
+                E::AppDidEnterBackground { .. } => {
+                    if cfg!(target_os = "ios") {
+                        log!("Received iOS app-did-enter-background event: exiting guest run.");
+                        assert!(self.high_priority_event.is_none());
+                        self.high_priority_event = Some(Event::AppWillResignActive);
+                        self.enable_event_polling = false;
+                    }
                     continue;
                 }
                 E::AppTerminating { .. } => {

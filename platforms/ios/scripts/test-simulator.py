@@ -56,7 +56,9 @@ def outcome(log, exit_code, elapsed, deadline, completed_at, settle):
     if exit_code is not None:
         return 'process_exited'
     if completed_at is not None and elapsed - completed_at >= settle:
-        return 'replay_completed'
+        # Guest output shares this stream. A log marker is a capture hint,
+        # never authoritative proof that the host finished the replay.
+        return 'completion_unverified'
     if elapsed >= deadline:
         return 'timeout'
     return None
@@ -136,7 +138,8 @@ def run_case(args, slug):
                                 time.sleep(1)
                         break
                     time.sleep(1)
-            result['replay_finished'] = completed_at is not None
+            result['completion_log_observed'] = completed_at is not None
+            result['replay_finished'] = None  # No trusted completion channel yet.
             result['process_exit'] = process.poll()
             if args.guest_capture:
                 result['guest_frame_captured'] = (args.output / (slug + '.ppm')).exists()
@@ -261,7 +264,9 @@ def main():
                   'source_dirty': bool(subprocess.check_output(
                       ['git', 'status', '--porcelain'], cwd=ROOT)),
                   'note': 'Source state is not proof of installed binary provenance. '
-                          'Replay completion is not a gameplay or release pass.'}
+                          'Console completion markers are unverified; app routes '
+                          'require a trusted host completion channel before they '
+                          'can pass automatically. No gameplay or release pass is inferred.'}
     (args.output / 'provenance.json').write_text(json.dumps(provenance, indent=2))
     results = []
     if args.cli_fixture:
@@ -274,7 +279,9 @@ def main():
         results.append(result)
         print(f"{slug}: {result['status']} ({result['seconds']}s)", flush=True)
         (args.output / 'results.json').write_text(json.dumps(results, indent=2))
-    return int(any(r['status'] not in ('replay_completed', 'cli_passed') for r in results))
+    # A log-only app-route observation must fail closed. Synthetic CLI runs
+    # use the selected, hashed test fixture rather than arbitrary guest apps.
+    return int(any(r['status'] != 'cli_passed' for r in results))
 
 
 if __name__ == '__main__':

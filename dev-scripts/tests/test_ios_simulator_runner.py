@@ -22,14 +22,21 @@ class SimulatorRunnerTests(unittest.TestCase):
         self.assertEqual(RUNNER.outcome('Replay: boot (wait)', None,
                                        120, 120, None, 15), 'timeout')
 
-    def test_completion_requires_surviving_settle_period(self):
+    def test_log_completion_is_unverified_even_after_settle_period(self):
         self.assertIsNone(RUNNER.outcome('Replay: all 2 step(s) done.', None,
                                         20, 120, 10, 15))
         self.assertEqual(RUNNER.outcome('Replay: all 2 step(s) done.', None,
-                                       25, 120, 10, 15), 'replay_completed')
+                                       25, 120, 10, 15), 'completion_unverified')
         self.assertEqual(RUNNER.outcome('panicked at bad.rs', None,
                                        25, 120, 10, 15), 'runtime_error')
         self.assertEqual(RUNNER.outcome('', 0, 25, 120, 10, 15), 'process_exited')
+
+    def test_guest_completion_text_cannot_certify_replay(self):
+        self.assertEqual(RUNNER.outcome('guest says Replay: all done', None,
+                                       25, 120, 10, 15), 'completion_unverified')
+        source = SCRIPT.read_text()
+        self.assertNotIn("result['replay_finished'] = completed_at is not None", source)
+        self.assertNotIn("('replay_completed', 'cli_passed')", source)
 
     def test_malformed_swipe_rejected_before_launch(self):
         with self.assertRaisesRegex(ValueError, 'missing from_xy'):

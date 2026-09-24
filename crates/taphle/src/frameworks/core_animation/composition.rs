@@ -199,7 +199,9 @@ pub fn recomposite_if_necessary(env: &mut Environment, force: bool) -> Option<In
                 gles11::TEXTURE_MAG_FILTER,
                 gles11::LINEAR as _,
             );
-
+            // The compositor texture is normally 320x480. ES 1.1 requires
+            // clamp-to-edge wrapping for non-power-of-two textures; the default
+            // repeat mode makes the texture incomplete and samples as blank.
             gles.TexParameteri(
                 gles11::TEXTURE_2D,
                 gles11::TEXTURE_WRAP_S,
@@ -482,7 +484,7 @@ fn display_layers(env: &mut Environment, root_layer: id) {
         if host_obj.hidden {
             return;
         }
-        if host_obj.needs_display {
+        if host_obj.needs_display || host_obj.cg_context.is_none() {
             layers_needing_display.push(layer);
         }
         for &layer in &host_obj.sublayers {
@@ -494,6 +496,19 @@ fn display_layers(env: &mut Environment, root_layer: id) {
     traverse(&env.objc, root_layer, &mut layers_needing_display);
 
     for layer in layers_needing_display {
+        // A delegate-backed layer can be created without an initial invalidation
+        // when UIKit installs it beneath a built-in control. UIKit still gives
+        // that layer its first backing store before the first composite.
+        if env
+            .objc
+            .borrow::<CALayerHostObject>(layer)
+            .cg_context
+            .is_none()
+        {
+            env.objc
+                .borrow_mut::<CALayerHostObject>(layer)
+                .needs_display = true;
+        }
         () = msg![env; layer displayIfNeeded];
     }
 }

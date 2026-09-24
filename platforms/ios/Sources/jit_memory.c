@@ -37,10 +37,10 @@ bool tapHLE_jit_memory_prepare(TapHLEJITMemory *pool,
     // cannot be confused with returning our original non-null input address.
     if (script_required) {
         execute = prepare_region(NULL, pool_size);
-        if (!execute || execute == MAP_FAILED ||
+        if (execute == MAP_FAILED) execute = NULL;
+        if (!execute ||
             !has_protection(execute, pool_size, VM_PROT_READ | VM_PROT_EXECUTE)) {
             snprintf(error, 512, "StikDebug did not return a valid executable region. Check its universal.js log.");
-            execute = NULL;
         }
     } else {
         write = mmap(NULL, pool_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);

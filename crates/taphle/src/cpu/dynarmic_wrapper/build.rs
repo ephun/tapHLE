@@ -178,6 +178,9 @@ fn ios_dynarmic_source(source: &Path, package: &Path) -> std::path::PathBuf {
                 && !entry
                     .path()
                     .ends_with("src/dynarmic/backend/arm64/address_space.cpp")
+                && !entry
+                    .path()
+                    .ends_with("src/dynarmic/common/spin_lock_arm64.cpp")
                 && std::fs::read(&target).ok() != Some(std::fs::read(entry.path()).unwrap())
             {
                 std::fs::copy(entry.path(), target).unwrap();
@@ -214,5 +217,29 @@ fn ios_dynarmic_source(source: &Path, package: &Path) -> std::path::PathBuf {
         text.replace(old, "mem.writable_ptr(), mem.ptr()")
             .as_bytes(),
     );
+    // Host locks must work before the host has prepared its sole JIT lease.
+    // Keep the emitted helpers and their shared 32-bit 0/1 lock ABI unchanged.
+    let relative = "src/dynarmic/common/spin_lock_arm64.cpp";
+    let text = std::fs::read_to_string(source.join(relative)).unwrap();
+    let (emitters, host) = text
+        .split_once("namespace {\n\nstruct SpinLockImpl")
+        .expect("review iOS spin lock overlay after Dynarmic update");
+    assert!(host.ends_with("}  // namespace Dynarmic\n"));
+    let emitters = emitters
+        .replace("#include <mutex>\n", "")
+        .replace("#include <oaknut/code_block.hpp>\n", "");
+    let host = r#"void SpinLock::Lock() {
+    while (__atomic_exchange_n(&storage, 1, __ATOMIC_ACQUIRE)) {
+        while (__atomic_load_n(&storage, __ATOMIC_RELAXED)) {}
+    }
+}
+
+void SpinLock::Unlock() {
+    __atomic_store_n(&storage, 0, __ATOMIC_RELEASE);
+}
+
+}  // namespace Dynarmic
+"#;
+    write_changed(&dest.join(relative), format!("{emitters}{host}").as_bytes());
     dest
 }
