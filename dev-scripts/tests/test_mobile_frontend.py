@@ -155,12 +155,6 @@ class SharedMobileFrontendTests(unittest.TestCase):
         self.assertIn("BindFramebufferOES(gles11::FRAMEBUFFER_OES, host_drawable.0)", composition)
         self.assertIn("BindRenderbufferOES(gles11::RENDERBUFFER_OES, host_drawable.1)", composition)
 
-    def test_compositor_initializes_delegate_backing_stores_before_drawing(self):
-        composition = (ROOT / "crates/taphle/src/frameworks/core_animation/composition.rs").read_text(encoding="utf-8")
-        self.assertIn("host_obj.cg_context.is_none()", composition)
-        self.assertIn("needs_display = true", composition)
-        self.assertIn("displayIfNeeded", composition)
-
     def test_mobile_handoff_leases_and_restores_the_shared_sdl_window(self):
         shell = (ROOT / "crates/gui/src/shell.rs").read_text(encoding="utf-8")
         core = (ROOT / "crates/taphle/src/lib.rs").read_text(encoding="utf-8")

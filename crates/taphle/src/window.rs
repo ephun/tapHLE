@@ -12,7 +12,6 @@
 //! window system interaction in general, because it is assumed only one window
 //! will be needed for the runtime of the app.
 
-use crate::gles::gles11_raw as gles11;
 use crate::gles::present::present_frame;
 use crate::gles::{create_gles1_ctx_no_parent_stack, GLESContext, GLES};
 use crate::image::Image;
@@ -1396,8 +1395,21 @@ impl Window {
             use crate::gles::gles11_raw as gles11; // constants only
 
             let mut texture = 0;
+            let host_drawable = Self::current_host_drawable_bindings();
+            gl_ctx.BindFramebufferOES(gles11::FRAMEBUFFER_OES, host_drawable.0);
+            gl_ctx.BindRenderbufferOES(gles11::RENDERBUFFER_OES, host_drawable.1);
             gl_ctx.GenTextures(1, &mut texture);
             gl_ctx.BindTexture(gles11::TEXTURE_2D, texture);
+            gl_ctx.TexParameteri(
+                gles11::TEXTURE_2D,
+                gles11::TEXTURE_WRAP_S,
+                gles11::CLAMP_TO_EDGE as _,
+            );
+            gl_ctx.TexParameteri(
+                gles11::TEXTURE_2D,
+                gles11::TEXTURE_WRAP_T,
+                gles11::CLAMP_TO_EDGE as _,
+            );
             let (width, height) = image.dimensions();
             gl_ctx.TexImage2D(
                 gles11::TEXTURE_2D,
@@ -1443,13 +1455,31 @@ impl Window {
     /// and renderbuffer for its EAGL drawable, so rendering to zero only paints
     /// an off-screen default surface there.
     pub fn host_drawable_bindings(&mut self) -> (u32, u32) {
-        let mut gles = self.make_internal_gl_ctx_current();
+        drop(self.make_internal_gl_ctx_current());
+        Self::current_host_drawable_bindings()
+    }
+
+    /// Query SDL's drawable for the current context, not guest GL bindings.
+    pub fn current_host_drawable_bindings() -> (u32, u32) {
+        #[cfg(target_os = "ios")]
         unsafe {
+            extern "C" {
+                fn tapHLE_iOS_drawable_bindings(
+                    framebuffer: *mut u32,
+                    renderbuffer: *mut u32,
+                ) -> i32;
+            }
             let mut framebuffer = 0;
             let mut renderbuffer = 0;
-            gles.GetIntegerv(gles11::FRAMEBUFFER_BINDING_OES, &mut framebuffer);
-            gles.GetIntegerv(gles11::RENDERBUFFER_BINDING_OES, &mut renderbuffer);
-            (framebuffer as u32, renderbuffer as u32)
+            assert_ne!(
+                tapHLE_iOS_drawable_bindings(&mut framebuffer, &mut renderbuffer),
+                0
+            );
+            (framebuffer, renderbuffer)
+        }
+        #[cfg(not(target_os = "ios"))]
+        {
+            (0, 0)
         }
     }
 

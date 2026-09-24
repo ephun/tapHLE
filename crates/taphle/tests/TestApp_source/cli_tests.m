@@ -7478,6 +7478,34 @@ int test_NSSet_member() {
 // space, but it must not require the receiver to actually be in a window: a
 // view built from a nib converts before it is ever mounted. With no window, the
 // conversion resolves against the top of the view's own hierarchy.
+// A subclass destructor must leave UIView's retained hierarchy intact until
+// UIView detaches its children and releases its backing layer.
+int test_UIView_subclass_teardown_detaches_children() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+  const char *classes[] = {"UIControl", "UIButton", "UISwitch",
+                           "UITextField", "UITextView"};
+  int result = 0;
+  for (unsigned i = 0; i < sizeof(classes) / sizeof(classes[0]); i++) {
+    Class cls = NSClassFromString([NSString stringWithUTF8String:classes[i]]);
+    UIView *parent = [[cls alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+    UIView *child = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 10, 10)];
+    [parent addSubview:child];
+    CALayer *layer = [[parent layer] retain];
+    [parent release];
+    if ([child superview] != nil || [child retainCount] != 1 ||
+        [layer retainCount] != 1) {
+      printf("Superclass teardown failed for %s\n", classes[i]);
+      result = -1;
+    } else if ([child window] != nil) {
+      result = -2;
+    }
+    [layer release];
+    [child release];
+  }
+  [pool drain];
+  return result;
+}
+
 int test_UIView_convert_nilView_withoutWindow() {
   NSAutoreleasePool *pool = [NSAutoreleasePool new];
 
@@ -7844,6 +7872,7 @@ struct {
     FUNC_DEF(test_NSMutableSet_setAlgebra),
     FUNC_DEF(test_NSSet_member),
     FUNC_DEF(test_UIView_convert_nilView_withoutWindow),
+    FUNC_DEF(test_UIView_subclass_teardown_detaches_children),
     FUNC_DEF(test_malloc_zone_basic),
     FUNC_DEF(test_malloc_zone_struct_dispatch),
     FUNC_DEF(test_NSDictionary_keysSortedByValueUsingSelector),

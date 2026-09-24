@@ -200,6 +200,17 @@ pub fn recomposite_if_necessary(env: &mut Environment, force: bool) -> Option<In
                 gles11::LINEAR as _,
             );
 
+            gles.TexParameteri(
+                gles11::TEXTURE_2D,
+                gles11::TEXTURE_WRAP_S,
+                gles11::CLAMP_TO_EDGE as _,
+            );
+            gles.TexParameteri(
+                gles11::TEXTURE_2D,
+                gles11::TEXTURE_WRAP_T,
+                gles11::CLAMP_TO_EDGE as _,
+            );
+
             gles.GenFramebuffersOES(1, &mut framebuffer);
             gles.BindFramebufferOES(gles11::FRAMEBUFFER_OES, framebuffer);
             gles.FramebufferTexture2DOES(
@@ -471,7 +482,7 @@ fn display_layers(env: &mut Environment, root_layer: id) {
         if host_obj.hidden {
             return;
         }
-        if host_obj.needs_display || host_obj.cg_context.is_none() {
+        if host_obj.needs_display {
             layers_needing_display.push(layer);
         }
         for &layer in &host_obj.sublayers {
@@ -483,19 +494,6 @@ fn display_layers(env: &mut Environment, root_layer: id) {
     traverse(&env.objc, root_layer, &mut layers_needing_display);
 
     for layer in layers_needing_display {
-        // A delegate-backed layer can be created without an initial invalidation
-        // when UIKit installs it beneath a built-in control. UIKit still gives
-        // that layer its first backing store before the first composite.
-        if env
-            .objc
-            .borrow::<CALayerHostObject>(layer)
-            .cg_context
-            .is_none()
-        {
-            env.objc
-                .borrow_mut::<CALayerHostObject>(layer)
-                .needs_display = true;
-        }
         () = msg![env; layer displayIfNeeded];
     }
 }

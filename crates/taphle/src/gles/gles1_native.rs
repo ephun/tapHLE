@@ -113,9 +113,15 @@ impl GLES for GLES1Native<'_> {
         gles11::ClientActiveTexture(texture);
     }
     unsafe fn EnableClientState(&mut self, array: GLenum) {
+        // The guest wrapper does not translate point-size array pointers yet.
+        // Desktop GL rejects this array. Native GLES must do the same rather
+        // than enabling an array whose host pointer is still null. Passing an
+        // invalid enum preserves the driver's normal GL_INVALID_ENUM state.
+        let array = if array == 0x8b9c { 0 } else { array }; // POINT_SIZE_ARRAY_OES
         gles11::EnableClientState(array)
     }
     unsafe fn DisableClientState(&mut self, array: GLenum) {
+        let array = if array == 0x8b9c { 0 } else { array }; // POINT_SIZE_ARRAY_OES
         gles11::DisableClientState(array)
     }
     unsafe fn GetBooleanv(&mut self, pname: GLenum, params: *mut GLboolean) {
@@ -504,14 +510,15 @@ impl GLES for GLES1Native<'_> {
         pixels: *const GLvoid,
     ) {
         if format == gles11::BGRA_EXT {
-            // This is needed in order to avoid white screen issue on Android!
-            // As per BGRA extension specs
-            // https://registry.khronos.org/OpenGL/extensions/EXT/EXT_texture_format_BGRA8888.txt,
-            // both internalformat and format should be BGRA
-            // Tangentially related issue
-            // (actually a reverse of what we're doing here)
-            // https://android-review.googlesource.com/c/platform/external/qemu/+/974666
-            internalformat = gles11::BGRA_EXT as GLint
+            // Apple's BGRA extension requires RGBA internally, whereas EXT
+            // requires BGRA. Translate the host format without changing pixels.
+            // https://registry.khronos.org/OpenGL/extensions/APPLE/APPLE_texture_format_BGRA8888.txt
+            // https://registry.khronos.org/OpenGL/extensions/EXT/EXT_texture_format_BGRA8888.txt
+            internalformat = if cfg!(target_os = "ios") {
+                gles11::RGBA as GLint
+            } else {
+                gles11::BGRA_EXT as GLint
+            };
         }
         gles11::TexImage2D(
             target,

@@ -66,6 +66,8 @@ pub(super) struct EAGLContextHostObject {
     renderbuffer_drawable_bindings: Rc<RefCell<HashMap<GLuint, id>>>,
     fps_counter: Option<FpsCounter>,
     next_frame_due: Option<Instant>,
+    pub(super) objects: Rc<RefCell<super::object_names::FramebufferObjects>>,
+    pub(super) bindings: Rc<RefCell<super::object_names::FramebufferBindings>>,
     pub mapped_buffers: HashMap<GLuint, (MutPtr<GLvoid>, *mut GLvoid)>,
 }
 impl HostObject for EAGLContextHostObject {}
@@ -84,6 +86,8 @@ pub const CLASSES: ClassExports = objc_classes! {
         fps_counter: None,
         next_frame_due: None,
         mapped_buffers: HashMap::new(),
+        objects: Default::default(),
+        bindings: Default::default(),
     });
     env.objc.alloc_object(this, host_object, &mut env.mem)
 }
@@ -144,14 +148,25 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     let window = env.window.as_mut().expect("OpenGL ES is not supported in headless mode");
     {
-        let gles_ctx = gles_ins.make_current(window);
+        let mut gles_ctx = gles_ins.make_current(window);
         log!("Driver info: {}", unsafe { gles_ctx.driver_description() });
+        // SDL may leave its host drawable bound when creating a context.
+        // A new guest context starts with the default bindings instead.
+        unsafe {
+            gles_ctx.BindFramebufferOES(gles11::FRAMEBUFFER_OES, 0);
+            gles_ctx.BindRenderbufferOES(gles11::RENDERBUFFER_OES, 0);
+        }
     }
 
     env.objc.borrow_mut::<EAGLContextHostObject>(this).gles_ctx = Some(gles_ins);
     env.objc.borrow_mut::<EAGLContextHostObject>(this).api = api;
 
     env.window.as_mut().unwrap().set_share_with_current_context(false);
+
+    // EAGL sharegroups share framebuffer and renderbuffer object names.
+    // https://developer.apple.com/documentation/opengles/eaglsharegroup
+    env.objc.borrow_mut::<EAGLContextHostObject>(this).objects =
+        env.objc.borrow::<EAGLContextHostObject>(group).objects.clone();
 
     env.objc.borrow_mut::<EAGLContextHostObject>(this).renderbuffer_drawable_bindings = env.objc.borrow::<EAGLContextHostObject>(group).renderbuffer_drawable_bindings.clone();
     this
@@ -174,8 +189,14 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     let window = env.window.as_mut().expect("OpenGL ES is not supported in headless mode");
     {
-        let gles_ctx = gles_ins.make_current(window);
+        let mut gles_ctx = gles_ins.make_current(window);
         log!("Driver info: {}", unsafe { gles_ctx.driver_description() });
+        // SDL may leave its host drawable bound when creating a context.
+        // A new guest context starts with the default bindings instead.
+        unsafe {
+            gles_ctx.BindFramebufferOES(gles11::FRAMEBUFFER_OES, 0);
+            gles_ctx.BindRenderbufferOES(gles11::RENDERBUFFER_OES, 0);
+        }
     }
 
     env.objc.borrow_mut::<EAGLContextHostObject>(this).gles_ctx = Some(gles_ins);
@@ -608,16 +629,20 @@ unsafe fn present_renderbuffer_es2(
         gles2::TEXTURE_MAG_FILTER,
         gles2::LINEAR as _,
     );
-    // The rotation below is applied to texture coordinates that run 0..1, and
-    // it rotates them about the origin rather than about the middle of the
-    // texture. A quarter turn therefore lands them outside the texture, in
-    // [-1,0] x [0,1], and only wrapping brings them back onto it. Clamping
-    // instead gives every row the same edge texel: the frame comes out as
-    // horizontal bands of flat colour with the vertical gradient intact.
-    gles.TexParameteri(gles2::TEXTURE_2D, gles2::TEXTURE_WRAP_S, gles2::REPEAT as _);
-    gles.TexParameteri(gles2::TEXTURE_2D, gles2::TEXTURE_WRAP_T, gles2::REPEAT as _);
+    // NPOT renderbuffers need clamp-to-edge on native OpenGL ES.
+    gles.TexParameteri(
+        gles2::TEXTURE_2D,
+        gles2::TEXTURE_WRAP_S,
+        gles2::CLAMP_TO_EDGE as _,
+    );
+    gles.TexParameteri(
+        gles2::TEXTURE_2D,
+        gles2::TEXTURE_WRAP_T,
+        gles2::CLAMP_TO_EDGE as _,
+    );
 
-    gles.BindFramebuffer(gles2::FRAMEBUFFER, 0);
+    let host_drawable = crate::window::Window::current_host_drawable_bindings();
+    gles.BindFramebuffer(gles2::FRAMEBUFFER, host_drawable.0);
     gles.DeleteFramebuffers(1, &src_fb);
 
     // Configure the destination viewport (the window) and clear.
@@ -638,7 +663,7 @@ unsafe fn present_renderbuffer_es2(
     let program = ensure_present_program(gles);
     gles.UseProgram(program.program);
     gles.Uniform1i(program.u_tex, 0);
-    let m = crate::matrix::Matrix::<4>::from(&rotation_matrix);
+    let m = crate::gles::present::texture_rotation(rotation_matrix);
     let cols = m.columns();
     gles.UniformMatrix4fv(
         program.u_tex_mat,
@@ -1008,8 +1033,16 @@ unsafe fn present_renderbuffer(env: &mut Environment) {
 
     if gles.is_es2() {
         present_renderbuffer_es2(gles, viewport, rotation_matrix, virtual_cursor_visible_at);
+        let old_framebuffer = get_int(gles, gles11::FRAMEBUFFER_BINDING_OES) as u32;
+        let old_renderbuffer = get_int(gles, gles11::RENDERBUFFER_BINDING_OES) as u32;
+        let host_drawable = crate::window::Window::current_host_drawable_bindings();
+        gles.BindFramebuffer(crate::gles::gles2_raw::FRAMEBUFFER, host_drawable.0);
+        gles.BindRenderbuffer(crate::gles::gles2_raw::RENDERBUFFER, host_drawable.1);
         std::mem::drop(gles_boxed);
         env.window.as_ref().unwrap().swap_window();
+        let mut gles = gles_ctx.make_current(env.window.as_mut().unwrap());
+        gles.BindFramebuffer(crate::gles::gles2_raw::FRAMEBUFFER, old_framebuffer);
+        gles.BindRenderbuffer(crate::gles::gles2_raw::RENDERBUFFER, old_renderbuffer);
         return;
     }
 
@@ -1059,26 +1092,21 @@ unsafe fn present_renderbuffer(env: &mut Environment) {
         gles11::TEXTURE_MIN_FILTER,
         gles11::LINEAR as _,
     );
-    // Wrapping, not clamping: [crate::gles::present::present_frame] rotates
-    // texture coordinates that run 0..1 about the origin, so a quarter turn
-    // puts them outside the texture and only wrapping brings them back. Clamp
-    // here and every row samples one edge texel, which presents the frame as
-    // horizontal bands of flat colour.
+    // Rotation stays within the texture, permitting NPOT-safe clamping.
     gles.TexParameteri(
         gles11::TEXTURE_2D,
         gles11::TEXTURE_WRAP_S,
-        gles11::REPEAT as _,
+        gles11::CLAMP_TO_EDGE as _,
     );
     gles.TexParameteri(
         gles11::TEXTURE_2D,
         gles11::TEXTURE_WRAP_T,
-        gles11::REPEAT as _,
+        gles11::CLAMP_TO_EDGE as _,
     );
 
-    // Clean up the framebuffer object since we no longer need it.
-    // This also sets the framebuffer bindings back to zero, so rendering
-    // will go to the default framebuffer (the window).
     gles.DeleteFramebuffersOES(1, &src_framebuffer);
+    let host_drawable = crate::window::Window::current_host_drawable_bindings();
+    gles.BindFramebufferOES(gles11::FRAMEBUFFER_OES, host_drawable.0);
 
     // Reset various things that could affect the quad or virtual cursor we're
     // going to draw. Back up the old state while doing so, so it can be
@@ -1214,14 +1242,17 @@ unsafe fn present_renderbuffer(env: &mut Environment) {
 
     std::mem::drop(gles_boxed);
 
-    // SDL2's documentation warns 0 should be bound to the draw framebuffer
-    // when swapping the window, so this is the perfect moment.
+    // SDL's UIKit swap presents the currently bound host renderbuffer.
+    let mut gles = gles_ctx.make_current(env.window.as_mut().unwrap());
+    gles.BindRenderbufferOES(gles11::RENDERBUFFER_OES, host_drawable.1);
+    drop(gles);
     env.window.as_ref().unwrap().swap_window();
 
     let mut gles_boxed = gles_ctx.make_current(env.window.as_mut().unwrap());
     let gles = gles_boxed.as_mut();
 
     // Restore the other bindings
+    gles.BindRenderbufferOES(gles11::RENDERBUFFER_OES, renderbuffer);
     gles.BindTexture(gles11::TEXTURE_2D, old_texture_2d);
     gles.BindFramebufferOES(gles11::FRAMEBUFFER_OES, old_framebuffer);
 

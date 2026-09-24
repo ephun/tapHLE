@@ -126,9 +126,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())dealloc {
     let UITextFieldHostObject {
+        superclass,
         text_label,
         ..
     } = std::mem::take(env.objc.borrow_mut(this));
+    // Superclass teardown still owns the view hierarchy and backing layer.
+    env.objc.borrow_mut::<UITextFieldHostObject>(this).superclass = superclass;
 
     release(env, text_label);
     msg_super![env; this dealloc]

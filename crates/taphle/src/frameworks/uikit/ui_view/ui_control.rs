@@ -119,7 +119,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())dealloc {
     let UIControlHostObject {
-        superclass: _,
+        superclass,
         enabled: _,
         selected: _,
         highlighted: _,
@@ -129,6 +129,8 @@ pub const CLASSES: ClassExports = objc_classes! {
         action_targets: _, // targets are weak references, nothing to do
         tracked_touch,
     } = std::mem::take(env.objc.borrow_mut(this));
+    // Superclass teardown still owns the view hierarchy and backing layer.
+    env.objc.borrow_mut::<UIControlHostObject>(this).superclass = superclass;
 
     release(env, tracked_touch);
 

@@ -11,6 +11,7 @@
 
 mod eagl;
 mod gles_guest;
+mod object_names;
 
 use std::path::PathBuf;
 

@@ -3,10 +3,11 @@ Integration tests
 
 This directory contains integration tests written in Objective-C. They're compiled to a fat (ARMv6 + ARMv7) Mach-O binary and packaged into a bundle (`TestApp.app`) so that they can be run in the emulator like a normal iPhone OS app.
 
-`TestApp.app` is effectively two completely different apps:
+`TestApp.app` has three test modes:
 
 - When launched normally, it is a UIKit app that allows us to do manual testing of various UI-related things.
 - When launched with the `--cli-tests` command-line argument, it is a command-line app that runs a suite of automated tests.
+- With `--gles-tests`, it checks framebuffer/renderbuffer name isolation, pixel output, and shared-context deletion in ES 1 and ES 2. Run this mode visibly, without `--headless`, on each host graphics backend. Pass guest arguments after tapHLE’s `--args` separator.
 
 This file is the canonical reference for the TestApp fixture and its
 toolchain. For which tests to run when, see the test ladder in

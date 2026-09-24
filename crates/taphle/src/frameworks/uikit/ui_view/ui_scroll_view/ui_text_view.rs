@@ -119,13 +119,15 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())dealloc {
     let UITextViewHostObject {
-        superclass: _,
+        superclass,
         editable: _,
         font,
         text,
         text_color,
         text_alignment: _
     } = std::mem::take(env.objc.borrow_mut(this));
+    // Superclass teardown still owns the view hierarchy and backing layer.
+    env.objc.borrow_mut::<UITextViewHostObject>(this).superclass = superclass;
 
     release(env, font);
     release(env, text_color);

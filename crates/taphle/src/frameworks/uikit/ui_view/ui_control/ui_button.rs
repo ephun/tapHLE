@@ -255,7 +255,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())dealloc {
     let UIButtonHostObject {
-        superclass: _,
+        superclass,
         type_: _,
         title_label,
         image_view,
@@ -265,6 +265,8 @@ pub const CLASSES: ClassExports = objc_classes! {
         images_for_states,
         background_images_for_states
     } = std::mem::take(env.objc.borrow_mut(this));
+    // Superclass teardown still owns the view hierarchy and backing layer.
+    env.objc.borrow_mut::<UIButtonHostObject>(this).superclass = superclass;
 
     release(env, title_label);
     release(env, image_view);

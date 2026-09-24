@@ -190,6 +190,7 @@ fn run_test_app(
     let binary_path = target_dir().join(format!("{}{}", binary_name, env::consts::EXE_SUFFIX));
     let mut cmd = Command::new(binary_path);
     let output = cmd
+        .current_dir(tests_dir.join("../../../runtime"))
         .arg(test_app_path)
         // headless mode avoids a distracting window briefly appearing during
         // testing, and works in CI.
