@@ -18,7 +18,7 @@ export TAPHLE_IOS_ARCH="$ARCH"
 export CMAKE_TOOLCHAIN_FILE="$ROOT/cmake/TapHLEiOS.cmake"
 export CMAKE_GENERATOR=Ninja
 export CMAKE="$ROOT/scripts/cmake-ios.sh"
-export IPHONEOS_DEPLOYMENT_TARGET=17.0
+export IPHONEOS_DEPLOYMENT_TARGET=17.4
 export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-Wl,-undefined,dynamic_lookup"
 if [ ! -d "$TAPHLE_BOOST_ROOT/boost" ]; then
     echo "Boost headers were not found at $TAPHLE_BOOST_ROOT" >&2

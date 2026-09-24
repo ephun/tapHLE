@@ -114,6 +114,10 @@ pub struct Frontend {
     settings: FrontendSettings,
     /// Set by Play when apps are set to run in this process.
     pending_in_process: Option<PendingRun>,
+    #[cfg(target_os = "ios")]
+    jit_pending: bool,
+    #[cfg(target_os = "ios")]
+    jit_error: Option<String>,
     /// Which screen the mobile preview is showing.
     mobile_screen: crate::ui::mobile::Screen,
     state: UiState,
@@ -236,6 +240,10 @@ impl Frontend {
             app_dialog: None,
             control_editor: None,
             pending_in_process: None,
+            #[cfg(target_os = "ios")]
+            jit_pending: false,
+            #[cfg(target_os = "ios")]
+            jit_error: None,
             mobile_screen: Default::default(),
             about: None,
             import_report: None,
@@ -902,6 +910,15 @@ impl Frontend {
 
         let data_dir = self.data_dir.clone();
         if self.settings.run_in_process {
+            #[cfg(target_os = "ios")]
+            match crate::platform::jit::begin() {
+                Ok(ready) => self.jit_pending = !ready,
+                Err(error) => {
+                    self.note(LogLevel::Error, &error);
+                    self.jit_error = Some(error);
+                    return;
+                }
+            }
             // Not run here: an app needs SDL's one event pump, and the shell
             // is holding it while this frame is being drawn. Recorded for the
             // shell to carry out once it has put the pump down — the same
@@ -1359,6 +1376,10 @@ impl Frontend {
 
 impl crate::shell::Application for Frontend {
     fn wants_to_hand_over(&mut self) -> bool {
+        #[cfg(target_os = "ios")]
+        if self.jit_pending || self.jit_error.is_some() {
+            return false;
+        }
         self.pending_in_process.is_some()
     }
 
@@ -1396,6 +1417,40 @@ impl crate::shell::Application for Frontend {
     }
 
     fn update(&mut self, ctx: &egui::Context) {
+        #[cfg(target_os = "ios")]
+        {
+            if self.jit_pending {
+                match crate::platform::jit::poll() {
+                    Ok(true) => self.jit_pending = false,
+                    Ok(false) => {}
+                    Err(error) => {
+                        self.note(LogLevel::Error, &error);
+                        self.jit_error = Some(error);
+                        self.jit_pending = false;
+                        self.pending_in_process = None;
+                    }
+                }
+            }
+            if self.jit_pending || self.jit_error.is_some() {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.heading(if self.jit_pending { "Preparing JIT" } else { "Could not prepare JIT" });
+                    ui.add_space(16.0);
+                    let message = self.jit_error.as_deref().unwrap_or(
+                        "Complete the request in StikDebug, then return to tapHLE. Your app will start when JIT is ready.");
+                    ui.label(egui::RichText::new(message).size(16.0));
+                    ui.add_space(16.0);
+                    if ui.add_sized([200.0, 48.0], egui::Button::new("Return to library")).clicked() {
+                        crate::platform::jit::cancel();
+                        self.jit_pending = false;
+                        self.jit_error = None;
+                        self.pending_in_process = None;
+                        self.mobile_screen = crate::ui::mobile::Screen::Library;
+                    }
+                });
+                ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                return;
+            }
+        }
         self.drain_background(ctx);
         self.collect_dropped_files(ctx);
         self.collect_finished_runs();

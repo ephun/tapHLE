@@ -284,10 +284,17 @@ impl Mem {
     pub const SECONDARY_THREAD_DEFAULT_STACK_SIZE: GuestUSize = 512 * 1024;
 
     /// Create a fresh instance of guest memory.
+    #[cfg(test)]
     pub fn new() -> Mem {
+        Self::try_new().expect("could not reserve guest address space")
+    }
+
+    /// Reserve guest memory, preserving the host error for the frontend.
+    pub fn try_new() -> Result<Mem, String> {
         let size = std::mem::size_of::<Bytes>();
 
-        let ptr = unsafe { crate::mem::host::allocate_memory(size).unwrap() };
+        let ptr = unsafe { crate::mem::host::allocate_memory(size) }
+            .map_err(|e| format!("Could not reserve 4 GiB of guest address space: {e}"))?;
 
         assert_eq!(
             ptr as usize & PAGE_SIZE_ALIGN_MASK as usize,
@@ -299,14 +306,14 @@ impl Mem {
 
         let vm_allocator = VMAllocator::new(0, Self::MAIN_THREAD_STACK_LOW_END);
 
-        Mem {
+        Ok(Mem {
             bytes,
             null_segment_size: 0,
             vm_allocator,
             heap_allocator: None,
             zero_memory_on_free: true,
             quarantined_allocation_size: None,
-        }
+        })
     }
 
     pub fn create_heap(&mut self, size: GuestUSize) -> HeapAllocator {

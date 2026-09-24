@@ -11,6 +11,8 @@
 		A20000000000000000000003 /* dylibs in Resources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000005 /* dylibs */; };
 		A20000000000000000000004 /* fonts in Resources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000006 /* fonts */; };
 		A20000000000000000000005 /* default_options.txt in Resources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000007 /* default_options.txt */; };
+		A20000000000000000000010 /* jit.m in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000010 /* jit.m */; };
+		A20000000000000000000011 /* jit_memory.c in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* jit_memory.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +23,8 @@
 		A30000000000000000000006 /* fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = fonts; path = ../../runtime/fonts; sourceTree = SOURCE_ROOT; };
 		A30000000000000000000007 /* default_options.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = default_options.txt; path = ../../runtime/default_options.txt; sourceTree = SOURCE_ROOT; };
 		A30000000000000000000009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A30000000000000000000010 /* jit.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = jit.m; sourceTree = "<group>"; };
+		A30000000000000000000011 /* jit_memory.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = jit_memory.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -48,6 +52,8 @@
 			isa = PBXGroup;
 			children = (
 				A30000000000000000000001 /* main.m */,
+				A30000000000000000000010 /* jit.m */,
+				A30000000000000000000011 /* jit_memory.c */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -150,6 +156,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A20000000000000000000001 /* main.m in Sources */,
+				A20000000000000000000010 /* jit.m in Sources */,
+				A20000000000000000000011 /* jit_memory.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

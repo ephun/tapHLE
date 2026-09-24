@@ -147,7 +147,7 @@ impl Cpu {
     /// is provided, direct memory access is enabled, and the CPU instance
     /// becomes bound to that [Mem] instance (subsequent calls must use the same
     /// one).
-    pub fn new(direct_memory_access: Option<&mut Mem>) -> Cpu {
+    pub fn new(direct_memory_access: Option<&mut Mem>) -> Result<Cpu, String> {
         // Null page count is in pages rather than bytes. Mem ensures it is
         // page aligned.
         let null_page_count: usize = direct_memory_access
@@ -163,12 +163,24 @@ impl Cpu {
             .map_or(std::ptr::null_mut(), |mem| unsafe {
                 mem.direct_memory_access_ptr()
             });
-        let dynarmic_wrapper =
-            unsafe { tapHLE_DynarmicWrapper_new(direct_memory_access_ptr, null_page_count) };
-        Cpu {
+        let mut error = [0 as std::ffi::c_char; 512];
+        let dynarmic_wrapper = unsafe {
+            tapHLE_DynarmicWrapper_new(
+                direct_memory_access_ptr,
+                null_page_count,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        if dynarmic_wrapper.is_null() {
+            return Err(unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) }
+                .to_string_lossy()
+                .into_owned());
+        }
+        Ok(Cpu {
             dynarmic_wrapper,
             direct_memory_access_ptr,
-        }
+        })
     }
 
     pub fn regs(&self) -> &[u32; 16] {

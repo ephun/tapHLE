@@ -39,7 +39,14 @@ fn main() {
     let workspace_root = workspace_root(package_root);
     let dynarmic_root = workspace_root.join("vendor/dynarmic");
 
-    let mut build = cmake::Config::new(&dynarmic_root);
+    let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    let source = if os == "ios" && arch == "aarch64" {
+        ios_dynarmic_source(&dynarmic_root, package_root)
+    } else {
+        dynarmic_root.clone()
+    };
+    let mut build = cmake::Config::new(&source);
     build.define("DYNARMIC_FRONTENDS", "A32"); // We don't need 64-bit
     build.define("DYNARMIC_WARNINGS_AS_ERRORS", "OFF");
     build.define("DYNARMIC_TESTS", "OFF");
@@ -126,9 +133,9 @@ fn main() {
         link_lib("Zydis");
     }
 
-    // rerun-if-changed seems to not work if pointed to a directory :(
-    //rerun_if_changed(&dynarmic_root);
-    rerun_if_changed(&workspace_root.join(".git/modules/dynarmic/HEAD"));
+    // Track actual sources: .git is a file in a linked worktree, and a
+    // nonexistent .git/modules path makes Cargo rebuild on every invocation.
+    rerun_if_changed(&dynarmic_root);
 
     cc::Build::new()
         .file(package_root.join("lib.cpp"))
@@ -150,4 +157,62 @@ fn workspace_root(package_root: &std::path::Path) -> std::path::PathBuf {
         .find(|dir| dir.join("vendor").is_dir())
         .unwrap_or_else(|| panic!("no vendor directory above {}", package_root.display()))
         .to_path_buf()
+}
+
+// Build an isolated overlay of the pinned dependency. Never edit a submodule
+// in place or require an unpublished submodule commit to reproduce this build.
+fn ios_dynarmic_source(source: &Path, package: &Path) -> std::path::PathBuf {
+    fn copy_tree(source: &Path, dest: &Path) {
+        std::fs::create_dir_all(dest).unwrap();
+        for entry in std::fs::read_dir(source).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_name() == ".git" {
+                continue;
+            }
+            let target = dest.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else if !entry
+                .path()
+                .ends_with("externals/oaknut/include/oaknut/code_block.hpp")
+                && !entry
+                    .path()
+                    .ends_with("src/dynarmic/backend/arm64/address_space.cpp")
+                && std::fs::read(&target).ok() != Some(std::fs::read(entry.path()).unwrap())
+            {
+                std::fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+    fn write_changed(path: &Path, bytes: &[u8]) {
+        if std::fs::read(path).ok().as_deref() != Some(bytes) {
+            std::fs::write(path, bytes).unwrap();
+        }
+    }
+    let dest =
+        std::path::PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("ios-dynarmic-source");
+    copy_tree(source, &dest);
+    let header = package.join("ios_code_block.hpp");
+    rerun_if_changed(&header);
+    write_changed(
+        &dest.join("externals/oaknut/include/oaknut/code_block.hpp"),
+        &std::fs::read(header).unwrap(),
+    );
+    let relative = "src/dynarmic/backend/arm64/address_space.cpp";
+    let path = dest.join(relative);
+    let text = std::fs::read_to_string(source.join(relative)).unwrap();
+    // Oaknut's constructor takes the writable view first, executable second.
+    // This covers the main emitter and both relocation/link-patching emitters.
+    let old = "mem.ptr(), mem.ptr()";
+    assert_eq!(
+        text.matches(old).count(),
+        3,
+        "review iOS overlay after Dynarmic update"
+    );
+    write_changed(
+        &path,
+        text.replace(old, "mem.writable_ptr(), mem.ptr()")
+            .as_bytes(),
+    );
+    dest
 }

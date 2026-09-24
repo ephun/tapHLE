@@ -52,6 +52,8 @@ extern "C" {
     pub fn tapHLE_DynarmicWrapper_new(
         dynamic_memory_access_ptr: *mut std::ffi::c_void,
         null_page_count: usize,
+        error: *mut std::ffi::c_char,
+        error_size: usize,
     ) -> *mut tapHLE_DynarmicWrapper;
     pub fn tapHLE_DynarmicWrapper_delete(cpu: *mut tapHLE_DynarmicWrapper);
     pub fn tapHLE_DynarmicWrapper_regs_const(cpu: *const tapHLE_DynarmicWrapper) -> *const u32;

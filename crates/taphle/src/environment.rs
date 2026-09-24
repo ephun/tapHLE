@@ -427,7 +427,7 @@ impl Environment {
             )))
         };
 
-        let mut mem = mem::Mem::new();
+        let mut mem = mem::Mem::try_new()?;
 
         let is_spore = bundle.bundle_identifier().starts_with("com.ea.spore");
         let is_critter_crunch = bundle
@@ -537,7 +537,7 @@ impl Environment {
         let cpu = cpu::Cpu::new(match options.direct_memory_access {
             true => Some(&mut mem),
             false => None,
-        });
+        })?;
 
         let main_thread_init_routine = Coroutine::new(move |yielder, mut env: Environment| {
             let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -713,7 +713,11 @@ impl Environment {
         // the app starts doing anything, rather than surfacing halfway through
         // a run as a step that mysteriously does nothing.
         if let Some(map_path) = env.options.replay.clone() {
-            let loaded = replay::Replay::load(&map_path, env.options.replay_quit)?;
+            let mut loaded = replay::Replay::load(&map_path, env.options.replay_quit)?;
+            if let Some(window) = env.window.as_ref() {
+                loaded
+                    .configure_viewport(window.viewport(), env.options.replay_scale_to_viewport)?;
+            }
             echo!("Replaying clickmap {}", map_path.display());
             env.replay = Some(loaded);
         }

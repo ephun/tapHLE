@@ -20,3 +20,6 @@ pub mod dialogs;
 pub mod http;
 pub mod process;
 pub mod storage;
+
+#[cfg(target_os = "ios")]
+pub mod jit;
