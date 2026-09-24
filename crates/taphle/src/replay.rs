@@ -88,6 +88,7 @@ enum Phase {
 
 #[derive(Debug)]
 pub struct Replay {
+    reference_size: Option<(f32, f32)>,
     steps: Vec<Step>,
     index: usize,
     phase: Phase,
@@ -186,13 +187,47 @@ impl Replay {
             });
         }
 
+        let reference_size = map.get("window").and_then(|window| {
+            let width = window.get("width")?.as_f64()? as f32;
+            let height = window.get("height")?.as_f64()? as f32;
+            (width > 0.0 && height > 0.0).then_some((width, height))
+        });
         Ok(Replay {
+            reference_size,
             steps,
             index: 0,
             phase: Phase::Starting,
             finished: false,
             quit_when_done,
         })
+    }
+
+    pub fn configure_viewport(
+        &mut self,
+        viewport: (u32, u32, u32, u32),
+        scale: bool,
+    ) -> Result<(), String> {
+        if let Some((width, height)) = self.reference_size {
+            let (x, y, w, h) = viewport;
+            if scale {
+                echo!(
+                    "Replay: explicit viewport scaling from {}x{} to {}x{} at ({}, {}).",
+                    width,
+                    height,
+                    w,
+                    h,
+                    x,
+                    y
+                );
+            } else if x != 0 || y != 0 || width != w as f32 || height != h as f32 {
+                return Err(format!(
+                    "Replay window mismatch: recorded {width}x{height}, viewport {w}x{h} at ({x}, {y}). Use --replay-scale-to-viewport to explicitly adapt coordinates."
+                ));
+            } else {
+                self.reference_size = None;
+            }
+        }
+        Ok(())
     }
 
     pub fn is_finished(&self) -> bool {
@@ -249,6 +284,26 @@ pub fn tick(env: &mut Environment) -> Option<Instant> {
     next_due
 }
 
+fn inject_touch(
+    window: &mut Window,
+    reference_size: Option<(f32, f32)>,
+    phase: TouchPhase,
+    point: (f32, f32),
+) {
+    // Maps are recorded in a desktop client area. Scale into the actual
+    // drawable viewport before using the ordinary input transform.
+    let point = if let Some((width, height)) = reference_size {
+        let (x, y, w, h) = window.viewport();
+        (
+            x as f32 + point.0 * w as f32 / width,
+            y as f32 + point.1 * h as f32 / height,
+        )
+    } else {
+        point
+    };
+    window.inject_touch(phase, point);
+}
+
 fn advance(replay: &mut Replay, window: &mut Window, now: Instant) -> Option<Instant> {
     loop {
         let Some(step) = replay.steps.get(replay.index) else {
@@ -274,13 +329,13 @@ fn advance(replay: &mut Replay, window: &mut Window, now: Instant) -> Option<Ins
                         };
                     }
                     Action::Tap { at, press_ms } => {
-                        window.inject_touch(TouchPhase::Down, *at);
+                        inject_touch(window, replay.reference_size, TouchPhase::Down, *at);
                         replay.phase = Phase::Holding {
                             until: now + Duration::from_millis(*press_ms),
                         };
                     }
                     Action::Swipe { from, .. } => {
-                        window.inject_touch(TouchPhase::Down, *from);
+                        inject_touch(window, replay.reference_size, TouchPhase::Down, *from);
                         replay.phase = Phase::Swiping {
                             started: now,
                             next_move: now + Duration::from_millis(SWIPE_STEP_MS),
@@ -324,7 +379,7 @@ fn advance(replay: &mut Replay, window: &mut Window, now: Instant) -> Option<Ins
                     return Some(until);
                 }
                 if let Action::Tap { at, .. } = &step.action {
-                    window.inject_touch(TouchPhase::Up, *at);
+                    inject_touch(window, replay.reference_size, TouchPhase::Up, *at);
                 }
                 replay.phase = Phase::Settling {
                     until: now + Duration::from_millis(step.settle_ms),
@@ -343,15 +398,20 @@ fn advance(replay: &mut Replay, window: &mut Window, now: Instant) -> Option<Ins
                 };
                 let elapsed = now.duration_since(started).as_millis() as u64;
                 if elapsed >= *duration_ms {
-                    window.inject_touch(TouchPhase::Move, *to);
-                    window.inject_touch(TouchPhase::Up, *to);
+                    inject_touch(window, replay.reference_size, TouchPhase::Move, *to);
+                    inject_touch(window, replay.reference_size, TouchPhase::Up, *to);
                     replay.phase = Phase::Settling {
                         until: now + Duration::from_millis(step.settle_ms),
                     };
                 } else {
                     if now >= next_move {
                         let fraction = elapsed as f32 / *duration_ms as f32;
-                        window.inject_touch(TouchPhase::Move, along(*from, *to, fraction));
+                        inject_touch(
+                            window,
+                            replay.reference_size,
+                            TouchPhase::Move,
+                            along(*from, *to, fraction),
+                        );
                         replay.phase = Phase::Swiping {
                             started,
                             next_move: now + Duration::from_millis(SWIPE_STEP_MS),
@@ -385,6 +445,23 @@ fn action_name(action: &Action) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn viewport_adaptation_requires_explicit_opt_in() {
+        let mut replay = Replay {
+            reference_size: Some((320.0, 480.0)),
+            steps: Vec::new(),
+            index: 0,
+            phase: Phase::Starting,
+            finished: false,
+            quit_when_done: false,
+        };
+        assert!(replay.configure_viewport((0, 0, 640, 960), false).is_err());
+        assert!(replay.configure_viewport((0, 0, 640, 960), true).is_ok());
+        assert_eq!(replay.reference_size, Some((320.0, 480.0)));
+        assert!(replay.configure_viewport((0, 0, 320, 480), false).is_ok());
+        assert_eq!(replay.reference_size, None);
+    }
 
     #[test]
     fn a_swipe_interpolates_and_clamps() {

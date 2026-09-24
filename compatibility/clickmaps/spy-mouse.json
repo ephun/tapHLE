@@ -1,0 +1,45 @@
+{
+  "clickmap_version": 1,
+  "window": {
+    "width": 1024,
+    "height": 768
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 5000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 55000
+    },
+    {
+      "id": "continue",
+      "action": "tap",
+      "at": [
+        512,
+        384
+      ],
+      "settle_ms": 15000
+    }
+  ],
+  "app": {
+    "bundle_identifier": "com.ea.spymouse.ipad.inc",
+    "display_name": "SPYmouseHD",
+    "version": "1.1.1",
+    "sha256": "92b4712f4c15d17c83c237692126275519583568b115ddeeb69507669adaaeb5"
+  },
+  "recorded": {
+    "date": "2026-09-23",
+    "host": "iOS 18.5 Intel Simulator, Apple Software Renderer",
+    "by": "OpenAI Codex"
+  },
+  "milestone": {
+    "rating": 2,
+    "describes": "The first tutorial level renders with the mouse, cheese and suggested path."
+  },
+  "notes": [
+    "Observed on an uncommitted development build with explicit --replay-scale-to-viewport. This route is not a published compatibility rating; other hosts must verify it independently."
+  ]
+}
