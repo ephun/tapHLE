@@ -1003,11 +1003,11 @@ impl Frontend {
 
     fn apply(&mut self, ctx: &egui::Context, action: Action) {
         match action {
-            Action::AddApps => {
-                if let Some(files) = crate::platform::dialogs::pick_apps() {
-                    self.import_paths(files);
-                }
-            }
+            Action::AddApps => match crate::platform::dialogs::pick_apps() {
+                Ok(Some(files)) => self.import_paths(files),
+                Ok(None) => {}
+                Err(error) => self.note(LogLevel::Warning, error),
+            },
             Action::AddFolder => {
                 if let Some(folder) =
                     crate::platform::dialogs::pick_folder("Add every app in a folder")
@@ -1122,14 +1122,12 @@ impl Frontend {
                         LogLevel::Warning,
                         format!("{} does not exist yet.", path.display()),
                     );
-                } else if let Err(e) =
-                    crate::platform::process::open_in_desktop(&path.display().to_string())
-                {
+                } else if let Err(e) = crate::platform::process::open_path(&path) {
                     self.note(LogLevel::Warning, e);
                 }
             }
             Action::OpenUrl(url) => {
-                if let Err(e) = crate::platform::process::open_in_desktop(&url) {
+                if let Err(e) = crate::platform::process::open_url(&url) {
                     self.note(LogLevel::Warning, e);
                 }
             }

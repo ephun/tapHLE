@@ -159,8 +159,15 @@ pub fn user_data_base_path() -> Cow<'static, Path> {
     }
     #[cfg(target_os = "ios")]
     {
+        extern "C" {
+            fn tapHLE_ios_documents_path() -> *const std::ffi::c_char;
+        }
+        let path = unsafe { tapHLE_ios_documents_path() };
+        assert!(!path.is_null(), "iOS did not provide its Documents path");
         Cow::from(PathBuf::from(
-            sdl2::filesystem::pref_path("org.taphle", "tapHLE").unwrap(),
+            unsafe { std::ffi::CStr::from_ptr(path) }
+                .to_string_lossy()
+                .into_owned(),
         ))
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]

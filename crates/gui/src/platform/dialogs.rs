@@ -8,16 +8,30 @@
 use std::path::PathBuf;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub fn pick_apps() -> Option<Vec<PathBuf>> {
-    rfd::FileDialog::new()
+pub fn pick_apps() -> Result<Option<Vec<PathBuf>>, String> {
+    Ok(rfd::FileDialog::new()
         .add_filter("iPhone apps", &["ipa"])
         .set_title("Add apps to the tapHLE library")
-        .pick_files()
+        .pick_files())
 }
 
-#[cfg(any(target_os = "android", target_os = "ios"))]
-pub fn pick_apps() -> Option<Vec<PathBuf>> {
-    None
+#[cfg(target_os = "ios")]
+pub fn pick_apps() -> Result<Option<Vec<PathBuf>>, String> {
+    extern "C" {
+        fn tapHLE_ios_present_app_picker() -> i32;
+    }
+    // The native picker reports its result later as SDL drop-file events.
+    // Returning no paths here keeps the shared action synchronous without
+    // creating a second import path.
+    match unsafe { tapHLE_ios_present_app_picker() } {
+        1 => Ok(None),
+        _ => Err("iOS could not present the app document picker.".to_string()),
+    }
+}
+
+#[cfg(target_os = "android")]
+pub fn pick_apps() -> Result<Option<Vec<PathBuf>>, String> {
+    Ok(None)
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

@@ -147,6 +147,8 @@ pub const SECONDARY_TEXT: f32 = 14.0;
 const NAV_HEIGHT: f32 = 64.0;
 /// The bar along the top, which is a label rather than a control.
 const TITLE_HEIGHT: f32 = 52.0;
+const MOBILE_SCROLL_BAR_VISIBILITY: egui::scroll_area::ScrollBarVisibility =
+    egui::scroll_area::ScrollBarVisibility::AlwaysVisible;
 
 /// Draw a whole mobile frame into `rect`.
 ///
@@ -419,6 +421,7 @@ fn content_ui(ui: &mut Ui, rect: Rect, id: &'static str, add: impl FnOnce(&mut U
     egui::ScrollArea::vertical()
         .id_salt(id)
         .auto_shrink([false, false])
+        .scroll_bar_visibility(MOBILE_SCROLL_BAR_VISIBILITY)
         .show(&mut child, |ui| {
             ui.set_width(ui.available_width());
             ui.add_space(12.0);
@@ -662,5 +665,13 @@ mod tests {
     fn a_row_is_at_least_a_touch_target_tall() {
         assert!(TOUCH_TARGET + 16.0 >= TOUCH_TARGET);
         assert!(NAV_HEIGHT >= TOUCH_TARGET);
+    }
+
+    #[test]
+    fn mobile_content_keeps_its_vertical_scrollbar_visible() {
+        assert_eq!(
+            MOBILE_SCROLL_BAR_VISIBILITY,
+            egui::scroll_area::ScrollBarVisibility::AlwaysVisible
+        );
     }
 }

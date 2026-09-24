@@ -112,6 +112,89 @@ class IOSJITCleanupTests(unittest.TestCase):
         self.assertIn("if (execute) munmap(execute, pool_size);", source)
 
 
+class IOSHostIntegrationTests(unittest.TestCase):
+    def test_frontend_separates_ios_paths_from_external_urls(self):
+        dialogs = (ROOT / "crates/gui/src/platform/dialogs.rs").read_text()
+        process = (ROOT / "crates/gui/src/platform/process.rs").read_text()
+        host = (ROOT / "platforms/ios/Sources/main.m").read_text()
+        path_route = process.split("pub fn open_path", 1)[1].split("pub fn open_url", 1)[0]
+        url_route = process.split("pub fn open_url", 1)[1]
+        self.assertIn("tapHLE_ios_present_app_picker", dialogs)
+        self.assertIn("tapHLE_ios_export_folder", path_route)
+        self.assertNotIn("tapHLE_ios_open_url", path_route)
+        self.assertIn("tapHLE_ios_open_url", url_route)
+        self.assertIn("initForExportingURLs:@[folder] asCopy:YES", host)
+
+    def test_document_pickers_present_on_an_active_scene_and_main_thread(self):
+        host = (ROOT / "platforms/ios/Sources/main.m").read_text()
+        self.assertNotIn(".keyWindow", host)
+        self.assertIn("UISceneActivationStateForegroundActive", host)
+        self.assertIn("window.isKeyWindow", host)
+        self.assertIn("NSThread.isMainThread", host)
+        self.assertIn("dispatch_sync(dispatch_get_main_queue()", host)
+
+    def test_imports_release_scope_and_enqueue_only_owned_copies(self):
+        host = (ROOT / "platforms/ios/Sources/main.m").read_text()
+        callback = host.split("didPickDocumentsAtURLs:", 1)[1].split(
+            "documentPickerWasCancelled:", 1)[0]
+        copy_branch = callback.split("copyItemAtURL:source", 1)[1]
+        self.assertIn("push_drop_file(destination)", copy_branch)
+        self.assertNotIn("push_drop_file(source)", callback)
+        self.assertIn("stopAccessingSecurityScopedResource", callback)
+        self.assertNotIn("security_scoped_urls", host)
+
+    def test_import_copy_is_async_and_completion_returns_to_main(self):
+        host = (ROOT / "platforms/ios/Sources/main.m").read_text()
+        callback = host.split("didPickDocumentsAtURLs:", 1)[1].split(
+            "documentPickerWasCancelled:", 1)[0]
+        background = callback.split("dispatch_async(import_queue()", 1)[1]
+        completion = background.split("dispatch_async(dispatch_get_main_queue()", 1)[1]
+        self.assertIn("copyItemAtURL:source", background)
+        self.assertIn("push_drop_file(destination)", completion)
+        self.assertIn("document_picker_delegate == delegate", completion)
+        self.assertNotIn("document_picker_delegate = nil", background.split(
+            "dispatch_async(dispatch_get_main_queue()", 1)[0])
+
+    def test_import_destination_is_stable_for_identical_ipa_bytes(self):
+        host = (ROOT / "platforms/ios/Sources/main.m").read_text()
+        self.assertIn("CC_SHA256_DIGEST_LENGTH", host)
+        self.assertIn("destination_for_digest", host)
+        self.assertIn("stringByAppendingPathExtension:@\"ipa\"]", host)
+        self.assertNotIn("available_destination", host)
+
+    def test_filtered_drop_event_releases_its_filename(self):
+        host = (ROOT / "platforms/ios/Sources/main.m").read_text()
+        push = host.split("static void push_drop_file", 1)[1].split(
+            "static NSURL *available_destination", 1)[0]
+        self.assertIn("SDL_PushEvent(&event) != 1", push)
+        self.assertIn("SDL_free(event.drop.file)", push)
+
+    def test_ios_user_data_is_in_the_shared_documents_directory(self):
+        paths = (ROOT / "crates/taphle/src/paths.rs").read_text()
+        host = (ROOT / "platforms/ios/Sources/main.m").read_text()
+        self.assertIn("tapHLE_ios_documents_path", paths)
+        self.assertIn("NSDocumentDirectory", host)
+
+    def test_stikdebug_request_and_package_prerequisites_are_explicit(self):
+        source = (ROOT / "platforms/ios/Sources/jit.m").read_text()
+        info = (ROOT / "platforms/ios/Config/Info.plist").read_text()
+        entitlements = (ROOT / "platforms/ios/Config/TapHLE.entitlements").read_text()
+        self.assertIn('queryItemWithName:@"bundle-id"', source)
+        self.assertIn('queryItemWithName:@"pid"', source)
+        self.assertIn('queryItemWithName:@"script-name" value:@"universal.js"', source)
+        begin = source.split("int tapHLE_ios_jit_begin(void)", 1)[1].split(
+            "int tapHLE_ios_jit_poll(void)", 1)[0]
+        poll = source.split("int tapHLE_ios_jit_poll(void)", 1)[1].split(
+            "void tapHLE_ios_jit_cancel", 1)[0]
+        self.assertLess(begin.index("canOpenURL"), begin.index("openURL"))
+        self.assertIn("completionHandler:^(BOOL success)", begin)
+        self.assertIn("UIApplicationStateActive", poll)
+        self.assertIn("!debugged()", poll)
+        self.assertIn("<string>stikdebug</string>", info)
+        self.assertIn("<key>get-task-allow</key>", entitlements)
+        self.assertIn("<true/>", entitlements)
+
+
 @unittest.skipUnless(sys.platform == "darwin" and shutil.which("clang++"),
                      "requires Darwin VM APIs and clang++")
 class IOSJITMemoryTests(unittest.TestCase):

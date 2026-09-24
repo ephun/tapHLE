@@ -14,6 +14,7 @@
 //! Nothing is needed on other platforms, where a child inherits the parent's
 //! standard streams and no window is created.
 
+use std::path::Path;
 use std::process::Command;
 
 /// Windows process creation flag: give the child no console at all.
@@ -29,19 +30,63 @@ pub fn without_console(command: &mut Command) -> &mut Command {
     command
 }
 
-/// Ask the desktop to open a file, folder or URL with whatever handles it.
-///
-/// Used for "Open app data location" and for opening a compatibility entry in
-/// a browser. Each platform has its own one-line answer for this, so it is not
-/// worth a dependency.
-pub fn open_in_desktop(target: &str) -> Result<(), String> {
+/// Ask the platform to show a filesystem location.
+pub fn open_path(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        use std::ffi::CString;
+
+        extern "C" {
+            fn tapHLE_ios_export_folder(path: *const std::ffi::c_char) -> i32;
+        }
+        let display = path.display();
+        let path = CString::new(path.as_os_str().as_encoded_bytes())
+            .map_err(|_| format!("Could not open {display}: path contains a null byte"))?;
+        return match unsafe { tapHLE_ios_export_folder(path.as_ptr()) } {
+            1 => Ok(()),
+            _ => Err(format!("Could not open {display}.")),
+        };
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        open_with_desktop(path.as_os_str(), &path.display().to_string())
+    }
+}
+
+/// Ask the platform to open an external URL with its registered application.
+pub fn open_url(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        use std::ffi::CString;
+
+        extern "C" {
+            fn tapHLE_ios_open_url(url: *const std::ffi::c_char) -> i32;
+        }
+        let encoded = CString::new(url)
+            .map_err(|_| format!("Could not open {url}: URL contains a null byte"))?;
+        return match unsafe { tapHLE_ios_open_url(encoded.as_ptr()) } {
+            1 => Ok(()),
+            _ => Err(format!("Could not open {url}.")),
+        };
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        open_with_desktop(url.as_ref(), url)
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn open_with_desktop(target: &std::ffi::OsStr, display: &str) -> Result<(), String> {
     let mut command;
     #[cfg(windows)]
     {
         // `start` is a shell builtin, and its first quoted argument is taken
         // as the window title, hence the empty one.
         command = Command::new("cmd");
-        command.args(["/C", "start", "", target]);
+        command.args(["/C", "start", ""]);
+        command.arg(target);
     }
     #[cfg(target_os = "macos")]
     {
@@ -56,5 +101,5 @@ pub fn open_in_desktop(target: &str) -> Result<(), String> {
     without_console(&mut command)
         .spawn()
         .map(|_| ())
-        .map_err(|e| format!("Could not open {target}: {e}"))
+        .map_err(|e| format!("Could not open {display}: {e}"))
 }

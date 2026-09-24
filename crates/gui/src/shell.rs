@@ -225,7 +225,7 @@ pub fn run<A: Application>(
                     let _ = video.clipboard().set_clipboard_text(text);
                 }
                 egui::OutputCommand::OpenUrl(url) => {
-                    let _ = crate::platform::process::open_in_desktop(&url.url);
+                    let _ = crate::platform::process::open_url(&url.url);
                 }
                 egui::OutputCommand::CopyImage(_) => {}
             }

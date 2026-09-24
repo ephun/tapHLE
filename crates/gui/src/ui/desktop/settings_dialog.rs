@@ -232,8 +232,8 @@ pub fn show_app(ctx: &egui::Context, dialog: &mut AppDialog) -> Outcome {
 /// Draw global settings as a mobile page rather than a modal dialog.
 ///
 /// The caller owns the full safe-area body and scrolls it. Categories are a
-/// horizontal strip, so neither a phone's width nor a long translated label
-/// can squeeze the controls beside a desktop-sized sidebar.
+/// vertical list, so navigation and controls share the page's one touch
+/// scroll direction without squeezing beside a desktop-sized sidebar.
 pub fn show_global_mobile(ui: &mut Ui, dialog: &mut GlobalDialog) -> Outcome {
     mobile_category_list(
         ui,
@@ -300,27 +300,25 @@ const MOBILE_TOUCH_TARGET: f32 = 48.0;
 
 fn mobile_category_list(
     ui: &mut Ui,
-    id: &'static str,
+    _id: &'static str,
     categories: &[Category],
     current: &mut Category,
 ) {
-    egui::ScrollArea::horizontal()
-        .id_salt(id)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                for category in categories {
-                    let selected = *current == *category;
-                    let button = egui::Button::selectable(
-                        selected,
-                        egui::RichText::new(category.label()).size(16.0),
-                    );
-                    if ui.add_sized([112.0, MOBILE_TOUCH_TARGET], button).clicked() {
-                        *current = *category;
-                    }
-                }
-            });
-        });
+    ui.vertical(|ui| {
+        for category in categories {
+            let selected = *current == *category;
+            let button = egui::Button::selectable(
+                selected,
+                egui::RichText::new(category.label()).size(16.0),
+            );
+            if ui
+                .add_sized([ui.available_width(), MOBILE_TOUCH_TARGET], button)
+                .clicked()
+            {
+                *current = *category;
+            }
+        }
+    });
 }
 
 fn mobile_buttons(ui: &mut Ui, draft: &mut EmulatorSettings, show_reset: bool) -> Outcome {
@@ -1382,6 +1380,20 @@ fn paths_page(ui: &mut Ui, draft: &mut FrontendSettings) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mobile_categories_do_not_require_horizontal_scrolling() {
+        let source = include_str!("settings_dialog.rs");
+        let categories = source
+            .splitn(2, "fn mobile_category_list")
+            .nth(1)
+            .unwrap()
+            .splitn(2, "fn mobile_buttons")
+            .next()
+            .unwrap();
+        assert!(!categories.contains("ScrollArea::horizontal"));
+        assert!(categories.contains("vertical"));
+    }
 
     /// The per-app dialog must not offer the categories that only make sense
     /// once, or a person could set an interface scale "for this app".
