@@ -85,6 +85,68 @@ on it, so treat a macOS result as unverified. macOS failures should not displace
 app compatibility work unless they block a debugging or iOS-build path needed
 for that work.
 
+### iOS
+
+The iOS host is built with Xcode and the pinned Rust toolchain. Install the
+`aarch64-apple-ios` Rust target for a device build; the Intel simulator uses
+`x86_64-apple-ios`. Set `DEVELOPER_DIR` if Xcode is installed somewhere other
+than the build helper's default, and point `TAPHLE_BOOST_ROOT` at a directory
+containing `boost/` headers. For example, with Homebrew Boost:
+
+```sh
+rustup target add aarch64-apple-ios
+TAPHLE_BOOST_ROOT=/usr/local/opt/boost/include \
+  sh platforms/ios/scripts/build-host.sh iphoneos Debug --ipa
+```
+
+The helper writes an ad-hoc-signed IPA and a JSON provenance/hash manifest under
+`build/ios-iphoneos/`. Re-sign with the sideloading tool, preserving
+`get-task-allow`. This development package is not a numbered release. For a
+simulator app, omit `--ipa` and use `iphonesimulator` instead of `iphoneos`.
+The ARM64 build makes an isolated overlay of the pinned Dynarmic source under
+Cargo's output directory; it does not modify the vendored checkout. The overlay
+uses separate writable/executable JIT views prepared by the iOS host.
+
+Install StikDebug separately and complete its pairing, Developer Mode and VPN
+setup. Play requests JIT for the installed bundle identifier and current PID.
+On TXM devices it selects `universal.js`; return to tapHLE to let preparation
+finish. The frontend waits up to two minutes and reports errors before handing
+its window to a guest. The prepared pool lasts for this process and is reused
+between guest runs; force-quitting tapHLE requires preparation again.
+`jit-status.txt` in tapHLE's Documents directory records the latest native JIT
+stage or failure for device diagnosis. `docs/platforms.md` owns runtime status.
+
+After installing the simulator app, run known routes as one automated batch:
+
+```sh
+python3 platforms/ios/scripts/test-simulator.py \
+  --device SIMULATOR_UUID --scale-to-viewport --output /tmp/taphle-simulator-run \
+  baby-monkey glass-tower-2
+```
+
+Add `--cli-fixture crates/taphle/tests/TestApp.app` to run the built synthetic
+CLI suite in the same batch. That suite is independent of host graphics and runs
+headless; the app routes remain visible. `--capture-steps` adds screenshots at
+route transitions, useful when a round ends before the final capture.
+
+Keep Simulator visible. Select every intended case explicitly; missing apps or
+routes fail instead of silently disappearing from coverage. `--maps` selects an
+alternate route directory; `--guest-capture` also captures the submitted GLES
+frame to distinguish guest rendering from host presentation. The output directory
+must be new. It contains the installed binary hash, app and route hashes, logs,
+screenshots and machine-readable results. Existing guest saves are retained;
+record the required save state when reviewing a route. Source provenance records
+the current checkout and does not imply the installed binary was built from it.
+
+Let the runner own polling, replay timing, timeouts, crash detection and capture.
+Do not spend agent turns manually repeating those deterministic steps. Investigate
+failed cases and visually review milestones after the batch. `replay_completed`
+means inputs finished and the process survived the settling interval; it never
+means gameplay, rendering, audio or release readiness passed. Missing captures,
+early exits and timeouts are failures even if no panic appears in the log.
+Malformed routes fail preflight, and runtime errors use console output rather
+than a modal error dialog that would stall unattended testing.
+
 ### Linux
 
 CI installs these on `ubuntu-latest`:

@@ -22,6 +22,28 @@ structure layout, and every calling convention crosses that boundary somewhere.
 
 ## The two programs
 
+### Host parity contract
+
+For one tapHLE revision, every host is intended to expose the same guest API
+behavior and app compatibility. Guest compatibility belongs in the shared
+emulator. Host adapters supply native windows, graphics drawables, input,
+audio, lifecycle handling and executable-memory access; they must not select
+different emulation behavior by app name.
+
+A host-only failure can expose either an adapter defect or a host assumption
+in shared code. Compare the guest output, composition, and native presentation
+stages before changing guest behavior. Correct the responsible contract rather
+than adding per-app host workarounds. Shared changes require regression evidence
+from the other platform testing environments; a successful iOS run does not
+stand in for those checks. Platform VMs validate their own hosts against the
+same revision and artifact identities.
+
+Guest framebuffer and renderbuffer names belong to the emulated EAGL sharegroup.
+The guest API translates them to host names, while native drawable presentation
+uses host names directly. SDL allocations must not change guest object names.
+Bindings remain context-local, including when another context deletes an object.
+The synthetic TestApp `--gles-tests` checks this contract on both ES 1 and ES 2.
+
 tapHLE builds two binaries, and the split is deliberate.
 
 `tapHLE` is the emulator. `Environment` maps guest memory, drives an SDL event

@@ -72,6 +72,15 @@ merges do not, and are recorded here instead of rewriting published history.
 This section records contribution provenance only. The commits and their original
 author/committer metadata remain unchanged.
 
+The following published commit was created during an OpenAI Codex-led iOS
+session after the trailer rule was established, but was pushed without its
+required attribution. Rewriting the published branch would make the recovery
+worse; this entry is the correcting record.
+
+| Commit | Subject | Agent |
+| --- | --- | --- |
+| `b80c005aef1987265d4b52da572ea11380b4baef` | Document iOS sideloading and JIT policy | OpenAI Codex |
+
 ## Agent capability observations
 
 Dated, task-specific records of what coding-agent configurations have actually

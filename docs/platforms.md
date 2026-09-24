@@ -49,7 +49,7 @@ Intent is not state. What is true today:
 | macOS x86_64 | yes | yes, in CI | no — nobody has played an app on it | yes | emulator-only bundle script, inherited | pending the all-five bar | no |
 | Linux x86_64 | yes | attempted in CI, not confirmed | no | yes, `continue-on-error` | portable bundle script, real build pending | pending the all-five bar | no |
 | Android | yes | yes | yes — synthetic app launch, touch and library return | no | debug APK tooling | pending the all-five bar | no |
-| iOS | yes | yes — Intel simulator | partial — frontend visible; synthetic guest UI incomplete | no | Xcode app-bundle tooling; no signed IPA | pending the all-five bar | no |
+| iOS | yes | yes — Intel simulator and ARM64 device build | partial — 24-app simulator sweep completed; physical-device runtime pending | no | Xcode app bundle and ad-hoc IPA tooling; device installation unverified | pending the all-five bar | no |
 
 ### Windows x86_64
 
@@ -104,12 +104,29 @@ options. The shared frontend has been inspected in the real Simulator session
 in portrait and landscape, including safe-area handling, and it can launch the
 synthetic TestApp into the emulator.
 
-This is not yet a complete guest runtime result. The iOS simulator needs the
-OpenAL Soft null backend when its virtual audio device is unavailable, and the
-synthetic guest currently reaches CPU emulation and a presented frame but does
-not render its UIKit controls or visibly react to touch. No physical-device,
-signed IPA or return-to-library result has been earned. Keep those gaps visible;
-a simulator frontend is not a release-eligible iOS product.
+The ARM64 device app also builds with Xcode 16.4 and the iOS 18.5 SDK. Its
+StikDebug coordinator gates guest launch, prepares a reusable JIT pool with
+separate writable/executable mappings, and implements the universal protocol
+for TXM devices. Darwin native tests exercise alias coherence, relocation writes,
+pool reuse, and preparation/protection/allocation errors. These checks do not
+establish that the debugger protocol works on an iPhone. Physical-device JIT,
+sideloaded installation, and guest runtime remain unverified.
+
+On 2026-09-23, all 24 frozen-cohort artifacts completed visible simulator
+replays without a detected crash. Captures show gameplay or tutorials in every
+app after timing-adjusted reruns. Jim and Frank opens the quest letter, collects
+both Eurekas and transitions to the next room. The supplied Shot Shot Shoot copy has embedded
+version 1.01, explicitly accepted by the maintainer for this test. The same
+simulator build passed all 154 synthetic CLI tests and both ES 1/ES 2 graphics
+object-isolation tests. Host checks passed 391 Rust library tests (one ignored),
+53 Python tests, formatting, Clippy and documentation generation.
+
+These are development observations from an uncommitted build, not clean-revision
+compatibility or release-verification claims. The simulator uses the OpenAL Soft
+null backend when its virtual audio device is unavailable, so these runs do not
+verify audible output. The StikDebug handoff, device execution, frontend import
+and repeated Play/return-to-library flow still require physical-device testing.
+Simulator execution does not establish device JIT behavior.
 
 ## Release eligibility
 

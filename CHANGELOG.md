@@ -2,6 +2,25 @@
 
 ## Unreleased for 0.2.4
 
+- Isolate guest framebuffer and renderbuffer names from native window objects,
+  fixing black output caused by host-dependent graphics object allocation.
+
+- Preserve inherited UIKit view state while destroying controls, so surviving
+  child views are detached instead of retaining a freed parent pointer.
+
+- Use Apple-compatible BGRA texture uploads in the iOS graphics backend.
+  Native GLES also rejects unsupported point-size arrays consistently with the
+  desktop backend, avoiding a null-pointer crash when apps use particle effects.
+
+- Restore normal layer invalidation so OpenGL-backed views are not replaced
+  with empty bitmaps. iOS presentation uses the native drawable, and frame
+  rotation no longer requires repeating non-power-of-two textures.
+
+- Sideloaded iOS builds request JIT through StikDebug before launching an app,
+  including executable-region preparation on devices with TXM. Missing JIT
+  access and guest-memory allocation failures now report an error instead of
+  proceeding into CPU initialization. Physical-device validation is pending.
+
 - tapHLE now has a proper window. Open it, see your apps laid out with their
   icons, click one, and press Play. The app opens in its own window and the
   library stays where it is, so closing a game and starting another does not
