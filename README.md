@@ -23,9 +23,7 @@ tapHLE gives the agent rules, tests, and a step-by-step debugging guide.
 
 **[Start here: make an app work with a coding agent](docs/compatibility.md)**
 
-Never upload an IPA, app files, or a raw log. Opening an issue does not promise
-that another contributor will do the work; it gives you and your agent a place
-to record the goal and avoid duplicate work.
+Never upload an IPA, app files, or a raw log.
 
 ## Project direction
 
@@ -69,9 +67,8 @@ cd tapHLE
 cargo build --release
 ```
 
-That produces `tapHLE.exe`. Start it with nothing and it shows the app
-library; give it an app and it runs that app. Full prerequisites,
-troubleshooting and the test ladder are in
+That produces `tapHLE.exe`. Start it with nothing it should try and run that app. 
+Full prerequisites, troubleshooting and the test ladder are in
 **[docs/development.md](docs/development.md)**.
 
 ## Contributing
@@ -84,8 +81,8 @@ If you want to use a coding agent for an app, start with
 
 tapHLE is a fork of the
 [touchHLE project](https://github.com/touchHLE/touchHLE). Upstream deserves
-credit for the emulator architecture and the substantial implementation this
-fork began with; tapHLE has independent goals and contribution policies.
+credit for the emulator architecture and the starting point for this fork. 
+tapHLE has independent goals and contribution policies.
 
 tapHLE modifications are copyright their respective contributors. The
 inherited code remains copyright the touchHLE project contributors and other
