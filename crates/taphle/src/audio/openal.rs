@@ -13,7 +13,7 @@ pub use al_sys::al_defines::*;
 pub use al_sys::al_types;
 pub use al_sys::alc_defines::*;
 pub use al_sys::alc_types;
-pub use al_sys::{alcCloseDevice, alcGetError, alcGetIntegerv, alcGetString, alcOpenDevice};
+pub use al_sys::{alcCloseDevice, alcGetError, alcGetIntegerv, alcGetString};
 
 use al_types::*;
 

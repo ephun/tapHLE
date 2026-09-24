@@ -234,7 +234,7 @@ pub fn show(
         }),
         Screen::About => full_page_ui(ui, body_rect, "mobile-about", |ui| {
             if let Some((dialog, info)) = pages.about.as_mut() {
-                crate::ui::desktop::dialogs::show_about_mobile(ui, *dialog, info, &mut actions);
+                crate::ui::desktop::dialogs::show_about_mobile(ui, dialog, info, &mut actions);
             } else {
                 ui.label("Opening About…");
             }
