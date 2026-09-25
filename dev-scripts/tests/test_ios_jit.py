@@ -335,24 +335,146 @@ int main() {
 '''
         self.compile_and_run(source, ["-Dmunmap=taphle_test_munmap"])
 
-    def test_permission_failure_returns_error(self):
+    def test_permission_failure_unmaps_alias_before_source(self):
         source = r'''
 #include "jit_memory.h"
 #include <cassert>
 #include <cerrno>
 #include <cstring>
-extern "C" int taphle_test_mprotect(void *, size_t, int) {
+#include <sys/mman.h>
+static void *source_mapping;
+static int unmap_calls = 0;
+extern "C" void *taphle_test_mmap(void *address, size_t size, int protection,
+                                   int flags, int descriptor, off_t offset) {
+    assert(protection == (PROT_READ | PROT_EXEC));
+    source_mapping = mmap(address, size, protection, flags, descriptor, offset);
+    return source_mapping;
+}
+extern "C" int taphle_test_mprotect(void *address, size_t size,
+                                     int protection) {
+    assert(address != source_mapping && size == 16384);
+    assert(protection == (PROT_READ | PROT_WRITE));
     errno = EACCES; return -1;
+}
+extern "C" int taphle_test_munmap(void *address, size_t size) {
+    ++unmap_calls;
+    if (unmap_calls == 1) assert(address != source_mapping);
+    if (unmap_calls == 2) assert(address == source_mapping);
+    return munmap(address, size);
 }
 int main() {
     TapHLEJITMemory pool = {nullptr, nullptr, 16384};
     char error[512];
     assert(!tapHLE_jit_memory_prepare(&pool, nullptr, nullptr, error));
     assert(strstr(error, "JIT memory protection failed"));
+    assert(unmap_calls == 2);
     assert(!pool.write && !pool.execute);
 }
 '''
-        self.compile_and_run(source, ["-Dmprotect=taphle_test_mprotect"])
+        self.compile_and_run(
+            source,
+            ["-Dmmap=taphle_test_mmap",
+             "-Dmprotect=taphle_test_mprotect",
+             "-Dmunmap=taphle_test_munmap"])
+
+    def test_remap_failure_releases_source_without_protecting(self):
+        source = r'''
+#include "jit_memory.h"
+#include <mach/mach.h>
+#include <mach/vm_map.h>
+#include <cassert>
+#include <cstring>
+#include <sys/mman.h>
+static void *source_mapping;
+static int unmap_calls = 0;
+extern "C" void *taphle_test_mmap(void *address, size_t size, int protection,
+                                   int flags, int descriptor, off_t offset) {
+    assert(protection == (PROT_READ | PROT_EXEC));
+    source_mapping = mmap(address, size, protection, flags, descriptor, offset);
+    return source_mapping;
+}
+extern "C" kern_return_t taphle_test_vm_remap(
+    vm_map_t, vm_address_t *, vm_size_t, vm_address_t, int, vm_map_read_t,
+    vm_address_t source, boolean_t copy, vm_prot_t *, vm_prot_t *,
+    vm_inherit_t) {
+    assert((void *)source == source_mapping && copy == FALSE);
+    return KERN_NO_SPACE;
+}
+extern "C" int taphle_test_mprotect(void *, size_t, int) {
+    assert(false); return -1;
+}
+extern "C" int taphle_test_munmap(void *address, size_t size) {
+    ++unmap_calls;
+    assert(address == source_mapping);
+    return munmap(address, size);
+}
+int main() {
+    TapHLEJITMemory pool = {nullptr, nullptr, 16384};
+    char error[512];
+    assert(!tapHLE_jit_memory_prepare(&pool, nullptr, nullptr, error));
+    assert(strstr(error, "JIT alias mapping failed"));
+    assert(unmap_calls == 1);
+    assert(!pool.write && !pool.execute);
+}
+'''
+        self.compile_and_run(
+            source,
+            ["-Dmmap=taphle_test_mmap",
+             "-Dvm_remap=taphle_test_vm_remap",
+             "-Dmprotect=taphle_test_mprotect",
+             "-Dmunmap=taphle_test_munmap"])
+
+    def test_non_txm_uses_rx_source_and_shared_rw_alias(self):
+        source = r'''
+#include "jit_memory.h"
+#include <mach/mach.h>
+#include <mach/vm_map.h>
+#include <cassert>
+#include <sys/mman.h>
+static int mmap_calls = 0, remap_calls = 0, mprotect_calls = 0;
+extern "C" void *taphle_test_mmap(void *address, size_t size, int protection,
+                                   int flags, int descriptor, off_t offset) {
+    ++mmap_calls;
+    assert(address == nullptr && size == 16384);
+    assert(protection == (PROT_READ | PROT_EXEC));
+    assert(flags == (MAP_PRIVATE | MAP_ANON));
+    assert(descriptor == -1 && offset == 0);
+    return mmap(address, size, protection, flags, descriptor, offset);
+}
+extern "C" kern_return_t taphle_test_vm_remap(
+    vm_map_t target, vm_address_t *alias, vm_size_t size, vm_address_t mask,
+    int flags, vm_map_read_t source_task, vm_address_t source, boolean_t copy,
+    vm_prot_t *current, vm_prot_t *maximum, vm_inherit_t inheritance) {
+    ++remap_calls;
+    assert(target == mach_task_self() && source_task == mach_task_self());
+    assert(size == 16384 && mask == 0 && flags == VM_FLAGS_ANYWHERE);
+    assert(copy == FALSE && inheritance == VM_INHERIT_NONE);
+    return vm_remap(target, alias, size, mask, flags, source_task, source,
+                    copy, current, maximum, inheritance);
+}
+extern "C" int taphle_test_mprotect(void *address, size_t size,
+                                     int protection) {
+    ++mprotect_calls;
+    assert(size == 16384 && protection == (PROT_READ | PROT_WRITE));
+    return mprotect(address, size, protection);
+}
+int main() {
+    TapHLEJITMemory pool = {nullptr, nullptr, 16384};
+    char error[512];
+    assert(tapHLE_jit_memory_prepare(&pool, nullptr, nullptr, error));
+    assert(mmap_calls == 1 && remap_calls == 1 && mprotect_calls == 1);
+    assert(pool.write && pool.execute && pool.write != pool.execute);
+    *static_cast<volatile unsigned *>(pool.write) = 0x12345678;
+    assert(*static_cast<volatile unsigned *>(pool.execute) == 0x12345678);
+    assert(munmap(pool.write, pool.size) == 0);
+    assert(munmap(pool.execute, pool.size) == 0);
+}
+'''
+        self.compile_and_run(
+            source,
+            ["-Dmmap=taphle_test_mmap",
+             "-Dvm_remap=taphle_test_vm_remap",
+             "-Dmprotect=taphle_test_mprotect"])
 
     def test_map_failure_returns_error(self):
         source = r'''
@@ -361,7 +483,9 @@ int main() {
 #include <cerrno>
 #include <cstring>
 #include <sys/mman.h>
-extern "C" void *taphle_test_mmap(void *, size_t, int, int, int, off_t) {
+extern "C" void *taphle_test_mmap(void *, size_t, int protection,
+                                   int, int, off_t) {
+    assert(protection == (PROT_READ | PROT_EXEC));
     errno = ENOMEM; return MAP_FAILED;
 }
 int main() {
