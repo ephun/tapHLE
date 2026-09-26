@@ -339,6 +339,11 @@ pub fn field(ui: &mut Ui, label: &str, value: &str) {
     if value.trim().is_empty() {
         return;
     }
+    if ui.available_width() < 360.0 {
+        ui.add(egui::Label::new(egui::RichText::new(label).color(theme::LIGHT.text_dim)).wrap());
+        ui.add(egui::Label::new(value).wrap());
+        return;
+    }
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         let label_width = 96.0;
@@ -364,6 +369,10 @@ pub fn field(ui: &mut Ui, label: &str, value: &str) {
 /// proportional text it simply looked like a mistake, and a long path in a
 /// narrow column looked worse.
 pub fn selectable_field(ui: &mut Ui, label: &str, value: &str) -> Response {
+    if ui.available_width() < 360.0 {
+        ui.add(egui::Label::new(egui::RichText::new(label).color(theme::LIGHT.text_dim)).wrap());
+        return ui.add(egui::Label::new(value).wrap().sense(Sense::click()));
+    }
     let mut response = None;
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;

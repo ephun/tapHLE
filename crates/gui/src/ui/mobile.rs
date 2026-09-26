@@ -147,8 +147,18 @@ pub const SECONDARY_TEXT: f32 = 14.0;
 const NAV_HEIGHT: f32 = 64.0;
 /// The bar along the top, which is a label rather than a control.
 const TITLE_HEIGHT: f32 = 52.0;
+const MOBILE_SCROLL_SOURCE: egui::scroll_area::ScrollSource = egui::scroll_area::ScrollSource {
+    // A scrollbar is useful position feedback on a desktop, where its narrow
+    // track is deliberately clicked. On a touchscreen that same track is an
+    // edge-sized accidental target and egui jumps the handle to the press.
+    // Keep wheel input for the desktop preview, but make content dragging the
+    // only direct manipulation path in the mobile composition.
+    scroll_bar: false,
+    drag: true,
+    mouse_wheel: true,
+};
 const MOBILE_SCROLL_BAR_VISIBILITY: egui::scroll_area::ScrollBarVisibility =
-    egui::scroll_area::ScrollBarVisibility::AlwaysVisible;
+    egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded;
 
 /// Draw a whole mobile frame into `rect`.
 ///
@@ -175,10 +185,23 @@ pub fn show(
         egui::FontId::proportional(SECONDARY_TEXT),
     );
     ui.spacing_mut().interact_size.y = TOUCH_TARGET;
+    // The shared desktop theme reserves a solid, mouse-sized scrollbar lane.
+    // Mobile indicators float over content and fade when idle instead.
+    ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
 
     let mut actions = Vec::new();
     let mut global_settings = Outcome::Continue;
     let mut app_settings = Outcome::Continue;
+    if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+        if let Some(focused) = ui.memory(|memory| memory.focused()) {
+            // The first Back dismisses text entry and its on-screen keyboard.
+            ui.memory_mut(|memory| memory.surrender_focus(focused));
+        } else if let Some(back) = screen.back_target() {
+            *screen = back;
+        } else {
+            actions.push(Action::Quit);
+        }
+    }
     ui.painter().rect_filled(rect, 0.0, theme::LIGHT.content);
 
     let title_rect = Rect::from_min_size(rect.min, Vec2::new(rect.width(), TITLE_HEIGHT));
@@ -186,9 +209,17 @@ pub fn show(
         egui::pos2(rect.left(), rect.bottom() - NAV_HEIGHT),
         Vec2::new(rect.width(), NAV_HEIGHT),
     );
+    let shows_navigation = screen.is_root();
     let body_rect = Rect::from_min_max(
         egui::pos2(rect.left(), title_rect.bottom()),
-        egui::pos2(rect.right(), nav_rect.top()),
+        egui::pos2(
+            rect.right(),
+            if shows_navigation {
+                nav_rect.top()
+            } else {
+                rect.bottom()
+            },
+        ),
     );
 
     let previous = *screen;
@@ -204,24 +235,19 @@ pub fn show(
     let layout = layout_for(rect.size());
     match *screen {
         Screen::Library => {
-            if matches!(
-                layout,
-                Layout::PhoneLandscape | Layout::TabletPortrait | Layout::TabletLandscape
-            ) && context.selected.is_some()
-            {
+            if shows_split_details(layout, body_rect.size()) && context.selected.is_some() {
                 let (library_rect, details_rect) = split_body(body_rect, layout);
-                library_screen(ui, library_rect, context, screen, &mut actions);
+                library_screen(ui, library_rect, context, screen, &mut actions, false);
                 details_screen(ui, details_rect, context, screen, &mut actions);
             } else {
-                library_screen(ui, body_rect, context, screen, &mut actions);
+                library_screen(ui, body_rect, context, screen, &mut actions, true);
             }
         }
         Screen::Activity => activity_screen(ui, body_rect, context, screen, &mut actions),
         Screen::Settings => settings_screen(ui, body_rect, screen, &mut actions),
         Screen::GlobalSettings => full_page_ui(ui, body_rect, "mobile-global-settings", |ui| {
             if let Some(dialog) = pages.global_settings.as_deref_mut() {
-                global_settings =
-                    crate::ui::desktop::settings_dialog::show_global_mobile(ui, dialog);
+                global_settings = global_settings_page(ui, dialog);
             } else {
                 ui.label("Opening settings…");
             }
@@ -229,24 +255,21 @@ pub fn show(
         Screen::Details => details_screen(ui, body_rect, context, screen, &mut actions),
         Screen::AppSettings => full_page_ui(ui, body_rect, "mobile-app-settings", |ui| {
             if let Some(dialog) = pages.app_settings.as_deref_mut() {
-                app_settings = crate::ui::desktop::settings_dialog::show_app_mobile(ui, dialog);
+                app_settings = app_settings_page(ui, dialog);
             } else {
                 ui.label("Opening app settings…");
             }
         }),
         Screen::About => full_page_ui(ui, body_rect, "mobile-about", |ui| {
             if let Some((dialog, info)) = pages.about.as_mut() {
-                crate::ui::desktop::dialogs::show_about_mobile(ui, dialog, info, &mut actions);
+                about_page(ui, dialog, info, &mut actions);
             } else {
                 ui.label("Opening About…");
             }
         }),
         Screen::DeveloperLog => developer_log_screen(ui, body_rect, &mut actions),
     }
-    if matches!(
-        *screen,
-        Screen::Library | Screen::Activity | Screen::Settings
-    ) {
+    if shows_navigation {
         navigation_bar(ui, nav_rect, screen);
     }
     MobileResult {
@@ -254,6 +277,16 @@ pub fn show(
         global_settings,
         app_settings,
     }
+}
+
+impl Screen {
+    fn is_root(self) -> bool {
+        matches!(self, Screen::Library | Screen::Activity | Screen::Settings)
+    }
+}
+
+fn shows_split_details(layout: Layout, size: Vec2) -> bool {
+    matches!(layout, Layout::TabletPortrait | Layout::TabletLandscape) && size.x >= 720.0
 }
 
 fn split_body(rect: Rect, layout: Layout) -> (Rect, Rect) {
@@ -309,10 +342,10 @@ fn library_screen(
     context: &MobileContext<'_>,
     screen: &mut Screen,
     actions: &mut Vec<Action>,
+    open_details: bool,
 ) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-    egui::ScrollArea::vertical()
-        .id_salt("mobile-library")
+    mobile_scroll_area("mobile-library")
         .auto_shrink([false, false])
         .show(&mut child, |ui| {
             if context.groups.is_empty() {
@@ -334,7 +367,9 @@ fn library_screen(
                 let running = context.running.contains(&entry.id);
                 if app_row(ui, entry, context.icons, selected, running) {
                     actions.push(Action::Select(entry.id.clone()));
-                    *screen = Screen::Details;
+                    if open_details {
+                        *screen = Screen::Details;
+                    }
                 }
             }
             ui.add_space(8.0);
@@ -349,7 +384,7 @@ fn app_row(
     selected: bool,
     running: bool,
 ) -> bool {
-    let height = TOUCH_TARGET + 16.0;
+    let height = TOUCH_TARGET + 32.0;
     let (response, painter) = ui.allocate_painter(
         Vec2::new(ui.available_width(), height),
         egui::Sense::click(),
@@ -384,21 +419,31 @@ fn app_row(
         painter.rect_filled(icon_rect, 10.0, theme::LIGHT.border);
     }
 
-    painter.text(
-        egui::pos2(icon_rect.right() + 12.0, rect.center().y - 9.0),
-        egui::Align2::LEFT_CENTER,
-        entry.title(),
-        egui::FontId::proportional(16.0),
-        theme::LIGHT.text,
+    let text_rect = Rect::from_min_max(
+        egui::pos2(icon_rect.right() + 12.0, rect.top() + 7.0),
+        egui::pos2(rect.right() - 12.0, rect.bottom() - 7.0),
     );
+    let text_painter = painter.with_clip_rect(text_rect);
+    let title_rect = Rect::from_min_max(
+        text_rect.min,
+        egui::pos2(text_rect.right(), text_rect.bottom() - 20.0),
+    );
+    let title_painter = text_painter.with_clip_rect(title_rect);
+    let title = title_painter.layout(
+        entry.title().to_string(),
+        egui::FontId::proportional(BODY_TEXT),
+        theme::LIGHT.text,
+        title_rect.width(),
+    );
+    title_painter.galley(title_rect.min, title, theme::LIGHT.text);
     let subtitle = if running {
         "Running".to_string()
     } else {
         entry.metadata.version_for_display().to_string()
     };
     if !subtitle.is_empty() {
-        painter.text(
-            egui::pos2(icon_rect.right() + 12.0, rect.center().y + 11.0),
+        text_painter.text(
+            egui::pos2(text_rect.left(), text_rect.bottom()),
             egui::Align2::LEFT_CENTER,
             subtitle,
             egui::FontId::proportional(SECONDARY_TEXT),
@@ -418,19 +463,25 @@ fn content_ui(ui: &mut Ui, rect: Rect, id: &'static str, add: impl FnOnce(&mut U
             .max_rect(rect)
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
-    egui::ScrollArea::vertical()
-        .id_salt(id)
+    mobile_scroll_area(id)
         .auto_shrink([false, false])
-        .scroll_bar_visibility(MOBILE_SCROLL_BAR_VISIBILITY)
         .show(&mut child, |ui| {
             ui.set_width(ui.available_width());
-            ui.add_space(12.0);
-            ui.horizontal(|ui| {
-                ui.add_space(12.0);
-                ui.vertical(|ui| add(ui));
-            });
-            ui.add_space(20.0);
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(12, 12))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    add(ui);
+                    ui.add_space(8.0);
+                });
         });
+}
+
+fn mobile_scroll_area(id: &'static str) -> egui::ScrollArea {
+    egui::ScrollArea::vertical()
+        .id_salt(id)
+        .scroll_source(MOBILE_SCROLL_SOURCE)
+        .scroll_bar_visibility(MOBILE_SCROLL_BAR_VISIBILITY)
 }
 
 fn full_page_ui(ui: &mut Ui, rect: Rect, id: &'static str, add: impl FnOnce(&mut Ui)) {
@@ -556,6 +607,184 @@ fn developer_log_screen(ui: &mut Ui, rect: Rect, actions: &mut Vec<Action>) {
     });
 }
 
+fn global_settings_page(
+    ui: &mut Ui,
+    dialog: &mut crate::ui::desktop::settings_dialog::GlobalDialog,
+) -> crate::ui::desktop::settings_dialog::Outcome {
+    use crate::ui::desktop::settings_dialog::{self, Category};
+
+    mobile_category_grid(ui, Category::GLOBAL, &mut dialog.category);
+    ui.add_space(8.0);
+    theme::hairline(ui);
+    ui.add_space(12.0);
+    ui.heading(dialog.category.label());
+    settings_dialog::show_global_category(ui, dialog);
+    ui.add_space(16.0);
+    mobile_settings_buttons(ui, &mut dialog.draft.emulator, false)
+}
+
+fn app_settings_page(
+    ui: &mut Ui,
+    dialog: &mut crate::ui::desktop::settings_dialog::AppDialog,
+) -> crate::ui::desktop::settings_dialog::Outcome {
+    use crate::ui::desktop::settings_dialog::{self, Category};
+
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new("Unset values follow global settings, then the options files.")
+                .size(SECONDARY_TEXT)
+                .color(theme::LIGHT.text_dim),
+        )
+        .wrap(),
+    );
+    ui.add_space(8.0);
+    mobile_category_grid(ui, Category::PER_APP, &mut dialog.category);
+    ui.add_space(8.0);
+    theme::hairline(ui);
+    ui.add_space(12.0);
+    ui.heading(dialog.category.label());
+    settings_dialog::show_app_category(ui, dialog);
+    ui.add_space(16.0);
+    mobile_settings_buttons(ui, &mut dialog.draft, true)
+}
+
+fn mobile_category_grid(
+    ui: &mut Ui,
+    categories: &[crate::ui::desktop::settings_dialog::Category],
+    current: &mut crate::ui::desktop::settings_dialog::Category,
+) {
+    let columns = grid_columns(ui.available_width(), categories.len());
+    let width = grid_cell_width(ui.available_width(), columns, ui.spacing().item_spacing.x);
+    egui::Grid::new(ui.id().with("mobile-settings-categories"))
+        .num_columns(columns)
+        .spacing([ui.spacing().item_spacing.x, ui.spacing().item_spacing.y])
+        .show(ui, |ui| {
+            for (index, category) in categories.iter().enumerate() {
+                let button = egui::Button::selectable(
+                    *current == *category,
+                    egui::RichText::new(category.label()).size(BODY_TEXT),
+                );
+                if ui.add_sized([width, TOUCH_TARGET], button).clicked() {
+                    *current = *category;
+                }
+                if (index + 1) % columns == 0 {
+                    ui.end_row();
+                }
+            }
+        });
+}
+
+fn grid_columns(width: f32, item_count: usize) -> usize {
+    let columns = if width < 280.0 {
+        1
+    } else if width < 520.0 {
+        2
+    } else if width < 760.0 {
+        3
+    } else {
+        4
+    };
+    columns.min(item_count.max(1))
+}
+
+fn grid_cell_width(available: f32, columns: usize, gap: f32) -> f32 {
+    let gaps = gap * columns.saturating_sub(1) as f32;
+    ((available - gaps) / columns.max(1) as f32).max(1.0)
+}
+
+fn mobile_settings_buttons(
+    ui: &mut Ui,
+    draft: &mut crate::state::settings::EmulatorSettings,
+    show_reset: bool,
+) -> crate::ui::desktop::settings_dialog::Outcome {
+    use crate::ui::desktop::settings_dialog::Outcome;
+
+    let problems = draft.validate();
+    if !problems.is_empty() {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(problems.join("; "))
+                    .size(SECONDARY_TEXT)
+                    .color(theme::LIGHT.error),
+            )
+            .wrap(),
+        );
+        ui.add_space(8.0);
+    }
+    if show_reset && mobile_button(ui, "Reset to Global", true) {
+        *draft = Default::default();
+    }
+    if mobile_button(ui, "Save", problems.is_empty()) {
+        return Outcome::Accept;
+    }
+    if mobile_button(ui, "Apply", problems.is_empty()) {
+        return Outcome::Apply;
+    }
+    if mobile_button(ui, "Cancel", true) {
+        return Outcome::Cancel;
+    }
+    Outcome::Continue
+}
+
+fn mobile_button(ui: &mut Ui, label: &str, enabled: bool) -> bool {
+    ui.add_enabled_ui(enabled, |ui| {
+        ui.add_sized(
+            [ui.available_width(), TOUCH_TARGET],
+            egui::Button::new(egui::RichText::new(label).size(BODY_TEXT)),
+        )
+    })
+    .inner
+    .clicked()
+}
+
+fn about_page(
+    ui: &mut Ui,
+    dialog: &mut crate::ui::desktop::dialogs::AboutDialog,
+    info: &crate::ui::desktop::dialogs::AboutInfo,
+    actions: &mut Vec<Action>,
+) {
+    use crate::ui::desktop::dialogs::{self, AboutTab};
+
+    ui.horizontal_wrapped(|ui| {
+        ui.heading("tapHLE");
+        ui.label(
+            egui::RichText::new(&info.version)
+                .size(BODY_TEXT)
+                .color(theme::LIGHT.text_dim),
+        );
+        if !info.branding.is_empty() {
+            ui.label(
+                egui::RichText::new(&info.branding)
+                    .size(SECONDARY_TEXT)
+                    .color(theme::LIGHT.warning),
+            );
+        }
+    });
+    ui.add_space(8.0);
+    let columns = if ui.available_width() < 400.0 { 2 } else { 4 };
+    let width = grid_cell_width(ui.available_width(), columns, ui.spacing().item_spacing.x);
+    egui::Grid::new("mobile-about-tabs")
+        .num_columns(columns)
+        .show(ui, |ui| {
+            for (index, (tab, label)) in AboutTab::ALL.into_iter().enumerate() {
+                let button = egui::Button::selectable(
+                    dialog.tab == tab,
+                    egui::RichText::new(label).size(BODY_TEXT),
+                );
+                if ui.add_sized([width, TOUCH_TARGET], button).clicked() {
+                    dialog.tab = tab;
+                }
+                if (index + 1) % columns == 0 {
+                    ui.end_row();
+                }
+            }
+        });
+    ui.add_space(8.0);
+    theme::hairline(ui);
+    ui.add_space(12.0);
+    dialogs::show_about_tab(ui, dialog, info, actions);
+}
+
 /// The bar along the bottom.
 ///
 /// At the bottom rather than the top because that is where a thumb is. The
@@ -668,10 +897,45 @@ mod tests {
     }
 
     #[test]
-    fn mobile_content_keeps_its_vertical_scrollbar_visible() {
+    fn mobile_scroll_uses_content_gestures_not_the_scrollbar_track() {
         assert_eq!(
             MOBILE_SCROLL_BAR_VISIBILITY,
-            egui::scroll_area::ScrollBarVisibility::AlwaysVisible
+            egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
         );
+        assert!(!MOBILE_SCROLL_SOURCE.scroll_bar);
+        assert!(MOBILE_SCROLL_SOURCE.drag);
+        assert!(MOBILE_SCROLL_SOURCE.mouse_wheel);
+    }
+
+    #[test]
+    fn representative_mobile_rectangles_choose_a_deliberate_reflow() {
+        let cases = [
+            (Vec2::new(320.0, 568.0), Layout::PhonePortrait, false),
+            (Vec2::new(430.0, 932.0), Layout::PhonePortrait, false),
+            (Vec2::new(568.0, 320.0), Layout::PhoneLandscape, false),
+            (Vec2::new(932.0, 430.0), Layout::PhoneLandscape, false),
+            (Vec2::new(768.0, 1024.0), Layout::TabletPortrait, true),
+            (Vec2::new(1024.0, 768.0), Layout::TabletLandscape, true),
+        ];
+        for (size, expected, split) in cases {
+            let layout = layout_for(size);
+            assert_eq!(layout, expected, "wrong reflow for {size:?}");
+            assert_eq!(
+                shows_split_details(layout, size),
+                split,
+                "wrong pane count for {size:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn tabs_reflow_without_horizontal_scrolling() {
+        for (width, expected_columns) in [(240.0, 1), (320.0, 2), (568.0, 3), (768.0, 4)] {
+            let columns = grid_columns(width, 8);
+            assert_eq!(columns, expected_columns);
+            let cell = grid_cell_width(width, columns, 8.0);
+            assert!(cell >= TOUCH_TARGET);
+            assert!(cell * columns as f32 + 8.0 * (columns - 1) as f32 <= width);
+        }
     }
 }

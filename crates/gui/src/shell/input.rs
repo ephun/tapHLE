@@ -205,7 +205,7 @@ fn translate_key(keycode: Keycode) -> Option<Key> {
         K::Right => Key::ArrowRight,
         K::Up => Key::ArrowUp,
         K::Down => Key::ArrowDown,
-        K::Escape => Key::Escape,
+        K::Escape | K::AcBack => Key::Escape,
         K::Tab => Key::Tab,
         K::Backspace => Key::Backspace,
         K::Return | K::KpEnter => Key::Enter,
@@ -300,6 +300,11 @@ mod tests {
     fn a_key_egui_cannot_name_is_dropped() {
         assert_eq!(translate_key(Keycode::PrintScreen), None);
         assert_eq!(translate_key(Keycode::NumLockClear), None);
+    }
+
+    #[test]
+    fn android_back_uses_the_shared_navigation_key() {
+        assert_eq!(translate_key(Keycode::AcBack), Some(Key::Escape));
     }
 
     /// A pointer arrives in points and is passed on untouched. Scaling it by

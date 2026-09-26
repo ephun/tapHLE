@@ -14,6 +14,19 @@ plugins {
     id("org.jetbrains.kotlin.android") version("2.0.21")
 }
 
+val canonicalIconDirectory = rootDir.parentFile.parentFile.resolve("runtime/res")
+val generatedIconResources = layout.buildDirectory.dir("generated/taphle-icons")
+val generateTapHLEIcons by tasks.registering(Sync::class) {
+    val icons = listOf("icon.png", "icon_preview.png", "icon_unofficial.png")
+    icons.forEach { fileName ->
+        from(canonicalIconDirectory.resolve(fileName))
+        from(canonicalIconDirectory.resolve(fileName)) {
+            rename { "${fileName.removeSuffix(".png")}_legacy.png" }
+        }
+    }
+    into(generatedIconResources.map { it.dir("drawable") })
+}
+
 fun runTapHLEVersionTool(wantBranding: Boolean): String {
     val output = providers.exec {
         commandLine("cargo", "run", "--package", "tapHLE_version")
@@ -105,7 +118,14 @@ android {
     sourceSets {
         getByName("main") {
             java.srcDir("${rootDir.parentFile.parentFile}/vendor/SDL/android-project/app/src/main/java")
+            // Launcher resources are generated from the same canonical PNGs
+            // used by the desktop window instead of being edited separately.
+            res.srcDir(generatedIconResources)
         }
+    }
+
+    tasks.named("preBuild").configure {
+        dependsOn(generateTapHLEIcons)
     }
 
     if (!project.hasProperty("EXCLUDE_NATIVE_LIBS")) {

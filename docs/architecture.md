@@ -244,7 +244,7 @@ framebuffer continuously.
 
 ## The frontend
 
-Source is the `tapHLE_gui` package in `crates/taphle/src/gui`.
+Source is the `tapHLE_gui` package in `crates/gui`.
 
 ### Why egui
 
@@ -379,7 +379,7 @@ emulator inserted into it.
 | `ui/theme.rs` | The visual identity: palette, type scale, spacing |
 | `ui/widgets.rs` | The pieces both form factors are built from |
 | `ui/desktop/` | Composition for a pointer and a large screen |
-| `ui/mobile.rs` | Composition for a touchscreen; declared, not yet written |
+| `ui/mobile.rs` | Responsive composition for a touchscreen |
 | `state/action.rs` | `Action`, the intent vocabulary both form factors report |
 | `state/library.rs` | Entries, importing, filtering, sorting |
 | `state/metadata.rs` | Reading an app, and the icon cache |
@@ -573,11 +573,27 @@ in the compatibility database and can need different settings.
 
 ## Mobile frontends
 
-Neither Android nor iOS has a frontend, and that is the substantial piece of work
-remaining before the first release. The desktop frontend assumes a window it owns
-and an emulator it launches as a child process, and neither assumption holds on a
-phone: there is no second process to spawn, and the OS owns the window.
+Android and iOS run the same `ui/mobile.rs` composition and the same state and
+control-rendering code. The mobile composition owns the title and navigation
+bars, page and split-pane decisions, touch target sizes, and the single vertical
+content scroller for each screen. It chooses those from the safe-area-adjusted
+egui rectangle: phone versus tablet and portrait versus landscape are properties
+of the available space, never device-model checks. Narrow controls stack and
+wide tablet library screens may show details beside the list; ordinary phone
+screens stay one pane and never need horizontal scrolling.
 
-A mobile frontend therefore shares the library model, the settings model and the
-compatibility-database client, but not the process model or the window. See
-`docs/maintaining.md` for what each owes.
+Mobile scroll areas use direct content drag and wheel input (the latter keeps
+the desktop preview useful), but do not make the scrollbar track interactive.
+Their floating indicator appears only when needed. This is intentionally
+different from the desktop's permanently grabbable scrollbar: egui centers a
+scroll thumb on a track press, and a narrow edge track is too easy to hit with a
+finger. A full-page scroller must not contain another page-height scroller;
+bounded pop-up lists are the exception.
+
+The SDL shell continues to translate pointer coordinates in logical points.
+On iOS it subtracts `safeAreaInsets` from egui's screen rectangle every frame,
+so rotations take effect without a second frontend. Android keeps SDL's content
+surface inside the system bars and therefore supplies the usable viewport
+directly. The platform projects own those insets, lifecycle, file integration,
+and packaging only. Their launcher icons are derived from the canonical desktop
+artwork in `runtime/res`; they are not independent product identities.

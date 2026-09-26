@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<resources>
+    <color name="taphle_icon_background">#FFFFFF</color>
+    <!-- Keep SDL's content surface inside Android's system-bar insets. The
+         shared Rust frontend then receives the usable viewport directly,
+         just as it receives an inset screen_rect from the iOS bridge. -->
+    <style name="TapHLETheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#0067C0</item>
+    </style>
+</resources>

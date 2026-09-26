@@ -43,6 +43,15 @@ pub enum AboutTab {
     Licenses,
 }
 
+impl AboutTab {
+    pub const ALL: [(AboutTab, &'static str); 4] = [
+        (AboutTab::About, "About"),
+        (AboutTab::Build, "Build"),
+        (AboutTab::Credits, "Credits"),
+        (AboutTab::Licenses, "Licences"),
+    ];
+}
+
 pub struct AboutDialog {
     pub open: bool,
     pub tab: AboutTab,
@@ -82,12 +91,7 @@ pub fn show_about(
         ui.add_space(6.0);
 
         ui.horizontal(|ui| {
-            for (tab, label) in [
-                (AboutTab::About, "About"),
-                (AboutTab::Build, "Build"),
-                (AboutTab::Credits, "Credits"),
-                (AboutTab::Licenses, "Licences"),
-            ] {
+            for (tab, label) in AboutTab::ALL {
                 if ui.selectable_label(dialog.tab == tab, label).clicked() {
                     dialog.tab = tab;
                 }
@@ -119,58 +123,14 @@ pub fn show_about(
     }
 }
 
-/// Draw About as a full mobile page instead of a modal dialog.
-pub fn show_about_mobile(
+/// Draw the selected About tab into the space supplied by a form-factor
+/// composition.
+pub(crate) fn show_about_tab(
     ui: &mut Ui,
     dialog: &mut AboutDialog,
     info: &AboutInfo,
     actions: &mut Vec<Action>,
 ) {
-    ui.horizontal_wrapped(|ui| {
-        ui.heading("tapHLE");
-        ui.label(
-            egui::RichText::new(&info.version)
-                .size(16.0)
-                .color(theme::LIGHT.text_dim),
-        );
-        if !info.branding.is_empty() {
-            ui.label(
-                egui::RichText::new(&info.branding)
-                    .size(14.0)
-                    .color(theme::LIGHT.warning),
-            );
-        }
-    });
-    ui.add_space(8.0);
-    egui::ScrollArea::horizontal()
-        .id_salt("mobile-about-tabs")
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                for (tab, label) in [
-                    (AboutTab::About, "About"),
-                    (AboutTab::Build, "Build"),
-                    (AboutTab::Credits, "Credits"),
-                    (AboutTab::Licenses, "Licences"),
-                ] {
-                    if ui
-                        .add_sized(
-                            [104.0, 48.0],
-                            egui::Button::selectable(
-                                dialog.tab == tab,
-                                egui::RichText::new(label).size(16.0),
-                            ),
-                        )
-                        .clicked()
-                    {
-                        dialog.tab = tab;
-                    }
-                }
-            });
-        });
-    ui.add_space(8.0);
-    theme::hairline(ui);
-    ui.add_space(12.0);
     match dialog.tab {
         AboutTab::About => about_tab(ui, actions),
         AboutTab::Build => build_tab(ui, info, actions),
@@ -206,33 +166,51 @@ fn credit(
     with: Option<(&str, &str)>,
     actions: &mut Vec<Action>,
 ) {
-    ui.horizontal(|ui| {
-        // Spacing is applied by hand here: the default word gap would put a
-        // space before each comma.
-        ui.spacing_mut().item_spacing.x = 0.0;
-        let start = ui.cursor().min.x;
+    if ui.available_width() < 440.0 {
         link(ui, project.0, project.1, actions);
-        let used = ui.cursor().min.x - start;
-        ui.add_space((CREDIT_COLUMN - used).max(8.0));
+        ui.horizontal_wrapped(|ui| {
+            credit_people(ui, people, trailing, with, actions);
+        });
+    } else {
+        ui.horizontal(|ui| {
+            // Spacing is applied by hand here: the default word gap would put a
+            // space before each comma.
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let start = ui.cursor().min.x;
+            link(ui, project.0, project.1, actions);
+            let used = ui.cursor().min.x - start;
+            ui.add_space((CREDIT_COLUMN - used).max(8.0));
 
-        for (index, (name, url)) in people.iter().enumerate() {
-            if index > 0 {
-                ui.label(",");
-                ui.add_space(5.0);
-            }
-            link(ui, name, url, actions);
-        }
-        if let Some((text, url)) = with {
+            credit_people(ui, people, trailing, with, actions);
+        });
+    }
+}
+
+fn credit_people(
+    ui: &mut Ui,
+    people: &[(&str, &str)],
+    trailing: &str,
+    with: Option<(&str, &str)>,
+    actions: &mut Vec<Action>,
+) {
+    ui.spacing_mut().item_spacing.x = 0.0;
+    for (index, (name, url)) in people.iter().enumerate() {
+        if index > 0 {
+            ui.label(",");
             ui.add_space(5.0);
-            ui.label(egui::RichText::new("with").color(theme::LIGHT.text_dim));
-            ui.add_space(5.0);
-            link(ui, text, url, actions);
         }
-        if !trailing.is_empty() {
-            ui.add_space(5.0);
-            ui.label(egui::RichText::new(trailing).color(theme::LIGHT.text_dim));
-        }
-    });
+        link(ui, name, url, actions);
+    }
+    if let Some((text, url)) = with {
+        ui.add_space(5.0);
+        ui.label(egui::RichText::new("with").color(theme::LIGHT.text_dim));
+        ui.add_space(5.0);
+        link(ui, text, url, actions);
+    }
+    if !trailing.is_empty() {
+        ui.add_space(5.0);
+        ui.label(egui::RichText::new(trailing).color(theme::LIGHT.text_dim));
+    }
 }
 
 fn about_tab(ui: &mut Ui, actions: &mut Vec<Action>) {
@@ -261,7 +239,7 @@ fn about_tab(ui: &mut Ui, actions: &mut Vec<Action>) {
     );
 
     ui.add_space(12.0);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         link(ui, "tapHLE on GitHub", PROJECT_URL, actions);
         ui.add_space(12.0);
         link(
@@ -293,7 +271,7 @@ fn build_tab(ui: &mut Ui, info: &AboutInfo, actions: &mut Vec<Action>) {
             .color(theme::LIGHT.text_dim),
     );
     ui.add_space(8.0);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if ui.button("Check now").clicked() {
             actions.push(Action::CheckForUpdates);
         }
@@ -404,7 +382,7 @@ fn licenses_tab(ui: &mut Ui, dialog: &mut AboutDialog) {
     ui.add(
         egui::TextEdit::multiline(&mut text.as_str())
             .font(egui::TextStyle::Monospace)
-            .desired_width(f32::INFINITY)
+            .desired_width(ui.available_width())
             .desired_rows(16),
     );
 }

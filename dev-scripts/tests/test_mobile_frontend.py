@@ -88,8 +88,12 @@ class SharedMobileFrontendTests(unittest.TestCase):
         app = (ROOT / "crates/gui/src/app.rs").read_text(encoding="utf-8")
         for screen in ("GlobalSettings", "AppSettings", "About"):
             self.assertIn(f"Screen::{screen}", mobile)
-        self.assertIn("show_global_mobile", settings)
-        self.assertIn("show_app_mobile", settings)
+        for renderer in ("global_settings_page(", "app_settings_page(", "about_page("):
+            self.assertIn(renderer, mobile)
+        self.assertIn("show_global_category", settings)
+        self.assertIn("show_app_category", settings)
+        self.assertNotIn("show_global_mobile", settings)
+        self.assertNotIn("show_app_mobile", settings)
         mobile_branch = app.split("if form_factor_for(mobile_target", 1)[1].split("egui::TopBottomPanel::top", 1)[0]
         self.assertNotIn("self.show_dialogs", mobile_branch)
 
@@ -108,7 +112,7 @@ class SharedMobileFrontendTests(unittest.TestCase):
             "activity_screen(",
             "settings_screen(",
             "details_screen(",
-            "show_app_mobile(",
+            "app_settings_page(",
             "developer_log_screen(",
         ):
             with self.subTest(renderer=renderer):
@@ -120,6 +124,21 @@ class SharedMobileFrontendTests(unittest.TestCase):
         for link in sorted(resources.rglob("*.png")):
             with self.subTest(link=link.name):
                 self.assertTrue(link.resolve().is_file(), f"broken Android resource link: {link}")
+
+    def test_mobile_launch_icons_come_from_the_canonical_desktop_artwork(self):
+        gradle = (ROOT / "platforms/android/app/build.gradle.kts").read_text(encoding="utf-8")
+        manifest = (ROOT / "platforms/android/app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+        ios_project = (ROOT / "platforms/ios/TapHLE.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
+        ios_catalogue = (ROOT / "platforms/ios/Assets.xcassets/AppIcon.appiconset/Contents.json").read_text(encoding="utf-8")
+
+        self.assertTrue((ROOT / "runtime/res/icon.png").is_file())
+        self.assertIn('resolve("runtime/res")', gradle)
+        self.assertIn("generateTapHLEIcons", gradle)
+        self.assertIn("@style/TapHLETheme", manifest)
+        for icon in ("icon", "icon_preview", "icon_unofficial"):
+            self.assertTrue((ROOT / f"platforms/android/app/src/main/res/drawable-anydpi-v26/{icon}.xml").is_file())
+        self.assertIn("Assets.xcassets in Resources", ios_project)
+        self.assertIn('"filename" : "AppIcon-1024.png"', ios_catalogue)
 
 
     def test_android_runtime_library_is_staged_beside_the_workspace_output(self):
@@ -195,7 +214,7 @@ class SharedMobileFrontendTests(unittest.TestCase):
 
     def test_mobile_scroll_surfaces_have_stable_distinct_ids(self):
         mobile = (ROOT / "crates/gui/src/ui/mobile.rs").read_text(encoding="utf-8")
-        self.assertIn("id_salt(\"mobile-library\")", mobile)
+        self.assertIn('mobile_scroll_area("mobile-library")', mobile)
         for screen in ("activity", "settings", "details", "developer-log"):
             self.assertIn(f'content_ui(ui, rect, "mobile-{screen}"', mobile)
         for screen in ("global-settings", "app-settings", "about"):
@@ -232,7 +251,9 @@ class SharedMobileFrontendTests(unittest.TestCase):
         gradle = (ROOT / "platforms/android/app/build.gradle.kts").read_text(encoding="utf-8")
         settings = (ROOT / "platforms/android/settings.gradle.kts").read_text(encoding="utf-8")
         self.assertIn("extends SDLActivity", activity)
-        self.assertIn("nativeSendQuit()", activity)
+        self.assertNotIn("nativeSendQuit()", activity)
+        self.assertIn("onNativeKeyDown(KeyEvent.KEYCODE_BACK)", activity)
+        self.assertIn("onNativeKeyUp(KeyEvent.KEYCODE_BACK)", activity)
         self.assertIn("dispatchKeyEvent", activity)
         self.assertIn("KEYCODE_BACK", activity)
         self.assertIn("\"tapHLE_gui\"", activity)

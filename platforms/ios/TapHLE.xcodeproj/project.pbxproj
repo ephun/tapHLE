@@ -13,6 +13,7 @@
 		A20000000000000000000005 /* default_options.txt in Resources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000007 /* default_options.txt */; };
 		A20000000000000000000010 /* jit.m in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000010 /* jit.m */; };
 		A20000000000000000000011 /* jit_memory.c in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* jit_memory.c */; };
+		A20000000000000000000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +26,7 @@
 		A30000000000000000000009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A30000000000000000000010 /* jit.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = jit.m; sourceTree = "<group>"; };
 		A30000000000000000000011 /* jit_memory.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = jit_memory.c; sourceTree = "<group>"; };
+		A30000000000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -70,6 +72,7 @@
 		A50000000000000000000005 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				A30000000000000000000012 /* Assets.xcassets */,
 				A30000000000000000000005 /* dylibs */,
 				A30000000000000000000006 /* fonts */,
 				A30000000000000000000007 /* default_options.txt */,
@@ -142,6 +145,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A20000000000000000000012 /* Assets.xcassets in Resources */,
 				A20000000000000000000003 /* dylibs in Resources */,
 				A20000000000000000000004 /* fonts in Resources */,
 				A20000000000000000000005 /* default_options.txt in Resources */,
