@@ -584,11 +584,12 @@ screens stay one pane and never need horizontal scrolling.
 
 Mobile scroll areas use direct content drag and wheel input (the latter keeps
 the desktop preview useful), but do not make the scrollbar track interactive.
-Their floating indicator appears only when needed. This is intentionally
-different from the desktop's permanently grabbable scrollbar: egui centers a
-scroll thumb on a track press, and a narrow edge track is too easy to hit with a
-finger. A full-page scroller must not contain another page-height scroller;
-bounded pop-up lists are the exception.
+Their indicator appears only when needed and occupies its own narrow lane, so
+an edge tap cannot fall through to full-width content beneath it. This is
+intentionally different from the desktop's permanently grabbable scrollbar:
+egui centers a scroll thumb on a track press, and a narrow edge track is too
+easy to hit with a finger. A full-page scroller must not contain another
+page-height scroller; bounded pop-up lists are the exception.
 
 The SDL shell continues to translate pointer coordinates in logical points.
 On iOS it subtracts `safeAreaInsets` from egui's screen rectangle every frame,

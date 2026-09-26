@@ -185,9 +185,11 @@ pub fn show(
         egui::FontId::proportional(SECONDARY_TEXT),
     );
     ui.spacing_mut().interact_size.y = TOUCH_TARGET;
-    // The shared desktop theme reserves a solid, mouse-sized scrollbar lane.
-    // Mobile indicators float over content and fade when idle instead.
-    ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
+    // Keep the non-interactive indicator outside the content hit area. A
+    // floating bar is painted over full-width rows and buttons, so a tap on
+    // the indicator falls through to the control beneath it even though the
+    // bar itself has scrolling disabled.
+    ui.spacing_mut().scroll = mobile_scroll_style();
 
     let mut actions = Vec::new();
     let mut global_settings = Outcome::Continue;
@@ -482,6 +484,10 @@ fn mobile_scroll_area(id: &'static str) -> egui::ScrollArea {
         .id_salt(id)
         .scroll_source(MOBILE_SCROLL_SOURCE)
         .scroll_bar_visibility(MOBILE_SCROLL_BAR_VISIBILITY)
+}
+
+fn mobile_scroll_style() -> egui::style::ScrollStyle {
+    egui::style::ScrollStyle::solid()
 }
 
 fn full_page_ui(ui: &mut Ui, rect: Rect, id: &'static str, add: impl FnOnce(&mut Ui)) {
@@ -846,6 +852,54 @@ fn navigation_bar(ui: &mut Ui, rect: Rect, current: &mut Screen) {
 mod tests {
     use super::*;
 
+    fn scroll_frame(
+        ctx: &egui::Context,
+        time: f64,
+        events: Vec<egui::Event>,
+        initial_offset: Option<f32>,
+    ) -> (f32, Rect, bool) {
+        let mut result = None;
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(300.0, 300.0),
+                )),
+                time: Some(time),
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.spacing_mut().scroll = mobile_scroll_style();
+                    let mut area =
+                        mobile_scroll_area("mobile-scroll-test").auto_shrink([false, false]);
+                    if let Some(offset) = initial_offset {
+                        area = area.vertical_scroll_offset(offset);
+                    }
+                    let output = area.show(ui, |ui| {
+                        let (_, response) = ui.allocate_exact_size(
+                            Vec2::new(ui.available_width(), 1_000.0),
+                            egui::Sense::click(),
+                        );
+                        response.clicked()
+                    });
+                    result = Some((output.state.offset.y, output.inner_rect, output.inner));
+                });
+            },
+        );
+        result.expect("the scroll area was drawn")
+    }
+
+    fn pointer_button(pos: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
     #[test]
     fn mobile_navigation_exposes_every_shared_product_surface() {
         assert_eq!(
@@ -905,6 +959,52 @@ mod tests {
         assert!(!MOBILE_SCROLL_SOURCE.scroll_bar);
         assert!(MOBILE_SCROLL_SOURCE.drag);
         assert!(MOBILE_SCROLL_SOURCE.mouse_wheel);
+        let style = mobile_scroll_style();
+        assert!(!style.floating);
+        assert!(style.allocated_width() > 0.0);
+    }
+
+    #[test]
+    fn mobile_scroll_indicator_tap_does_not_reposition_or_activate_content() {
+        let ctx = egui::Context::default();
+        let (start, _, _) = scroll_frame(&ctx, 0.0, Vec::new(), Some(120.0));
+        let (_, content, _) = scroll_frame(&ctx, 1.0, Vec::new(), None);
+        let indicator = egui::pos2(content.right() + 5.0, content.center().y);
+
+        let _ = scroll_frame(
+            &ctx,
+            2.0,
+            vec![
+                egui::Event::PointerMoved(indicator),
+                pointer_button(indicator, true),
+            ],
+            None,
+        );
+        let (after, _, activated) =
+            scroll_frame(&ctx, 2.1, vec![pointer_button(indicator, false)], None);
+
+        assert_eq!(after, start);
+        assert!(!activated);
+    }
+
+    #[test]
+    fn mobile_scroll_content_still_drags() {
+        let ctx = egui::Context::default();
+        let (start, _, _) = scroll_frame(&ctx, 0.0, Vec::new(), Some(120.0));
+        let (_, content, _) = scroll_frame(&ctx, 1.0, Vec::new(), None);
+        let from = content.center();
+        let to = from - Vec2::new(0.0, 60.0);
+
+        let _ = scroll_frame(
+            &ctx,
+            2.0,
+            vec![egui::Event::PointerMoved(from), pointer_button(from, true)],
+            None,
+        );
+        let (after_drag, _, _) = scroll_frame(&ctx, 2.1, vec![egui::Event::PointerMoved(to)], None);
+        let _ = scroll_frame(&ctx, 2.2, vec![pointer_button(to, false)], None);
+
+        assert!(after_drag > start);
     }
 
     #[test]
