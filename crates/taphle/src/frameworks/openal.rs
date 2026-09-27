@@ -155,7 +155,7 @@ fn alcOpenDevice(env: &mut Environment, devicename: ConstPtr<u8>) -> MutPtr<Gues
         env.mem.free(d_name.cast_mut().cast());
     }
 
-    let res = unsafe { al::alcOpenDevice(std::ptr::null()) };
+    let res = unsafe { al::open_device() };
     if res.is_null() {
         log_dbg!("alcOpenDevice(NULL) returned NULL");
         return Ptr::null();

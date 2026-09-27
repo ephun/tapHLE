@@ -8,6 +8,8 @@
  */
 package org.taphle.android;
 
+import android.view.KeyEvent;
+
 import org.libsdl.app.SDLActivity;
 
 /**
@@ -16,10 +18,29 @@ import org.libsdl.app.SDLActivity;
 
 public class MainActivity extends SDLActivity {
     @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_BACK);
+            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_BACK);
+            }
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public void onBackPressed() {
+        SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_BACK);
+        SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_BACK);
+    }
+
+    @Override
     protected String[] getLibraries() {
         return new String[]{
             "SDL2",
-            "tapHLE"
+            "tapHLE_gui"
         };
     }
 }

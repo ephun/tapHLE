@@ -48,8 +48,8 @@ Intent is not state. What is true today:
 | Windows x86_64 | yes | yes | yes, continuously | yes | bundle yes; installer written, never built | pending the all-five bar | **canonical** |
 | macOS x86_64 | yes | yes, in CI | no — nobody has played an app on it | yes | emulator-only bundle script, inherited | pending the all-five bar | no |
 | Linux x86_64 | yes | attempted in CI, not confirmed | no | yes, `continue-on-error` | portable bundle script, real build pending | pending the all-five bar | no |
-| Android | yes | no | no | no | no | pending the all-five bar | no |
-| iOS | yes | branch only | no | no | no | pending the all-five bar | no |
+| Android | yes | yes | yes — synthetic app launch, touch and library return | no | debug APK tooling | pending the all-five bar | no |
+| iOS | yes | yes — Intel simulator and ARM64 device build | partial — 24-app simulator sweep completed; physical-device runtime pending | no | Xcode app bundle and ad-hoc IPA tooling; device installation unverified | pending the all-five bar | no |
 
 ### Windows x86_64
 
@@ -86,21 +86,47 @@ Nobody has run tapHLE on Linux. Write portable code; do not claim it works.
 
 ### Android
 
-The source in `android/` is active work as of 2026-08-17, not inherited
-material to leave alone. It has no frontend, which is the substantial piece.
+`platforms/android/` builds an APK whose SDL activity loads `tapHLE_gui`. The
+library, settings, emulator and guest-app runtime are the same Rust components
+used by the desktop product; only the Android bootstrap, document provider and
+packaging are platform code. The development APK has been run visibly in
+Cuttlefish on x86_64: the adaptive frontend rendered in portrait and landscape,
+the synthetic TestApp rendered and accepted touch input, and Android Back ended
+the guest run and returned to the library. CI and release packaging remain
+outstanding.
 
 ### iOS
 
-Work lives on `feat/ios-host`. An experimental host was merged to `trunk` on
-2026-08-01 and withdrawn on 2026-08-04.
+`platforms/ios/` is a thin Objective-C/SDL process bootstrap and Xcode host for
+the same `tapHLE_gui` Rust library. Xcode 16.4 on Intel macOS builds an x86_64
+iOS 18.5 simulator app containing the guest libraries, fonts and default
+options. The shared frontend has been inspected in the real Simulator session
+in portrait and landscape, including safe-area handling, and it can launch the
+synthetic TestApp into the emulator.
 
-**Read why it was withdrawn before merging it back.** It was half-finished and
-broken, and nothing on Windows could build or test it, so it sat on `trunk` as
-untested code claiming a capability tapHLE did not have. That objection was
-never about iOS being unwanted, and the 2026-08-17 direction does not answer
-it — a branch is still the right home for a host nobody can run, and `trunk` is
-still for what works. What changed is that making it runnable is now the job,
-so the route back to `trunk` is to build and run it, not to relax the standard.
+The ARM64 device app also builds with Xcode 16.4 and the iOS 18.5 SDK. Its
+StikDebug coordinator gates guest launch, prepares a reusable JIT pool with
+separate writable/executable mappings, and implements the universal protocol
+for TXM devices. Darwin native tests exercise alias coherence, relocation writes,
+pool reuse, and preparation/protection/allocation errors. These checks do not
+establish that the debugger protocol works on an iPhone. Physical-device JIT,
+sideloaded installation, and guest runtime remain unverified.
+
+On 2026-09-23, all 24 frozen-cohort artifacts completed visible simulator
+replays without a detected crash. Captures show gameplay or tutorials in every
+app after timing-adjusted reruns. Jim and Frank opens the quest letter, collects
+both Eurekas and transitions to the next room. The supplied Shot Shot Shoot copy has embedded
+version 1.01, explicitly accepted by the maintainer for this test. The same
+simulator build passed all 154 synthetic CLI tests and both ES 1/ES 2 graphics
+object-isolation tests. Host checks passed 391 Rust library tests (one ignored),
+53 Python tests, formatting, Clippy and documentation generation.
+
+These are development observations from an uncommitted build, not clean-revision
+compatibility or release-verification claims. The simulator uses the OpenAL Soft
+null backend when its virtual audio device is unavailable, so these runs do not
+verify audible output. The StikDebug handoff, device execution, frontend import
+and repeated Play/return-to-library flow still require physical-device testing.
+Simulator execution does not establish device JIT behavior.
 
 ## Release eligibility
 

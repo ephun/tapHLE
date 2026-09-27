@@ -94,6 +94,37 @@ where
     res
 }
 
+/// Translate object names only at the guest API boundary. Presentation uses
+/// host names directly and therefore cannot consume guest name allocations.
+fn with_framebuffer_objects<U: Default>(
+    env: &mut Environment,
+    f: impl FnOnce(
+        &mut dyn GLES,
+        &mut Mem,
+        &mut super::object_names::FramebufferObjects,
+        &mut super::object_names::FramebufferBindings,
+    ) -> U,
+) -> U {
+    let state = env
+        .framework_state
+        .opengles
+        .current_ctx_for_thread(env.current_thread)
+        .map(|ctx| {
+            let ctx = env.objc.borrow::<EAGLContextHostObject>(ctx);
+            (ctx.objects.clone(), ctx.bindings.clone())
+        });
+    with_ctx_and_mem(env, |gles, mem| {
+        let (objects, bindings) = state.unwrap();
+        let result = f(
+            gles,
+            mem,
+            &mut objects.borrow_mut(),
+            &mut bindings.borrow_mut(),
+        );
+        result
+    })
+}
+
 /// Version of with_ctx_and_mem which panics on a missing context.
 ///
 /// Needed because for return types such as `*mut GLvoid` we cannnot
@@ -181,13 +212,37 @@ fn glDisableClientState(env: &mut Environment, array: GLenum) {
         unsafe { gles.DisableClientState(array) };
     });
 }
+fn guest_framebuffer_binding(env: &mut Environment, pname: GLenum) -> Option<GLint> {
+    if pname != gles11::FRAMEBUFFER_BINDING_OES && pname != gles11::RENDERBUFFER_BINDING_OES {
+        return None;
+    }
+    Some(with_framebuffer_objects(
+        env,
+        |_gles, _mem, _objects, bindings| {
+            if pname == gles11::FRAMEBUFFER_BINDING_OES {
+                bindings.framebuffer as GLint
+            } else {
+                bindings.renderbuffer as GLint
+            }
+        },
+    ))
+}
+
 fn glGetBooleanv(env: &mut Environment, pname: GLenum, params: MutPtr<GLboolean>) {
+    if let Some(value) = guest_framebuffer_binding(env, pname) {
+        env.mem.write(params, (value != 0) as GLboolean);
+        return;
+    }
     with_ctx_and_mem(env, |gles, mem| {
         let params = mem.ptr_at_mut(params, 16 /* upper bound */);
         unsafe { gles.GetBooleanv(pname, params) };
     });
 }
 fn glGetFloatv(env: &mut Environment, pname: GLenum, params: MutPtr<GLfloat>) {
+    if let Some(value) = guest_framebuffer_binding(env, pname) {
+        env.mem.write(params, value as GLfloat);
+        return;
+    }
     assert_ne!(gles11::NUM_COMPRESSED_TEXTURE_FORMATS, pname);
     assert_ne!(gles11::COMPRESSED_TEXTURE_FORMATS, pname);
     with_ctx_and_mem(env, |gles, mem| {
@@ -196,6 +251,10 @@ fn glGetFloatv(env: &mut Environment, pname: GLenum, params: MutPtr<GLfloat>) {
     });
 }
 fn glGetIntegerv(env: &mut Environment, pname: GLenum, params: MutPtr<GLint>) {
+    if let Some(value) = guest_framebuffer_binding(env, pname) {
+        env.mem.write(params, value);
+        return;
+    }
     with_ctx_and_mem(env, |gles, mem| {
         match pname {
             gles11::NUM_COMPRESSED_TEXTURE_FORMATS => {
@@ -1294,38 +1353,70 @@ fn glMultiTexCoord4x(
 }
 
 // OES_framebuffer_object
-fn glGenFramebuffersOES(env: &mut Environment, n: GLsizei, framebuffers: MutPtr<GLuint>) {
-    with_ctx_and_mem(env, |gles, mem| {
-        let n_usize: GuestUSize = n.try_into().unwrap();
-        let framebuffers = mem.ptr_at_mut(framebuffers, n_usize);
-        unsafe { gles.GenFramebuffersOES(n, framebuffers) }
+fn glGenFramebuffersOES(env: &mut Environment, n: GLsizei, output: MutPtr<GLuint>) {
+    with_framebuffer_objects(env, |gles, mem, objects, _bindings| {
+        let count: GuestUSize = n.try_into().unwrap();
+        let mut hosts = vec![0; count as usize];
+        unsafe { gles.GenFramebuffersOES(n, hosts.as_mut_ptr()) };
+        for (index, host) in hosts.into_iter().enumerate() {
+            mem.write(
+                output + index as GuestUSize,
+                objects.framebuffers.generate(host),
+            );
+        }
     })
 }
-fn glGenRenderbuffersOES(env: &mut Environment, n: GLsizei, renderbuffers: MutPtr<GLuint>) {
-    with_ctx_and_mem(env, |gles, mem| {
-        let n_usize: GuestUSize = n.try_into().unwrap();
-        let renderbuffers = mem.ptr_at_mut(renderbuffers, n_usize);
-        unsafe { gles.GenRenderbuffersOES(n, renderbuffers) }
+fn glGenRenderbuffersOES(env: &mut Environment, n: GLsizei, output: MutPtr<GLuint>) {
+    with_framebuffer_objects(env, |gles, mem, objects, _bindings| {
+        let count: GuestUSize = n.try_into().unwrap();
+        let mut hosts = vec![0; count as usize];
+        unsafe { gles.GenRenderbuffersOES(n, hosts.as_mut_ptr()) };
+        for (index, host) in hosts.into_iter().enumerate() {
+            mem.write(
+                output + index as GuestUSize,
+                objects.renderbuffers.generate(host),
+            );
+        }
     })
 }
-fn glIsFramebufferOES(env: &mut Environment, framebuffer: GLuint) -> GLboolean {
-    with_ctx_and_mem(env, |gles, _mem| unsafe {
-        gles.IsFramebufferOES(framebuffer)
+fn glIsFramebufferOES(env: &mut Environment, name: GLuint) -> GLboolean {
+    with_framebuffer_objects(env, |gles, _mem, objects, _bindings| unsafe {
+        gles.IsFramebufferOES(objects.framebuffers.host(name))
     })
 }
-fn glIsRenderbufferOES(env: &mut Environment, renderbuffer: GLuint) -> GLboolean {
-    with_ctx_and_mem(env, |gles, _mem| unsafe {
-        gles.IsRenderbufferOES(renderbuffer)
+fn glIsRenderbufferOES(env: &mut Environment, name: GLuint) -> GLboolean {
+    with_framebuffer_objects(env, |gles, _mem, objects, _bindings| unsafe {
+        gles.IsRenderbufferOES(objects.renderbuffers.host(name))
     })
 }
-fn glBindFramebufferOES(env: &mut Environment, target: GLenum, framebuffer: GLuint) {
-    with_ctx_and_mem(env, |gles, _mem| unsafe {
-        gles.BindFramebufferOES(target, framebuffer)
+fn glBindFramebufferOES(env: &mut Environment, target: GLenum, name: GLuint) {
+    with_framebuffer_objects(env, |gles, _mem, objects, bindings| unsafe {
+        if target != gles11::FRAMEBUFFER_OES {
+            gles.BindFramebufferOES(target, 0);
+            return;
+        }
+        let host = objects.framebuffers.bind(name, || {
+            let mut host = 0;
+            gles.GenFramebuffersOES(1, &mut host);
+            host
+        });
+        gles.BindFramebufferOES(target, host);
+        bindings.framebuffer = name;
     })
 }
-fn glBindRenderbufferOES(env: &mut Environment, target: GLenum, renderbuffer: GLuint) {
-    with_ctx_and_mem(env, |gles, _mem| unsafe {
-        gles.BindRenderbufferOES(target, renderbuffer)
+fn glBindRenderbufferOES(env: &mut Environment, target: GLenum, name: GLuint) {
+    with_framebuffer_objects(env, |gles, _mem, objects, bindings| unsafe {
+        if target != gles11::RENDERBUFFER_OES {
+            gles.BindRenderbufferOES(target, 0);
+            return;
+        }
+        let host = objects.renderbuffers.bind(name, || {
+            let mut host = 0;
+            gles.GenRenderbuffersOES(1, &mut host);
+            host
+        });
+        gles.BindRenderbufferOES(target, host);
+        bindings.renderbuffer = name;
     })
 }
 fn glRenderbufferStorageOES(
@@ -1349,8 +1440,19 @@ fn glFramebufferRenderbufferOES(
     renderbuffertarget: GLenum,
     renderbuffer: GLuint,
 ) {
-    with_ctx_and_mem(env, |gles, _mem| unsafe {
-        gles.FramebufferRenderbufferOES(target, attachment, renderbuffertarget, renderbuffer)
+    with_framebuffer_objects(env, |gles, _mem, objects, _bindings| unsafe {
+        let mut host = objects.renderbuffers.host(renderbuffer);
+        let unknown = renderbuffer != 0 && host == 0;
+        if unknown {
+            // A generated but never-bound name is not a renderbuffer object.
+            // Let the driver produce the API error without risking a collision
+            // with a private host drawable's name.
+            gles.GenRenderbuffersOES(1, &mut host);
+        }
+        gles.FramebufferRenderbufferOES(target, attachment, renderbuffertarget, host);
+        if unknown {
+            gles.DeleteRenderbuffersOES(1, &host);
+        }
     })
 }
 fn glFramebufferTexture2DOES(
@@ -1372,9 +1474,22 @@ fn glGetFramebufferAttachmentParameterivOES(
     pname: GLenum,
     params: MutPtr<GLint>,
 ) {
-    with_ctx_and_mem(env, |gles, mem| {
-        let params = mem.ptr_at_mut(params, 1);
-        unsafe { gles.GetFramebufferAttachmentParameterivOES(target, attachment, pname, params) }
+    with_framebuffer_objects(env, |gles, mem, objects, _bindings| unsafe {
+        let mut value = 0;
+        gles.GetFramebufferAttachmentParameterivOES(target, attachment, pname, &mut value);
+        if pname == gles11::FRAMEBUFFER_ATTACHMENT_OBJECT_NAME_OES {
+            let mut kind = 0;
+            gles.GetFramebufferAttachmentParameterivOES(
+                target,
+                attachment,
+                gles11::FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE_OES,
+                &mut kind,
+            );
+            if kind as GLenum == gles11::RENDERBUFFER_OES {
+                value = objects.renderbuffers.guest(value as GLuint) as GLint;
+            }
+        }
+        mem.write(params, value);
     })
 }
 fn glGetRenderbufferParameterivOES(
@@ -1399,18 +1514,34 @@ fn glCheckFramebufferStatusOES(env: &mut Environment, target: GLenum) -> GLenum 
         gles.CheckFramebufferStatusOES(target)
     })
 }
-fn glDeleteFramebuffersOES(env: &mut Environment, n: GLsizei, framebuffers: ConstPtr<GLuint>) {
-    with_ctx_and_mem(env, |gles, mem| {
-        let n_usize: GuestUSize = n.try_into().unwrap();
-        let framebuffers = mem.ptr_at(framebuffers, n_usize);
-        unsafe { gles.DeleteFramebuffersOES(n, framebuffers) }
+fn glDeleteFramebuffersOES(env: &mut Environment, n: GLsizei, input: ConstPtr<GLuint>) {
+    with_framebuffer_objects(env, |gles, mem, objects, bindings| {
+        let count: GuestUSize = n.try_into().unwrap();
+        let hosts: Vec<_> = (0..count)
+            .map(|index| {
+                let name = mem.read(input + index);
+                if bindings.framebuffer == name {
+                    bindings.framebuffer = 0;
+                }
+                objects.framebuffers.remove(name)
+            })
+            .collect();
+        unsafe { gles.DeleteFramebuffersOES(n, hosts.as_ptr()) }
     })
 }
-fn glDeleteRenderbuffersOES(env: &mut Environment, n: GLsizei, renderbuffers: ConstPtr<GLuint>) {
-    with_ctx_and_mem(env, |gles, mem| {
-        let n_usize: GuestUSize = n.try_into().unwrap();
-        let renderbuffers = mem.ptr_at(renderbuffers, n_usize);
-        unsafe { gles.DeleteRenderbuffersOES(n, renderbuffers) }
+fn glDeleteRenderbuffersOES(env: &mut Environment, n: GLsizei, input: ConstPtr<GLuint>) {
+    with_framebuffer_objects(env, |gles, mem, objects, bindings| {
+        let count: GuestUSize = n.try_into().unwrap();
+        let hosts: Vec<_> = (0..count)
+            .map(|index| {
+                let name = mem.read(input + index);
+                if bindings.renderbuffer == name {
+                    bindings.renderbuffer = 0;
+                }
+                objects.renderbuffers.remove(name)
+            })
+            .collect();
+        unsafe { gles.DeleteRenderbuffersOES(n, hosts.as_ptr()) }
     })
 }
 fn glGenerateMipmapOES(env: &mut Environment, target: GLenum) {

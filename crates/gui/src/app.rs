@@ -23,9 +23,7 @@ use std::time::{Duration, Instant};
 use crate::platform::http::{CurlTransport, Transport};
 use crate::platform::storage;
 use crate::run::launcher::{self, Launcher};
-use crate::state::compat::{
-    self, CompatibilityProvider, DatabaseSnapshot, ReportDraft, TapHledbProvider,
-};
+use crate::state::compat::{self, CompatibilityProvider, DatabaseSnapshot, TapHledbProvider};
 use crate::state::library::{self, ImportOutcome, Library, ScanResult, VersionGroup, ViewFilter};
 use crate::state::logstore::{self, LogLevel, SharedLog};
 use crate::state::metadata::AppIcon;
@@ -36,7 +34,7 @@ use crate::state::Action;
 use crate::ui::desktop::chrome::ChromeContext;
 use crate::ui::desktop::details::DetailsContext;
 use crate::ui::desktop::dialogs::{
-    AboutDialog, AboutInfo, Confirmation, CrashNotice, ImportReport, ReportDialog,
+    AboutDialog, AboutInfo, Confirmation, CrashNotice, ImportReport,
 };
 use crate::ui::desktop::library_view::LibraryContext;
 use crate::ui::desktop::logpanel::LogView;
@@ -59,6 +57,7 @@ enum Background {
     },
     Compatibility(Result<DatabaseSnapshot, String>),
     Update(UpdateStatus),
+    OpenUrl(String),
     Note(LogLevel, String),
 }
 
@@ -96,10 +95,28 @@ struct PendingRun {
     environment: Vec<(String, String)>,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum FormFactor {
+    Desktop,
+    Mobile,
+}
+
+fn form_factor_for(mobile_target: bool, preview_mobile: bool) -> FormFactor {
+    if mobile_target || preview_mobile {
+        FormFactor::Mobile
+    } else {
+        FormFactor::Desktop
+    }
+}
+
 pub struct Frontend {
     settings: FrontendSettings,
     /// Set by Play when apps are set to run in this process.
     pending_in_process: Option<PendingRun>,
+    #[cfg(target_os = "ios")]
+    jit_pending: bool,
+    #[cfg(target_os = "ios")]
+    jit_error: Option<String>,
     /// Which screen the mobile preview is showing.
     mobile_screen: crate::ui::mobile::Screen,
     state: UiState,
@@ -121,7 +138,6 @@ pub struct Frontend {
     about: Option<AboutDialog>,
     import_report: Option<ImportReport>,
     crash: Option<CrashNotice>,
-    report: Option<ReportDialog>,
     confirmation: Option<Confirmation>,
 
     background: (Sender<Background>, Receiver<Background>),
@@ -176,6 +192,9 @@ impl Frontend {
             }
             Err(e) => logstore::note(&log, LogLevel::Warning, e),
         }
+        if cfg!(any(target_os = "android", target_os = "ios")) {
+            settings.run_in_process = true;
+        }
 
         for note in notes {
             logstore::note(&log, LogLevel::Warning, note);
@@ -219,11 +238,14 @@ impl Frontend {
             app_dialog: None,
             control_editor: None,
             pending_in_process: None,
+            #[cfg(target_os = "ios")]
+            jit_pending: false,
+            #[cfg(target_os = "ios")]
+            jit_error: None,
             mobile_screen: Default::default(),
             about: None,
             import_report: None,
             crash: None,
-            report: None,
             confirmation: None,
             background: channel(),
             repaint: egui_ctx.clone(),
@@ -537,6 +559,11 @@ impl Frontend {
                         self.note(LogLevel::Warning, format!("Update check failed: {reason}"));
                     }
                     self.update = status;
+                }
+                Background::OpenUrl(url) => {
+                    if let Err(error) = crate::platform::process::open_url(&url) {
+                        self.note(LogLevel::Warning, error);
+                    }
                 }
                 Background::Note(level, text) => self.note(level, text),
             }
@@ -875,15 +902,6 @@ impl Frontend {
             );
             return;
         }
-        let Some(emulator) = self.emulator_path() else {
-            self.note(
-                LogLevel::Error,
-                "The tapHLE emulator program could not be found. Set its \
-                 location in Settings ▸ Paths."
-                    .to_string(),
-            );
-            return;
-        };
         // The emulator reads the shared settings file itself, so a run gets
         // these settings whether it was started here or from a terminal. It
         // has to be on disk before the child starts, and saving is otherwise
@@ -894,6 +912,15 @@ impl Frontend {
 
         let data_dir = self.data_dir.clone();
         if self.settings.run_in_process {
+            #[cfg(target_os = "ios")]
+            match crate::platform::jit::begin() {
+                Ok(ready) => self.jit_pending = !ready,
+                Err(error) => {
+                    self.note(LogLevel::Error, &error);
+                    self.jit_error = Some(error);
+                    return;
+                }
+            }
             // Not run here: an app needs SDL's one event pump, and the shell
             // is holding it while this frame is being drawn. Recorded for the
             // shell to carry out once it has put the pump down — the same
@@ -908,6 +935,15 @@ impl Frontend {
             });
             return;
         }
+        let Some(emulator) = self.emulator_path() else {
+            self.note(
+                LogLevel::Error,
+                "The tapHLE emulator program could not be found. Set its \
+                 location in Settings ▸ Paths."
+                    .to_string(),
+            );
+            return;
+        };
         let result = self.launcher.launch(launcher::LaunchRequest {
             emulator: &emulator,
             working_directory: &data_dir,
@@ -933,55 +969,32 @@ impl Frontend {
     }
 
     fn open_report(&mut self, entry_id: &str) {
-        if !compat::CLIENT_REPORTING_AVAILABLE {
-            return;
-        }
-        let Some(entry) = self.library.find(entry_id) else {
+        let Some(metadata) = self
+            .library
+            .find(entry_id)
+            .map(|entry| entry.metadata.clone())
+        else {
             return;
         };
-        let draft = ReportDraft {
-            display_name: entry.title().to_string(),
-            bundle_identifier: entry.metadata.bundle_identifier.clone(),
-            bundle_version: entry.metadata.bundle_version.clone(),
-            short_version: entry.metadata.short_version.clone(),
-            taphle_version: tapHLE_version::VERSION.trim().to_string(),
-            taphle_build: build_description(),
-            platform: compat::platform_description(),
-            stars: entry.local_rating.stars,
-            notes: entry.local_rating.notes.clone(),
-            launch_options: self.effective_settings(entry_id).to_args(),
-            log_excerpt: self.recent_output(&self.run_ids_for(entry_id)),
-            existing_entry: self
-                .database
-                .find(&entry.metadata.bundle_identifier)
-                .cloned(),
-            database_consulted: self.database_available,
-        };
-        self.report = Some(ReportDialog {
-            open: true,
-            entry_id: entry_id.to_string(),
-            stars: draft.stars,
-            notes: draft.notes.clone(),
-            include_log: true,
-            draft,
+        let sender = self.background_sender();
+        std::thread::spawn(move || {
+            let report = compat::running_report_prefill();
+            sender.send(Background::OpenUrl(compat::report_form_url(
+                &metadata, &report,
+            )));
         });
     }
 
     fn apply(&mut self, ctx: &egui::Context, action: Action) {
         match action {
-            Action::AddApps => {
-                if let Some(files) = rfd::FileDialog::new()
-                    .add_filter("iPhone apps", &["ipa"])
-                    .set_title("Add apps to the tapHLE library")
-                    .pick_files()
-                {
-                    self.import_paths(files);
-                }
-            }
+            Action::AddApps => match crate::platform::dialogs::pick_apps() {
+                Ok(Some(files)) => self.import_paths(files),
+                Ok(None) => {}
+                Err(error) => self.note(LogLevel::Warning, error),
+            },
             Action::AddFolder => {
-                if let Some(folder) = rfd::FileDialog::new()
-                    .set_title("Add every app in a folder")
-                    .pick_folder()
+                if let Some(folder) =
+                    crate::platform::dialogs::pick_folder("Add every app in a folder")
                 {
                     match library::scan_folder(&folder) {
                         Ok(paths) if paths.is_empty() => {
@@ -1093,14 +1106,12 @@ impl Frontend {
                         LogLevel::Warning,
                         format!("{} does not exist yet.", path.display()),
                     );
-                } else if let Err(e) =
-                    crate::platform::process::open_in_desktop(&path.display().to_string())
-                {
+                } else if let Err(e) = crate::platform::process::open_path(&path) {
                     self.note(LogLevel::Warning, e);
                 }
             }
             Action::OpenUrl(url) => {
-                if let Err(e) = crate::platform::process::open_in_desktop(&url) {
+                if let Err(e) = crate::platform::process::open_url(&url) {
                     self.note(LogLevel::Warning, e);
                 }
             }
@@ -1119,16 +1130,7 @@ impl Frontend {
                 }
             }
             Action::OpenCompatibilityReport(id) => {
-                if crate::state::compat::CLIENT_REPORTING_AVAILABLE {
-                    self.open_report(&id);
-                }
-            }
-            Action::SetLocalRating(id, stars) => {
-                if let Some(entry) = self.library.find_mut(&id) {
-                    entry.local_rating.set_stars(stars);
-                    self.dirty.library = true;
-                    self.invalidate_order();
-                }
+                self.open_report(&id);
             }
             Action::ShowAbout => self.about = Some(AboutDialog::default()),
             Action::ShowLogPanel(visible) => {
@@ -1201,12 +1203,7 @@ impl Frontend {
             "tapHLE-log-{}.txt",
             timefmt::format_file_stamp(timefmt::now_seconds())
         );
-        let Some(path) = rfd::FileDialog::new()
-            .set_title("Save the log")
-            .set_file_name(suggested)
-            .add_filter("Text", &["txt", "log"])
-            .save_file()
-        else {
+        let Some(path) = crate::platform::dialogs::save_log(&suggested) else {
             return;
         };
         let text = match self.log.lock() {
@@ -1282,24 +1279,6 @@ impl Frontend {
     }
 }
 
-/// A description of how this build was produced, for a report.
-fn build_description() -> String {
-    match (
-        tapHLE_version::GITHUB_REPOSITORY,
-        tapHLE_version::GITHUB_RUN_ID,
-    ) {
-        (Some(repository), Some(run)) => format!("{repository} run {run}"),
-        _ => format!(
-            "local {} build",
-            if cfg!(debug_assertions) {
-                "debug"
-            } else {
-                "release"
-            }
-        ),
-    }
-}
-
 /// How many apps the library holds, counting every version of one app once.
 fn distinct_apps(library: &Library) -> usize {
     let mut identifiers: Vec<&str> = library
@@ -1352,10 +1331,14 @@ impl Frontend {
 
 impl crate::shell::Application for Frontend {
     fn wants_to_hand_over(&mut self) -> bool {
+        #[cfg(target_os = "ios")]
+        if self.jit_pending || self.jit_error.is_some() {
+            return false;
+        }
         self.pending_in_process.is_some()
     }
 
-    fn hand_over(&mut self) {
+    fn hand_over(&mut self, lease: Option<tapHLE::AppWindowLease>) {
         let Some(run) = self.pending_in_process.take() else {
             return;
         };
@@ -1371,7 +1354,7 @@ impl crate::shell::Application for Frontend {
             arguments: &[],
             environment: &run.environment,
         };
-        match self.launcher.run_here(request) {
+        match self.launcher.run_here(request, lease) {
             Ok(status) => {
                 let level = if status == 0 {
                     LogLevel::Info
@@ -1389,6 +1372,40 @@ impl crate::shell::Application for Frontend {
     }
 
     fn update(&mut self, ctx: &egui::Context) {
+        #[cfg(target_os = "ios")]
+        {
+            if self.jit_pending {
+                match crate::platform::jit::poll() {
+                    Ok(true) => self.jit_pending = false,
+                    Ok(false) => {}
+                    Err(error) => {
+                        self.note(LogLevel::Error, &error);
+                        self.jit_error = Some(error);
+                        self.jit_pending = false;
+                        self.pending_in_process = None;
+                    }
+                }
+            }
+            if self.jit_pending || self.jit_error.is_some() {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.heading(if self.jit_pending { "Preparing JIT" } else { "Could not prepare JIT" });
+                    ui.add_space(16.0);
+                    let message = self.jit_error.as_deref().unwrap_or(
+                        "Complete the request in StikDebug, then return to tapHLE. Your app will start when JIT is ready.");
+                    ui.label(egui::RichText::new(message).size(16.0));
+                    ui.add_space(16.0);
+                    if ui.add_sized([200.0, 48.0], egui::Button::new("Return to library")).clicked() {
+                        crate::platform::jit::cancel();
+                        self.jit_pending = false;
+                        self.jit_error = None;
+                        self.pending_in_process = None;
+                        self.mobile_screen = crate::ui::mobile::Screen::Library;
+                    }
+                });
+                ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                return;
+            }
+        }
         self.drain_background(ctx);
         self.collect_dropped_files(ctx);
         self.collect_finished_runs();
@@ -1407,6 +1424,88 @@ impl crate::shell::Application for Frontend {
         // context borrows the rest, so the string is lifted out and put back.
         let mut search = std::mem::take(&mut self.search);
         let context = self.chrome_context();
+
+        let mobile_target = cfg!(any(target_os = "android", target_os = "ios"));
+        if form_factor_for(mobile_target, self.settings.preview_mobile) == FormFactor::Mobile {
+            let about_info = self.about.as_ref().map(|_| self.about_info());
+            let mut global_outcome = Outcome::Continue;
+            let mut app_outcome = Outcome::Continue;
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(theme::LIGHT.content))
+                .show(ctx, |ui| {
+                    let running: Vec<String> = self
+                        .launcher
+                        .running()
+                        .iter()
+                        .map(|run| run.entry_id.clone())
+                        .collect();
+                    let mobile = crate::ui::mobile::MobileContext {
+                        library: &self.library,
+                        database: &self.database,
+                        groups: &groups,
+                        icons: &self.icons,
+                        selected: self.state.selected_app.as_deref(),
+                        running: &running,
+                    };
+                    let mut pages = crate::ui::mobile::MobilePages {
+                        global_settings: self.global_dialog.as_mut(),
+                        app_settings: self.app_dialog.as_mut(),
+                        about: self.about.as_mut().zip(about_info.as_ref()),
+                    };
+                    let result = crate::ui::mobile::show(
+                        ui,
+                        ui.max_rect(),
+                        &mobile,
+                        &mut self.mobile_screen,
+                        &mut pages,
+                    );
+                    actions.extend(result.actions);
+                    global_outcome = result.global_settings;
+                    app_outcome = result.app_settings;
+                });
+            self.search = search;
+
+            match global_outcome {
+                Outcome::Continue => (),
+                Outcome::Cancel => self.global_dialog = None,
+                outcome => {
+                    if let Some(dialog) = &self.global_dialog {
+                        let draft = dialog.draft.clone();
+                        self.adopt_settings(ctx, draft);
+                    }
+                    if outcome == Outcome::Accept {
+                        self.global_dialog = None;
+                        self.mobile_screen = crate::ui::mobile::Screen::Settings;
+                    }
+                }
+            }
+            match app_outcome {
+                Outcome::Continue => (),
+                Outcome::Cancel => self.app_dialog = None,
+                outcome => {
+                    if let Some(dialog) = &self.app_dialog {
+                        let (id, draft) = (dialog.entry_id.clone(), dialog.draft.clone());
+                        if let Some(entry) = self.library.find_mut(&id) {
+                            entry.overrides = draft;
+                            self.dirty.library = true;
+                        }
+                    }
+                    if outcome == Outcome::Accept {
+                        self.app_dialog = None;
+                        self.mobile_screen = crate::ui::mobile::Screen::Details;
+                    }
+                }
+            }
+            if self.mobile_screen != crate::ui::mobile::Screen::About {
+                self.about = None;
+            }
+            self.handle_close_request(ctx);
+            for action in actions {
+                self.apply(ctx, action);
+            }
+            self.save_if_due(false);
+            return;
+        }
 
         egui::TopBottomPanel::top("menu-bar")
             .frame(chrome_frame(2))
@@ -1510,41 +1609,7 @@ impl crate::shell::Application for Frontend {
                     view,
                     library_is_empty,
                 };
-                if self.settings.preview_mobile {
-                    // A phone's shape, centred, so what is being judged is a
-                    // phone layout rather than a wide one with a phone's
-                    // widgets in it. 390 by 844 points is an iPhone 14.
-                    let available = ui.max_rect();
-                    let size = egui::vec2(390.0, 844.0);
-                    let frame = egui::Rect::from_center_size(
-                        available.center(),
-                        egui::vec2(
-                            size.x.min(available.width()),
-                            size.y.min(available.height()),
-                        ),
-                    );
-                    ui.painter().rect_stroke(
-                        frame.expand(1.0),
-                        0.0,
-                        egui::Stroke::new(1.0_f32, theme::LIGHT.border_strong),
-                        egui::StrokeKind::Outside,
-                    );
-                    let mobile = crate::ui::mobile::MobileContext {
-                        library: &self.library,
-                        groups: &groups,
-                        icons: &self.icons,
-                        selected: self.state.selected_app.as_deref(),
-                        running: &running,
-                    };
-                    actions.extend(crate::ui::mobile::show(
-                        ui,
-                        frame,
-                        &mobile,
-                        &mut self.mobile_screen,
-                    ));
-                } else {
-                    crate::ui::desktop::library_view::show(ui, &context, &mut actions);
-                }
+                crate::ui::desktop::library_view::show(ui, &context, &mut actions);
             });
 
         self.search = search;
@@ -1700,13 +1765,6 @@ impl Frontend {
                 self.crash = None;
             }
         }
-        if let Some(dialog) = &mut self.report {
-            let limitation = TapHledbProvider::new(self.transport.clone()).submission_limitation();
-            crate::ui::desktop::dialogs::show_report(ctx, dialog, limitation, actions);
-            if !dialog.open {
-                self.report = None;
-            }
-        }
         if let Some(confirmation) = &mut self.confirmation {
             crate::ui::desktop::dialogs::show_confirmation(ctx, confirmation, actions);
             if !confirmation.open {
@@ -1777,9 +1835,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_build_outside_ci_says_so() {
-        let description = build_description();
-        assert!(description.contains("local") || description.contains("run"));
+    fn mobile_targets_use_the_mobile_composition_without_a_preview_flag() {
+        assert_eq!(form_factor_for(true, false), FormFactor::Mobile);
+        assert_eq!(form_factor_for(false, true), FormFactor::Mobile);
+        assert_eq!(form_factor_for(false, false), FormFactor::Desktop);
     }
 
     #[test]

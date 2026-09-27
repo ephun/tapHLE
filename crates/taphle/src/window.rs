@@ -375,6 +375,12 @@ pub struct Window {
 }
 
 impl Window {
+    /// Mobile hosts give tapHLE one OS-owned full-screen drawable even when the
+    /// guest's desktop-style `--fullscreen` option is not set.
+    fn mobile_fullscreen() -> bool {
+        env::consts::OS == "android" || env::consts::OS == "ios"
+    }
+
     /// Returns [true] if tapHLE is running on a device where we should always
     /// display fullscreen, but SDL2 will let us control the orientation, i.e.
     /// Android devices.
@@ -386,9 +392,16 @@ impl Window {
         icon: Option<Image>,
         launch_image: Option<Image>,
         options: &Options,
+        lease: Option<crate::AppWindowLease>,
     ) -> Window {
-        let sdl_ctx = sdl2::init().unwrap();
-        let video_ctx = sdl_ctx.video().unwrap();
+        let (sdl_ctx, video_ctx, leased_window) = match lease {
+            Some(lease) => (lease.sdl, lease.video, Some(lease.window)),
+            None => {
+                let sdl = sdl2::init().unwrap();
+                let video = sdl.video().unwrap();
+                (sdl, video, None)
+            }
+        };
 
         // The "hidapi" feature of rust-sdl2 is enabled so that sdl2::sensor
         // is available, but we don't want to enable SDL's HIDAPI controller
@@ -431,7 +444,13 @@ impl Window {
         };
         let fullscreen = options.fullscreen;
 
-        let mut window = if Self::rotatable_fullscreen() {
+        let mut window = if let Some(mut window) = leased_window {
+            if Self::rotatable_fullscreen() {
+                set_sdl2_orientation(device_orientation);
+            }
+            let _ = window.set_title(title);
+            window
+        } else if Self::rotatable_fullscreen() {
             // Without this, SDL will force fullscreen mode to be portrait.
             set_sdl2_orientation(device_orientation);
             let screen_size = video_ctx.display_bounds(0).unwrap().size();
@@ -793,6 +812,16 @@ impl Window {
                     }
                 }
                 E::AppWillEnterBackground { .. } => {
+                    // iOS sends the "will" notification for transient focus
+                    // changes as well as for Home/background transitions. Do
+                    // not tear down an in-process guest until UIKit confirms
+                    // that the application actually entered the background;
+                    // otherwise a normal handoff can stop it after a few
+                    // frames.
+                    if cfg!(target_os = "ios") {
+                        log!("Deferring iOS background handling until app-did-enter-background.");
+                        continue;
+                    }
                     log!("Received app-will-resign-active event.");
                     assert!(self.high_priority_event.is_none());
                     self.high_priority_event = Some(Event::AppWillResignActive);
@@ -801,6 +830,15 @@ impl Window {
                     // TODO: Add a mechanism for re-enabling polling, if at some
                     // point we support returning tapHLE to the foreground.
                     self.enable_event_polling = false;
+                    continue;
+                }
+                E::AppDidEnterBackground { .. } => {
+                    if cfg!(target_os = "ios") {
+                        log!("Received iOS app-did-enter-background event: exiting guest run.");
+                        assert!(self.high_priority_event.is_none());
+                        self.high_priority_event = Some(Event::AppWillResignActive);
+                        self.enable_event_polling = false;
+                    }
                     continue;
                 }
                 E::AppTerminating { .. } => {
@@ -1376,8 +1414,21 @@ impl Window {
             use crate::gles::gles11_raw as gles11; // constants only
 
             let mut texture = 0;
+            let host_drawable = Self::current_host_drawable_bindings();
+            gl_ctx.BindFramebufferOES(gles11::FRAMEBUFFER_OES, host_drawable.0);
+            gl_ctx.BindRenderbufferOES(gles11::RENDERBUFFER_OES, host_drawable.1);
             gl_ctx.GenTextures(1, &mut texture);
             gl_ctx.BindTexture(gles11::TEXTURE_2D, texture);
+            gl_ctx.TexParameteri(
+                gles11::TEXTURE_2D,
+                gles11::TEXTURE_WRAP_S,
+                gles11::CLAMP_TO_EDGE as _,
+            );
+            gl_ctx.TexParameteri(
+                gles11::TEXTURE_2D,
+                gles11::TEXTURE_WRAP_T,
+                gles11::CLAMP_TO_EDGE as _,
+            );
             let (width, height) = image.dimensions();
             gl_ctx.TexImage2D(
                 gles11::TEXTURE_2D,
@@ -1415,6 +1466,40 @@ impl Window {
 
         // hold onto GL context so the image doesn't disappear, and hold
         // onto image so we can rotate later if necessary
+    }
+
+    /// Native drawable objects belonging to the SDL window's current context.
+    ///
+    /// Desktop GL uses framebuffer zero. UIKit creates a non-zero framebuffer
+    /// and renderbuffer for its EAGL drawable, so rendering to zero only paints
+    /// an off-screen default surface there.
+    pub fn host_drawable_bindings(&mut self) -> (u32, u32) {
+        drop(self.make_internal_gl_ctx_current());
+        Self::current_host_drawable_bindings()
+    }
+
+    /// Query SDL's drawable for the current context, not guest GL bindings.
+    pub fn current_host_drawable_bindings() -> (u32, u32) {
+        #[cfg(target_os = "ios")]
+        unsafe {
+            extern "C" {
+                fn tapHLE_iOS_drawable_bindings(
+                    framebuffer: *mut u32,
+                    renderbuffer: *mut u32,
+                ) -> i32;
+            }
+            let mut framebuffer = 0;
+            let mut renderbuffer = 0;
+            assert_ne!(
+                tapHLE_iOS_drawable_bindings(&mut framebuffer, &mut renderbuffer),
+                0
+            );
+            (framebuffer, renderbuffer)
+        }
+        #[cfg(not(target_os = "ios"))]
+        {
+            (0, 0)
+        }
     }
 
     /// Swap front-buffer and back-buffer so the result of OpenGL rendering is
@@ -1604,7 +1689,7 @@ impl Window {
             self.scale_hack,
             self.landscape_native,
         );
-        if !self.fullscreen && !Self::rotatable_fullscreen() {
+        if !self.fullscreen && !Self::mobile_fullscreen() {
             return (0, 0, app_width, app_height);
         }
 

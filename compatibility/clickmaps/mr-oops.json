@@ -1,0 +1,45 @@
+{
+  "clickmap_version": 1,
+  "window": {
+    "width": 480,
+    "height": 320
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 5000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 25000
+    },
+    {
+      "id": "start",
+      "action": "tap",
+      "at": [
+        360,
+        178
+      ],
+      "settle_ms": 2500
+    }
+  ],
+  "app": {
+    "bundle_identifier": "jp.co.ponos.mroops",
+    "display_name": "Mr.Oops!!",
+    "version": "1.2.2",
+    "sha256": "bced8e7e8e9cfd0d9c80264b0a6919746aed44b7530bbe58cd7e08c5fb43aa6d"
+  },
+  "recorded": {
+    "date": "2026-09-23",
+    "host": "iOS 18.5 Intel Simulator, Apple Software Renderer",
+    "by": "OpenAI Codex"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "The player and hazard warnings appear on the active gameplay grid."
+  },
+  "notes": [
+    "Observed on an uncommitted development build with explicit --replay-scale-to-viewport. This route is not a published compatibility rating; other hosts must verify it independently."
+  ]
+}

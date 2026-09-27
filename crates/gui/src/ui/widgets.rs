@@ -6,13 +6,14 @@
 //! The small pieces both form factors are built from.
 //!
 //! A widget belongs here when it is the same on a phone as on a desktop: an
-//! icon, a star rating, a labelled field, a section heading. Anything that
+//! icon, a compatibility state, a labelled field, a section heading. Anything that
 //! arranges those into a screen belongs in [crate::ui::desktop] or
 //! [crate::ui::mobile] instead, because that is the part a form factor
 //! changes.
 
-use egui::{Color32, Rect, Response, Sense, Stroke, Ui, Vec2};
+use egui::{Color32, Rect, Response, Sense, Stroke, Ui, Vec2, WidgetInfo, WidgetType};
 
+use crate::state::compat::CompatibilityState;
 use crate::ui::theme;
 
 /// The icons drawn on toolbar buttons and in menus.
@@ -272,71 +273,27 @@ pub fn toolbar_button(
     }
 }
 
-/// Five stars, filled to `rating`. Read-only.
-pub fn stars(ui: &mut Ui, rating: Option<u8>, size: f32) -> Response {
-    let palette = &theme::LIGHT;
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(size * 5.6, size), Sense::hover());
-    let filled = rating.unwrap_or(0);
-    for index in 0..5u8 {
-        let centre = egui::pos2(
-            rect.left() + size * 0.5 + index as f32 * size * 1.15,
-            rect.center().y,
-        );
-        let earned = index < filled;
-        draw_star(
-            ui.painter(),
-            centre,
-            size * 0.5,
-            if earned {
-                palette.star
-            } else {
-                palette.star_empty
-            },
-            earned,
-        );
-    }
+/// The database's five-position state. Read-only, with a semantic label for
+/// assistive technology and a matching tooltip for sighted mouse users.
+pub fn compatibility_state(ui: &mut Ui, state: CompatibilityState, size: f32) -> Response {
+    let label = state.accessible_label();
+    let response = ui
+        .add(egui::Label::new(
+            egui::RichText::new(state.emoji()).size(size),
+        ))
+        .on_hover_text(label);
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, label));
     response
-}
-
-/// Five stars the person can click, plus a way back to "not rated".
-///
-/// Returns the new rating when it changed.
-pub fn star_picker(ui: &mut Ui, rating: Option<u8>) -> Option<Option<u8>> {
-    let palette = &theme::LIGHT;
-    let size = 16.0;
-    let mut changed = None;
-    ui.horizontal(|ui| {
-        for index in 0..5u8 {
-            let (rect, response) = ui.allocate_exact_size(Vec2::splat(size + 2.0), Sense::click());
-            let response = response.on_hover_text(format!("Rate {} of 5", index + 1));
-            let earned = index < rating.unwrap_or(0);
-            let color = if response.hovered() {
-                palette.accent
-            } else if earned {
-                palette.star
-            } else {
-                palette.star_empty
-            };
-            draw_star(ui.painter(), rect.center(), size * 0.5, color, earned);
-            if response.clicked() {
-                changed = Some(Some(index + 1));
-            }
-        }
-        if rating.is_some()
-            && ui
-                .small_button("Clear")
-                .on_hover_text("Remove this machine's own rating")
-                .clicked()
-        {
-            changed = Some(None);
-        }
-    });
-    changed
 }
 
 /// A metadata row: a dim label and a value that wraps.
 pub fn field(ui: &mut Ui, label: &str, value: &str) {
     if value.trim().is_empty() {
+        return;
+    }
+    if ui.available_width() < 360.0 {
+        ui.add(egui::Label::new(egui::RichText::new(label).color(theme::LIGHT.text_dim)).wrap());
+        ui.add(egui::Label::new(value).wrap());
         return;
     }
     ui.horizontal_top(|ui| {
@@ -364,6 +321,10 @@ pub fn field(ui: &mut Ui, label: &str, value: &str) {
 /// proportional text it simply looked like a mistake, and a long path in a
 /// narrow column looked worse.
 pub fn selectable_field(ui: &mut Ui, label: &str, value: &str) -> Response {
+    if ui.available_width() < 360.0 {
+        ui.add(egui::Label::new(egui::RichText::new(label).color(theme::LIGHT.text_dim)).wrap());
+        return ui.add(egui::Label::new(value).wrap().sense(Sense::click()));
+    }
     let mut response = None;
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;

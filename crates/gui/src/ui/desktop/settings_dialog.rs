@@ -229,6 +229,42 @@ pub fn show_app(ctx: &egui::Context, dialog: &mut AppDialog) -> Outcome {
     outcome
 }
 
+/// Draw the selected global-settings category into the space supplied by a
+/// form-factor composition.
+pub(crate) fn show_global_category(ui: &mut Ui, dialog: &mut GlobalDialog) {
+    match dialog.category {
+        Category::General => general_page(ui, &mut dialog.draft),
+        Category::Paths => paths_page(ui, &mut dialog.draft),
+        Category::Logging => {
+            logging_page(ui, &mut dialog.draft.emulator, None);
+            ui.add_space(8.0);
+            frontend_logging_page(ui, &mut dialog.draft);
+        }
+        other => emulator_page(ui, other, &mut dialog.draft.emulator, None),
+    }
+}
+
+/// Draw the selected per-app settings category into the space supplied by a
+/// form-factor composition.
+pub(crate) fn show_app_category(ui: &mut Ui, dialog: &mut AppDialog) {
+    let inherited = Some(&dialog.inherited);
+    match dialog.category {
+        Category::Logging => logging_page(ui, &mut dialog.draft, inherited),
+        Category::Controls => {
+            crate::ui::widgets::section(ui, "This app's controls");
+            let inherited_layout = dialog.inherited.controls.clone().unwrap_or_default();
+            let mut open_editor = dialog.open_control_editor;
+            app_control_layout(ui, &mut dialog.draft, &inherited_layout, &mut open_editor);
+            dialog.open_control_editor = open_editor;
+            ui.add_space(12.0);
+            controls_page(ui, &mut dialog.draft, inherited);
+        }
+        other => emulator_page(ui, other, &mut dialog.draft, inherited),
+    }
+}
+
+const MOBILE_TOUCH_TARGET: f32 = 48.0;
+
 /// How tall a dialog page is.
 ///
 /// Fixed, and the same for every category. Two other arrangements were tried
@@ -317,43 +353,56 @@ fn optional_row<T: Clone + PartialEq>(
     inherited: Option<String>,
     control: impl FnOnce(&mut Ui, &mut T),
 ) {
-    ui.horizontal(|ui| {
-        let mut set = value.is_some();
-        if ui
-            .checkbox(&mut set, "")
-            .on_hover_text(if inherited.is_some() {
-                "Set this for this app"
-            } else {
-                "Set this. Leave it clear to use tapHLE's own default and the \
-                 options files."
-            })
-            .changed()
-        {
-            *value = set.then(|| value.clone().unwrap_or_else(|| default_value.clone()));
-        }
+    let narrow = ui.available_width() < 460.0;
+    let mut set = value.is_some();
+    let hint = if inherited.is_some() {
+        "Set this for this app"
+    } else {
+        "Set this. Leave it clear to use tapHLE's own default and the options files."
+    };
+    let changed = if narrow {
         ui.add_sized(
-            [150.0, 18.0],
-            egui::Label::new(label).halign(egui::Align::LEFT),
-        );
-        match value {
-            Some(inner) => {
-                control(ui, inner);
-            }
-            None => {
-                ui.add_enabled_ui(false, |ui| {
-                    let mut ghost = default_value.clone();
-                    control(ui, &mut ghost);
-                });
-                if let Some(inherited) = inherited {
-                    ui.label(
-                        egui::RichText::new(inherited)
-                            .small()
-                            .color(theme::LIGHT.text_dim),
-                    );
-                }
+            [ui.available_width(), MOBILE_TOUCH_TARGET],
+            egui::Checkbox::new(&mut set, egui::RichText::new(label).size(16.0)),
+        )
+        .on_hover_text(hint)
+        .changed()
+    } else {
+        ui.horizontal(|ui| {
+            let changed = ui.checkbox(&mut set, "").on_hover_text(hint).changed();
+            ui.add_sized(
+                [150.0, 18.0],
+                egui::Label::new(label).halign(egui::Align::LEFT),
+            );
+            changed
+        })
+        .inner
+    };
+    if changed {
+        *value = set.then(|| value.clone().unwrap_or_else(|| default_value.clone()));
+    }
+
+    let draw_control = |ui: &mut Ui| match value {
+        Some(inner) => control(ui, inner),
+        None => {
+            ui.add_enabled_ui(false, |ui| {
+                let mut ghost = default_value.clone();
+                control(ui, &mut ghost);
+            });
+            if let Some(inherited) = inherited {
+                ui.label(
+                    egui::RichText::new(inherited)
+                        .size(if narrow { 14.0 } else { 12.0 })
+                        .color(theme::LIGHT.text_dim),
+                );
             }
         }
-    });
+    };
+    if narrow {
+        ui.indent(label, draw_control);
+    } else {
+        ui.horizontal(draw_control);
+    }
 }
 
 /// A tri-state group: the "set" checkbox and the name on their own line, and
@@ -372,7 +421,8 @@ fn optional_block<T: Clone + PartialEq>(
     inherited: Option<String>,
     contents: impl FnOnce(&mut Ui, &mut T),
 ) {
-    ui.horizontal(|ui| {
+    let narrow = ui.available_width() < 460.0;
+    ui.horizontal_wrapped(|ui| {
         let mut set = value.is_some();
         // The label goes on the checkbox itself. Nothing else on this line
         // could be mistaken for the thing it switches, so there is no reason
@@ -391,10 +441,13 @@ fn optional_block<T: Clone + PartialEq>(
         }
         if value.is_none() {
             if let Some(inherited) = &inherited {
-                ui.label(
-                    egui::RichText::new(inherited)
-                        .small()
-                        .color(theme::LIGHT.text_dim),
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(inherited)
+                            .size(if narrow { 14.0 } else { 12.0 })
+                            .color(theme::LIGHT.text_dim),
+                    )
+                    .wrap(),
                 );
             }
         }
@@ -501,7 +554,7 @@ fn display_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Em
         |ui, value| {
             egui::ComboBox::from_id_salt("scale-hack")
                 .selected_text(format!("{value}×"))
-                .width(120.0)
+                .width(control_width(ui, 120.0))
                 .show_ui(ui, |ui| {
                     for scale in 1..=8u32 {
                         ui.selectable_value(value, scale, format!("{scale}×"));
@@ -528,7 +581,7 @@ fn display_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Em
         |ui, value| {
             egui::ComboBox::from_id_salt("device-family")
                 .selected_text(value.label())
-                .width(190.0)
+                .width(control_width(ui, 190.0))
                 .show_ui(ui, |ui| {
                     for family in DeviceFamilyPref::ALL {
                         ui.selectable_value(value, *family, family.label());
@@ -545,7 +598,7 @@ fn display_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Em
         |ui, value| {
             egui::ComboBox::from_id_salt("orientation")
                 .selected_text(value.label())
-                .width(190.0)
+                .width(control_width(ui, 190.0))
                 .show_ui(ui, |ui| {
                     for orientation in OrientationPref::ALL {
                         ui.selectable_value(value, *orientation, orientation.label());
@@ -575,7 +628,7 @@ fn graphics_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
         |ui, value| {
             egui::ComboBox::from_id_salt("gles1")
                 .selected_text(value.label())
-                .width(190.0)
+                .width(control_width(ui, 190.0))
                 .show_ui(ui, |ui| {
                     for option in Gles1Pref::ALL {
                         ui.selectable_value(value, *option, option.label());
@@ -619,7 +672,7 @@ fn graphics_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
             };
             egui::ComboBox::from_id_salt("fps-limit")
                 .selected_text(text)
-                .width(120.0)
+                .width(control_width(ui, 120.0))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(value, FrameRateLimit::Fps(60.0), "60 fps");
                     ui.selectable_value(value, FrameRateLimit::Fps(30.0), "30 fps");
@@ -792,7 +845,7 @@ fn app_control_layout(
     }
 
     ui.add_space(4.0);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if ui.button("Place controls on the screen…").clicked() {
             *open_editor = true;
         }
@@ -814,17 +867,26 @@ fn caption(ui: &mut Ui, text: &str) {
 /// A slider with its name in front of it, for when several sit inside one row
 /// and the row's own label cannot say which is which.
 fn slider_row(ui: &mut Ui, label: &str, slider: impl FnOnce(&mut Ui)) {
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            [150.0, ui.spacing().interact_size.y],
-            egui::Label::new(
-                egui::RichText::new(label)
-                    .small()
-                    .color(theme::LIGHT.text_dim),
-            ),
+    if ui.available_width() < 400.0 {
+        ui.label(
+            egui::RichText::new(label)
+                .small()
+                .color(theme::LIGHT.text_dim),
         );
         slider(ui);
-    });
+    } else {
+        ui.horizontal(|ui| {
+            ui.add_sized(
+                [150.0, ui.spacing().interact_size.y],
+                egui::Label::new(
+                    egui::RichText::new(label)
+                        .small()
+                        .color(theme::LIGHT.text_dim),
+                ),
+            );
+            slider(ui);
+        });
+    }
 }
 
 /// What tapHLE draws when an app asks for one of the iPhone's fonts.
@@ -849,20 +911,23 @@ fn fonts_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Emul
 
     let installed = tapHLE::font::host::installed().families();
 
-    egui::ScrollArea::vertical()
-        .max_height(340.0)
-        .show(ui, |ui| {
-            egui::Grid::new("font-substitutes")
-                .num_columns(2)
-                .spacing([12.0, 6.0])
-                .striped(true)
-                .show(ui, |ui| {
-                    for substitution in catalogue::SUBSTITUTIONS {
-                        font_row(ui, draft, substitution, &installed);
-                        ui.end_row();
-                    }
-                });
-        });
+    if ui.available_width() < 430.0 {
+        for substitution in catalogue::SUBSTITUTIONS {
+            font_row(ui, draft, substitution, &installed, true);
+            ui.add_space(8.0);
+        }
+    } else {
+        egui::Grid::new("font-substitutes")
+            .num_columns(2)
+            .spacing([12.0, 6.0])
+            .striped(true)
+            .show(ui, |ui| {
+                for substitution in catalogue::SUBSTITUTIONS {
+                    font_row(ui, draft, substitution, &installed, false);
+                    ui.end_row();
+                }
+            });
+    }
 }
 
 /// One iPhone font and the font drawn for it.
@@ -875,6 +940,7 @@ fn font_row(
     draft: &mut EmulatorSettings,
     substitution: &tapHLE::font::catalogue::Substitution,
     installed: &[String],
+    stacked: bool,
 ) {
     use tapHLE::font::catalogue;
 
@@ -898,7 +964,7 @@ fn font_row(
 
     egui::ComboBox::from_id_salt(("font", family))
         .selected_text(shown)
-        .width(240.0)
+        .width(if stacked { ui.available_width() } else { 240.0 })
         .show_ui(ui, |ui| {
             // The list is the bundled families plus every font on the
             // computer, which is over a hundred here; without a height it
@@ -984,7 +1050,7 @@ fn system_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Emu
         |ui, value| {
             ui.add(
                 egui::TextEdit::singleline(value)
-                    .desired_width(180.0)
+                    .desired_width(control_width(ui, 180.0))
                     .hint_text("en,fr,de"),
             );
         },
@@ -1008,7 +1074,7 @@ fn system_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Emu
         |ui, value| {
             ui.add(
                 egui::TextEdit::singleline(value)
-                    .desired_width(230.0)
+                    .desired_width(control_width(ui, 230.0))
                     .hint_text("--button-to-touch=A,0.5,0.9"),
             );
         },
@@ -1034,7 +1100,7 @@ fn logging_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Em
         |ui, value| {
             ui.add(
                 egui::TextEdit::singleline(value)
-                    .desired_width(230.0)
+                    .desired_width(control_width(ui, 230.0))
                     .hint_text("tapHLE::frameworks::uikit"),
             );
         },
@@ -1057,11 +1123,7 @@ fn frontend_logging_page(ui: &mut Ui, draft: &mut FrontendSettings) {
         "Open the log panel when a run ends badly",
     );
     ui.checkbox(&mut draft.log_show_timestamps, "Show timestamps");
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            [150.0, 18.0],
-            egui::Label::new("Lines kept").halign(egui::Align::LEFT),
-        );
+    responsive_control_row(ui, "Lines kept", |ui| {
         ui.add(
             egui::DragValue::new(&mut draft.log_capacity)
                 .range(1000..=2_000_000)
@@ -1080,11 +1142,7 @@ fn frontend_logging_page(ui: &mut Ui, draft: &mut FrontendSettings) {
 
 fn general_page(ui: &mut Ui, draft: &mut FrontendSettings) {
     crate::ui::widgets::section(ui, "Interface");
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            [150.0, 18.0],
-            egui::Label::new("Interface scale").halign(egui::Align::LEFT),
-        );
+    responsive_control_row(ui, "Interface scale", |ui| {
         ui.add(
             egui::Slider::new(&mut draft.ui_zoom, 0.75..=2.0)
                 .fixed_decimals(2)
@@ -1156,24 +1214,18 @@ fn paths_page(ui: &mut Ui, draft: &mut FrontendSettings) {
     );
 
     crate::ui::widgets::section(ui, "Emulator");
-    ui.horizontal(|ui| {
-        let text = draft
-            .emulator_path
-            .as_ref()
-            .map(|p| crate::platform::storage::display_path(p))
-            .unwrap_or_else(|| "found automatically".to_string());
-        ui.add_sized(
-            [150.0, 18.0],
-            egui::Label::new("tapHLE program").halign(egui::Align::LEFT),
-        );
+    let text = draft
+        .emulator_path
+        .as_ref()
+        .map(|p| crate::platform::storage::display_path(p))
+        .unwrap_or_else(|| "found automatically".to_string());
+    responsive_control_row(ui, "tapHLE program", |ui| {
         ui.add(egui::Label::new(egui::RichText::new(text).small()).truncate());
     });
-    ui.horizontal(|ui| {
-        ui.add_space(156.0);
+    ui.horizontal_wrapped(|ui| {
         if ui.button("Choose…").clicked() {
-            if let Some(path) = rfd::FileDialog::new()
-                .set_title("Choose the tapHLE emulator program")
-                .pick_file()
+            if let Some(path) =
+                crate::platform::dialogs::pick_file("Choose the tapHLE emulator program")
             {
                 draft.emulator_path = Some(path);
             }
@@ -1207,15 +1259,33 @@ fn paths_page(ui: &mut Ui, draft: &mut FrontendSettings) {
         draft.library_folders.remove(index);
     }
     if ui.button("Add Folder…").clicked() {
-        if let Some(folder) = rfd::FileDialog::new()
-            .set_title("Choose a folder to scan for apps")
-            .pick_folder()
+        if let Some(folder) =
+            crate::platform::dialogs::pick_folder("Choose a folder to scan for apps")
         {
             if !draft.library_folders.contains(&folder) {
                 draft.library_folders.push(folder);
             }
         }
     }
+}
+
+fn responsive_control_row(ui: &mut Ui, label: &str, control: impl FnOnce(&mut Ui)) {
+    if ui.available_width() < 400.0 {
+        ui.label(label);
+        control(ui);
+    } else {
+        ui.horizontal(|ui| {
+            ui.add_sized(
+                [150.0, 18.0],
+                egui::Label::new(label).halign(egui::Align::LEFT),
+            );
+            control(ui);
+        });
+    }
+}
+
+fn control_width(ui: &Ui, preferred: f32) -> f32 {
+    ui.available_width().min(preferred)
 }
 
 #[cfg(test)]

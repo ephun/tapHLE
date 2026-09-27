@@ -50,7 +50,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["width", "height"],
-      "description": "Client-area size the coordinates below are in. A replay that gets a different size must NOT rescale silently: report and stop.",
+      "description": "Client-area size the coordinates below are in. A replay that gets a different size must NOT rescale silently: report and stop unless the caller explicitly opts into viewport scaling.",
       "properties": {
         "width": { "type": "integer", "minimum": 1 },
         "height": { "type": "integer", "minimum": 1 },

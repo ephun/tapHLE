@@ -11,6 +11,12 @@
   - SHA-256: `7d750072ee7d4ea90c644c58babbdd16cf4463e6ae2bdb0dd5600f240d8c0a09`
 - Embedded identity: display `ShotShotShoot`, bundle
   `com.eriksvedang.shotshotshoot`. An openFrameworks game.
+- The 2026-09-21 iOS preparation run reads bundle version `1.01` with
+  `tapHLE --info` from the SHA-256 above. The frozen cohort records `1.0`;
+  that identity discrepancy remains unresolved. The maintainer authorized
+  testing this supplied copy and knows of no other copy. Record `1.01` for
+  these runs; neither the filename nor that authorization changes the
+  embedded identity or silently corrects the frozen snapshot.
 - Options: none. Client window is 1024x768.
 - tapHLEdb: App 19, version 19, report 27 (2026-07-26, tapHLE `730f2c29`,
   ★★★☆☆).

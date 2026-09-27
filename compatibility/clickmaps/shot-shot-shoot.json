@@ -1,0 +1,72 @@
+{
+  "clickmap_version": 1,
+  "window": {
+    "width": 1024,
+    "height": 768
+  },
+  "defaults": {
+    "press_ms": 150,
+    "settle_ms": 5000
+  },
+  "steps": [
+    {
+      "id": "boot",
+      "action": "wait",
+      "settle_ms": 25000
+    },
+    {
+      "id": "start",
+      "action": "tap",
+      "at": [
+        512,
+        384
+      ],
+      "settle_ms": 5000
+    },
+    {
+      "id": "shoot-1",
+      "action": "tap",
+      "at": [
+        800,
+        384
+      ],
+      "settle_ms": 5000
+    },
+    {
+      "id": "shoot-2",
+      "action": "tap",
+      "at": [
+        880,
+        384
+      ],
+      "settle_ms": 5000
+    },
+    {
+      "id": "shoot-3",
+      "action": "tap",
+      "at": [
+        950,
+        384
+      ],
+      "settle_ms": 5000
+    }
+  ],
+  "app": {
+    "bundle_identifier": "com.eriksvedang.shotshotshoot",
+    "display_name": "ShotShotShoot",
+    "version": "1.01",
+    "sha256": "7d750072ee7d4ea90c644c58babbdd16cf4463e6ae2bdb0dd5600f240d8c0a09"
+  },
+  "recorded": {
+    "date": "2026-09-23",
+    "host": "iOS 18.5 Intel Simulator, Apple Software Renderer",
+    "by": "OpenAI Codex"
+  },
+  "milestone": {
+    "rating": 3,
+    "describes": "Shots cross the tutorial field and destroy a target."
+  },
+  "notes": [
+    "Observed on an uncommitted development build with explicit --replay-scale-to-viewport. This route is not a published compatibility rating; other hosts must verify it independently."
+  ]
+}

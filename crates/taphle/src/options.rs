@@ -174,6 +174,8 @@ pub struct Options {
     /// Quit once the replay's last step has settled, so an unattended run ends
     /// on its own instead of waiting to be killed.
     pub replay_quit: bool,
+    /// Explicitly adapt recorded client coordinates to the current viewport.
+    pub replay_scale_to_viewport: bool,
     pub headless: bool,
     pub print_fps: bool,
     pub fps_limit: Option<f64>,
@@ -214,6 +216,7 @@ impl Default for Options {
             use_host_fonts: true,
             replay: None,
             replay_quit: false,
+            replay_scale_to_viewport: false,
             headless: false,
             print_fps: false,
             fps_limit: Some(60.0), // Original iPhone is 60Hz and uses v-sync,
@@ -458,6 +461,8 @@ impl Options {
             self.preferred_languages = Some(value.split(',').map(ToOwned::to_owned).collect());
         } else if let Some(value) = arg.strip_prefix("--replay=") {
             self.replay = Some(value.into());
+        } else if arg == "--replay-scale-to-viewport" {
+            self.replay_scale_to_viewport = true;
         } else if arg == "--replay-quit" {
             self.replay_quit = true;
         } else if arg == "--no-replay-quit" {

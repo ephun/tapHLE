@@ -84,37 +84,25 @@ use std::path::PathBuf;
 
 pub use tapHLE_version::*;
 
-/// This is the true entry point on Android (SDLActivity calls it after
-/// initialization). On other platforms the true entry point is in src/bin.rs.
-#[cfg(target_os = "android")]
-#[no_mangle]
-pub extern "C" fn SDL_main(
-    _argc: std::ffi::c_int,
-    _argv: *const *const std::ffi::c_char,
-) -> std::ffi::c_int {
-    // Rust's default panic handler prints to stderr, but on Android that just
-    // gets discarded, so we set a custom hook to make debugging easier.
-    std::panic::set_hook(Box::new(|info| {
-        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
-            s
-        } else if let Some(s) = info.payload().downcast_ref::<String>() {
-            s
-        } else {
-            "(non-string payload)"
-        };
-        if let Some(location) = info.location() {
-            echo!("Panic at {}: {}", location, payload);
-        } else {
-            echo!("Panic: {}", payload);
-        }
-    }));
+/// Shared SDL ownership passed from the egui shell to one in-process app run.
+///
+/// The handles are ref-counted clones. The native window stays alive while
+/// tapHLE creates its guest GLES contexts against it, and ownership returns to
+/// the frontend when this value and the emulated environment are dropped.
+pub struct AppWindowLease {
+    pub(crate) sdl: sdl2::Sdl,
+    pub(crate) video: sdl2::VideoSubsystem,
+    pub(crate) window: sdl2::video::Window,
+}
 
-    // Empty args: brings up app picker.
-    match main([String::new()].into_iter()) {
-        Ok(_) => echo!("tapHLE finished"),
-        Err(e) => echo!("tapHLE errored: {e:?}"),
+impl AppWindowLease {
+    pub fn new(sdl: sdl2::Sdl, video: sdl2::VideoSubsystem, window: sdl2::video::Window) -> Self {
+        Self { sdl, video, window }
     }
-    0
+
+    pub fn window_id(&self) -> u32 {
+        self.window.id()
+    }
 }
 
 const USAGE: &str = "\
@@ -155,7 +143,22 @@ pub fn main<T: Iterator<Item = String>>(args: T) -> Result<(), String> {
 /// frontend cannot drift into a different dialect from the one every script
 /// and compatibility report uses. Returns rather than exits: the caller may
 /// well have a window still open.
-pub fn run_app<T: Iterator<Item = String>>(mut args: T) -> Result<i32, String> {
+pub fn run_app<T: Iterator<Item = String>>(args: T) -> Result<i32, String> {
+    run_app_inner(args, None)
+}
+
+/// Run one app in the SDL window already owned by the shared frontend.
+pub fn run_app_in_window<T: Iterator<Item = String>>(
+    args: T,
+    lease: AppWindowLease,
+) -> Result<i32, String> {
+    run_app_inner(args, Some(lease))
+}
+
+fn run_app_inner<T: Iterator<Item = String>>(
+    mut args: T,
+    window_lease: Option<AppWindowLease>,
+) -> Result<i32, String> {
     echo!(
         "tapHLE {}{}{} — https://github.com/ephun/tapHLE",
         branding(),
@@ -479,7 +482,13 @@ pub fn run_app<T: Iterator<Item = String>>(mut args: T) -> Result<i32, String> {
     }
 
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        Environment::new(bundle, fs, options.clone(), app_args.unwrap_or_default())
+        Environment::new(
+            bundle,
+            fs,
+            options.clone(),
+            app_args.unwrap_or_default(),
+            window_lease,
+        )
     }));
     let env = match res {
         Ok(ret) => match ret {

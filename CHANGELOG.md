@@ -2,6 +2,25 @@
 
 ## Unreleased for 0.2.4
 
+- Isolate guest framebuffer and renderbuffer names from native window objects,
+  fixing black output caused by host-dependent graphics object allocation.
+
+- Preserve inherited UIKit view state while destroying controls, so surviving
+  child views are detached instead of retaining a freed parent pointer.
+
+- Use Apple-compatible BGRA texture uploads in the iOS graphics backend.
+  Native GLES also rejects unsupported point-size arrays consistently with the
+  desktop backend, avoiding a null-pointer crash when apps use particle effects.
+
+- Restore normal layer invalidation so OpenGL-backed views are not replaced
+  with empty bitmaps. iOS presentation uses the native drawable, and frame
+  rotation no longer requires repeating non-power-of-two textures.
+
+- Sideloaded iOS builds request JIT through StikDebug before launching an app,
+  including executable-region preparation on devices with TXM. Missing JIT
+  access and guest-memory allocation failures now report an error instead of
+  proceeding into CPU initialization. Physical-device validation is pending.
+
 - tapHLE now has a proper window. Open it, see your apps laid out with their
   icons, click one, and press Play. The app opens in its own window and the
   library stays where it is, so closing a game and starting another does not
@@ -42,14 +61,24 @@
 - macOS application bundles now use the current runtime fonts and default options
   layout instead of the retired tapHLE-prefixed paths.
 
+- Android and iOS now use the same Rust and egui library as the desktop app,
+  rearranged for phone, tablet, portrait and landscape screens rather than
+  reimplemented in Java, SwiftUI or UIKit. Mobile settings, app settings and
+  About use full-screen, scrolling pages with finger-sized controls instead of
+  desktop pop-up dialogs. Tapping the mobile scroll indicator no longer
+  activates content beneath it; dragging the page remains the way to scroll.
+  Android can launch an app in that shared window and return to the library.
+  The iOS frontend also builds, installs and launches apps in the simulator;
+  guest-interface rendering there remains incomplete.
+
 - Linux has a complete portable-bundle layout matching the Windows package:
   executable, guest libraries, fonts, app directory, options, icon and licence.
 
-- Compatibility ratings from the tapHLE database are shown beside each app,
-  and you can keep your own rating separately without either overwriting the
-  other. Unfinished report-submission controls are hidden until tapHLE can offer
-  a secure GitHub-authenticated human workflow; distributed builds never contain
-  a privileged agent credential.
+- Compatibility results from the tapHLE database are shown beside each app as
+  five positions: established, unknown, or tested-and-failed. Reporting opens
+  the authenticated database form in your browser with the app, version, host
+  and build facts already filled in instead of creating or storing a rating
+  inside tapHLE; distributed builds never contain a privileged agent credential.
 
 - Every option that could be switched on can now be switched off again:
   `--windowed`, `--portrait`, `--no-landscape-native` and seven more. This

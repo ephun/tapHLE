@@ -5,6 +5,7 @@
  */
 #include <cstdint>
 #include <cstdio>
+#include <exception>
 
 #include "dynarmic/interface/A32/a32.h"
 #include "dynarmic/interface/A32/config.h"
@@ -314,8 +315,16 @@ public:
 extern "C" {
 
 DynarmicWrapper *tapHLE_DynarmicWrapper_new(void *direct_memory_access_ptr,
-                                            size_t null_page_count) {
-  return new DynarmicWrapper(direct_memory_access_ptr, null_page_count);
+                                            size_t null_page_count,
+                                            char *error, size_t error_size) {
+  try {
+    return new DynarmicWrapper(direct_memory_access_ptr, null_page_count);
+  } catch (const std::exception &e) {
+    snprintf(error, error_size, "CPU initialization failed: %s", e.what());
+  } catch (...) {
+    snprintf(error, error_size, "CPU initialization failed: native exception");
+  }
+  return nullptr;
 }
 void tapHLE_DynarmicWrapper_delete(DynarmicWrapper *cpu) { delete cpu; }
 

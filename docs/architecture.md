@@ -22,6 +22,28 @@ structure layout, and every calling convention crosses that boundary somewhere.
 
 ## The two programs
 
+### Host parity contract
+
+For one tapHLE revision, every host is intended to expose the same guest API
+behavior and app compatibility. Guest compatibility belongs in the shared
+emulator. Host adapters supply native windows, graphics drawables, input,
+audio, lifecycle handling and executable-memory access; they must not select
+different emulation behavior by app name.
+
+A host-only failure can expose either an adapter defect or a host assumption
+in shared code. Compare the guest output, composition, and native presentation
+stages before changing guest behavior. Correct the responsible contract rather
+than adding per-app host workarounds. Shared changes require regression evidence
+from the other platform testing environments; a successful iOS run does not
+stand in for those checks. Platform VMs validate their own hosts against the
+same revision and artifact identities.
+
+Guest framebuffer and renderbuffer names belong to the emulated EAGL sharegroup.
+The guest API translates them to host names, while native drawable presentation
+uses host names directly. SDL allocations must not change guest object names.
+Bindings remain context-local, including when another context deletes an object.
+The synthetic TestApp `--gles-tests` checks this contract on both ES 1 and ES 2.
+
 tapHLE builds two binaries, and the split is deliberate.
 
 `tapHLE` is the emulator. `Environment` maps guest memory, drives an SDL event
@@ -222,7 +244,7 @@ framebuffer continuously.
 
 ## The frontend
 
-Source is the `tapHLE_gui` package in `crates/taphle/src/gui`.
+Source is the `tapHLE_gui` package in `crates/gui`.
 
 ### Why egui
 
@@ -357,13 +379,13 @@ emulator inserted into it.
 | `ui/theme.rs` | The visual identity: palette, type scale, spacing |
 | `ui/widgets.rs` | The pieces both form factors are built from |
 | `ui/desktop/` | Composition for a pointer and a large screen |
-| `ui/mobile.rs` | Composition for a touchscreen; declared, not yet written |
+| `ui/mobile.rs` | Responsive composition for a touchscreen |
 | `state/action.rs` | `Action`, the intent vocabulary both form factors report |
 | `state/library.rs` | Entries, importing, filtering, sorting |
 | `state/metadata.rs` | Reading an app, and the icon cache |
 | `state/settings.rs` | Global defaults, per-app overrides, argument generation |
 | `state/logstore.rs` | The shared log buffer and line classification |
-| `state/compat.rs` | Compatibility ratings, local and shared |
+| `state/compat.rs` | Published compatibility states and web-report links |
 | `state/updates.rs` | Release checking |
 | `state/timefmt.rs` | Dates and durations as a person reads them |
 | `platform/storage.rs` | Where the frontend's own files live |
@@ -473,20 +495,16 @@ what is on screen is built.
 ### Compatibility
 
 Reading is complete. `GET /compatibility/api/apps` is a real, public,
-credential-free endpoint, so the frontend shows the shared rating beside the
-local one, links to an app's record, and can say whether a record already exists
-before anybody drafts a report.
+credential-free endpoint, so the frontend shows published cumulative states and
+links to an app's record.
 
-**Submitting is not implemented**, and the report window says so rather than
-offering a button that does nothing. The database accepts reports from an agent
-token belonging to the maintainer; a submission on behalf of an arbitrary user
-needs the GitHub sign-in the project has not built. Until it exists, the report
-window assembles the exact contents of a report — identity, versions, build,
-platform, rating, options, log excerpt — for pasting into the web form, which is a
-real workflow rather than a placeholder.
-
-The local rating never touches the database value. They are different things and
-the panel labels them so.
+tapHLE does not choose or store a compatibility rating. Report actions open the
+GitHub-authenticated tapHLEdb form in the browser. The deployed form accepts an
+existing app ID or version ID in its URL; the public app endpoint exposes the
+former, so a matching bundle identifier preselects the canonical app. Other
+identity, version, and provenance fields remain for the person to enter until
+the site publishes a prefill contract for them. No database credential is
+embedded in tapHLE.
 
 ### Updates
 
@@ -517,7 +535,7 @@ JSON meant to be readable and hand-editable:
 
 | File | What it holds |
 | --- | --- |
-| `library.json` | Entries, per-app overrides, play statistics, local ratings |
+| `library.json` | Entries, per-app overrides, play statistics |
 | `settings.json` | Global emulator defaults and frontend preferences |
 | `state.json` | Window geometry, panel sizes, view mode, last selection |
 | `compatibility.json` | The last ratings read from the database |
@@ -529,7 +547,7 @@ file names the paths of a personal collection, so the directory is ignored by
 Git.
 
 Entries are keyed by the app's own identity — bundle identifier and version — not
-by path, so moving a file keeps its settings, its rating and its play time. The
+by path, so moving a file keeps its settings and its play time. The
 version is part of the key because two versions of one app are separate records
 in the compatibility database and can need different settings.
 
@@ -541,7 +559,6 @@ in the compatibility database and can need different settings.
   user-facing action is emulator work — capture on demand, write a file, bind a
   key — belonging on its own branch. The compatibility report already has a place
   for one.
-- **Submitting compatibility reports**, as above.
 - **A native menu bar**, as above.
 - **Dark mode.** `theme.rs` is written as a palette plus a function that applies
   it, so a second palette is the whole change.
@@ -551,11 +568,28 @@ in the compatibility database and can need different settings.
 
 ## Mobile frontends
 
-Neither Android nor iOS has a frontend, and that is the substantial piece of work
-remaining before the first release. The desktop frontend assumes a window it owns
-and an emulator it launches as a child process, and neither assumption holds on a
-phone: there is no second process to spawn, and the OS owns the window.
+Android and iOS run the same `ui/mobile.rs` composition and the same state and
+control-rendering code. The mobile composition owns the title and navigation
+bars, page and split-pane decisions, touch target sizes, and the single vertical
+content scroller for each screen. It chooses those from the safe-area-adjusted
+egui rectangle: phone versus tablet and portrait versus landscape are properties
+of the available space, never device-model checks. Narrow controls stack and
+wide tablet library screens may show details beside the list; ordinary phone
+screens stay one pane and never need horizontal scrolling.
 
-A mobile frontend therefore shares the library model, the settings model and the
-compatibility-database client, but not the process model or the window. See
-`docs/maintaining.md` for what each owes.
+Mobile scroll areas use direct content drag and wheel input (the latter keeps
+the desktop preview useful), but do not make the scrollbar track interactive.
+Their indicator appears only when needed and occupies its own narrow lane, so
+an edge tap cannot fall through to full-width content beneath it. This is
+intentionally different from the desktop's permanently grabbable scrollbar:
+egui centers a scroll thumb on a track press, and a narrow edge track is too
+easy to hit with a finger. A full-page scroller must not contain another
+page-height scroller; bounded pop-up lists are the exception.
+
+The SDL shell continues to translate pointer coordinates in logical points.
+On iOS it subtracts `safeAreaInsets` from egui's screen rectangle every frame,
+so rotations take effect without a second frontend. Android keeps SDL's content
+surface inside the system bars and therefore supplies the usable viewport
+directly. The platform projects own those insets, lifecycle, file integration,
+and packaging only. Their launcher icons are derived from the canonical desktop
+artwork in `runtime/res`; they are not independent product identities.

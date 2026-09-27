@@ -209,10 +209,9 @@ fn compatibility(
         ui.add(
             egui::Label::new(egui::RichText::new("Database").color(theme::LIGHT.text_dim)).wrap(),
         );
-        match record.and_then(|record| record.rating) {
-            Some(rating) => {
-                widgets::stars(ui, Some(rating), 13.0);
-                ui.label(egui::RichText::new(format!("{rating}/5")).small());
+        match record.and_then(|record| record.compatibility_state) {
+            Some(state) => {
+                widgets::compatibility_state(ui, state, 13.0);
             }
             None if !context.database_available => {
                 ui.label(
@@ -231,25 +230,6 @@ fn compatibility(
         }
     });
 
-    ui.horizontal(|ui| {
-        ui.add(
-            egui::Label::new(egui::RichText::new("This machine").color(theme::LIGHT.text_dim))
-                .wrap(),
-        );
-        if let Some(new_rating) = widgets::star_picker(ui, entry.local_rating.stars) {
-            actions.push(Action::SetLocalRating(entry.id.clone(), new_rating));
-        }
-    });
-    if entry.local_rating.stars.is_some() {
-        ui.label(
-            egui::RichText::new(
-                "Your own rating. It is kept on this computer and is not sent anywhere.",
-            )
-            .small()
-            .color(theme::LIGHT.text_dim),
-        );
-    }
-
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         if ui
@@ -259,11 +239,10 @@ fn compatibility(
         {
             actions.push(Action::OpenCompatibilityEntry(entry.id.clone()));
         }
-        if crate::state::compat::CLIENT_REPORTING_AVAILABLE
-            && ui
-                .button("Report…")
-                .on_hover_text("Assemble a compatibility report for this app")
-                .clicked()
+        if ui
+            .button("Report…")
+            .on_hover_text("Open the compatibility report form in your browser")
+            .clicked()
         {
             actions.push(Action::OpenCompatibilityReport(entry.id.clone()));
         }

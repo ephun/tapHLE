@@ -51,6 +51,13 @@ display with scaling puts it somewhere other than where it aimed, which is how
 four apps were recorded as having unresponsive controls in one session when
 nothing was wrong with any of them.
 
+Recorded coordinates are client pixels. By default a differing viewport stops
+the replay. For a mobile host whose viewport cannot match the desktop recording,
+`--replay-scale-to-viewport` explicitly maps the recorded rectangle into the
+current viewport and logs that transformation. This is an adapted run; review its
+milestone before treating the route as portable. It does not rotate coordinates
+or repair a route recorded for a different orientation.
+
 ### The PowerShell runner
 
 ```powershell

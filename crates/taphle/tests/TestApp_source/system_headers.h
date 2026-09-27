@@ -573,7 +573,10 @@ typedef unsigned short CGGlyph;
 
 CGFontRef CGFontCreateWithDataProvider(CGDataProviderRef name);
 void CGFontRelease(CGFontRef font);
+bool CGFontGetGlyphsForUnichars(CGFontRef font, const UniChar *chars,
+                                CGGlyph *glyphs, size_t count);
 
+void CGContextSetTextMatrix(CGContextRef c, CGAffineTransform matrix);
 void CGContextSetFont(CGContextRef c, CGFontRef font);
 void CGContextSetFontSize(CGContextRef c, CGFloat size);
 void CGContextShowGlyphsAtPoint(CGContextRef c, CGFloat x, CGFloat y,
@@ -714,6 +717,7 @@ typedef enum {
 - (UIWindow *)window;
 - (void)addSubview:(UIView *)view;
 - (void)removeFromSuperview;
+- (UIView *)superview;
 - (NSArray<UIView *> *)subviews;
 - (void)layoutSubviews;
 - (void)setBackgroundColor:(UIColor *)color;
@@ -751,6 +755,8 @@ typedef enum {
 + (instancetype)buttonWithType:(UIButtonType)type;
 - (void)setTitle:(NSString *)title forState:(UIControlState)state;
 @end
+
+Class NSClassFromString(NSString *name);
 
 int UIApplicationMain(int, char **, NSString *, NSString *);
 

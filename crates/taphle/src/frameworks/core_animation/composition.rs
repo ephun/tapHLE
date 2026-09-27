@@ -137,11 +137,17 @@ pub fn recomposite_if_necessary(env: &mut Environment, force: bool) -> Option<In
     let scale_hack: u32 = env.options.scale_hack.get();
     let fb_width = screen_bounds.size.width as u32 * scale_hack;
     let fb_height = screen_bounds.size.height as u32 * scale_hack;
-    let present_frame_args = (
-        env.window().viewport(),
-        env.window().rotation_matrix(),
-        env.window().virtual_cursor_visible_at(),
-    );
+    let (present_frame_args, host_drawable) = {
+        let window = env.window.as_mut().unwrap();
+        (
+            (
+                window.viewport(),
+                window.rotation_matrix(),
+                window.virtual_cursor_visible_at(),
+            ),
+            window.host_drawable_bindings(),
+        )
+    };
     let frame_capture_request = env.framework_state.take_triggered_frame_capture();
 
     // TODO: draw status bar if it's not hidden
@@ -192,6 +198,19 @@ pub fn recomposite_if_necessary(env: &mut Environment, force: bool) -> Option<In
                 gles11::TEXTURE_2D,
                 gles11::TEXTURE_MAG_FILTER,
                 gles11::LINEAR as _,
+            );
+            // The compositor texture is normally 320x480. ES 1.1 requires
+            // clamp-to-edge wrapping for non-power-of-two textures; the default
+            // repeat mode makes the texture incomplete and samples as blank.
+            gles.TexParameteri(
+                gles11::TEXTURE_2D,
+                gles11::TEXTURE_WRAP_S,
+                gles11::CLAMP_TO_EDGE as _,
+            );
+            gles.TexParameteri(
+                gles11::TEXTURE_2D,
+                gles11::TEXTURE_WRAP_T,
+                gles11::CLAMP_TO_EDGE as _,
             );
 
             gles.GenFramebuffersOES(1, &mut framebuffer);
@@ -362,7 +381,8 @@ pub fn recomposite_if_necessary(env: &mut Environment, force: bool) -> Option<In
     // host window framebuffer, so we need to unbind our internal framebuffer.
     let rearm_capture_request = unsafe {
         gles.BindTexture(gles11::TEXTURE_2D, texture);
-        gles.BindFramebufferOES(gles11::FRAMEBUFFER_OES, 0);
+        gles.BindFramebufferOES(gles11::FRAMEBUFFER_OES, host_drawable.0);
+        gles.BindRenderbufferOES(gles11::RENDERBUFFER_OES, host_drawable.1);
         present_frame(
             gles.as_mut(),
             present_frame_args.0,
@@ -464,7 +484,7 @@ fn display_layers(env: &mut Environment, root_layer: id) {
         if host_obj.hidden {
             return;
         }
-        if host_obj.needs_display {
+        if host_obj.needs_display || host_obj.cg_context.is_none() {
             layers_needing_display.push(layer);
         }
         for &layer in &host_obj.sublayers {
@@ -476,6 +496,19 @@ fn display_layers(env: &mut Environment, root_layer: id) {
     traverse(&env.objc, root_layer, &mut layers_needing_display);
 
     for layer in layers_needing_display {
+        // A delegate-backed layer can be created without an initial invalidation
+        // when UIKit installs it beneath a built-in control. UIKit still gives
+        // that layer its first backing store before the first composite.
+        if env
+            .objc
+            .borrow::<CALayerHostObject>(layer)
+            .cg_context
+            .is_none()
+        {
+            env.objc
+                .borrow_mut::<CALayerHostObject>(layer)
+                .needs_display = true;
+        }
         () = msg![env; layer displayIfNeeded];
     }
 }

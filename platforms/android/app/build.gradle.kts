@@ -14,6 +14,19 @@ plugins {
     id("org.jetbrains.kotlin.android") version("2.0.21")
 }
 
+val canonicalIconDirectory = rootDir.parentFile.parentFile.resolve("runtime/res")
+val generatedIconResources = layout.buildDirectory.dir("generated/taphle-icons")
+val generateTapHLEIcons by tasks.registering(Sync::class) {
+    val icons = listOf("icon.png", "icon_preview.png", "icon_unofficial.png")
+    icons.forEach { fileName ->
+        from(canonicalIconDirectory.resolve(fileName))
+        from(canonicalIconDirectory.resolve(fileName)) {
+            rename { "${fileName.removeSuffix(".png")}_legacy.png" }
+        }
+    }
+    into(generatedIconResources.map { it.dir("drawable") })
+}
+
 fun runTapHLEVersionTool(wantBranding: Boolean): String {
     val output = providers.exec {
         commandLine("cargo", "run", "--package", "tapHLE_version")
@@ -61,14 +74,11 @@ android {
             ndkBuild {
                 arguments("APP_PLATFORM=android-21")
                 // abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
-                // Only 'arm64-v8a' and 'x86_64' are supported by dynarmic
-                // and hence tapHLE. The 'x86_64' build works, but the main
-                // use for that would be the emulator in Android Studio, and
-                // its OpenGL ES implementations don't seem to work properly
-                // with tapHLE, so we disable it to reduce build time and
-                // avoid shipping stuff we haven't meaningfully tested.
+                // Dynarmic supports both 64-bit Android ABIs. Keeping x86_64
+                // in development products lets the same APK run on the
+                // project's Cuttlefish validation device.
                 // Make sure this matches the cargoNdk targets below.
-                abiFilters("arm64-v8a")
+                abiFilters("arm64-v8a", "x86_64")
             }
         }
     }
@@ -107,8 +117,15 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.srcDir("${rootDir.parentFile}/vendor/SDL/android-project/app/src/main/java")
+            java.srcDir("${rootDir.parentFile.parentFile}/vendor/SDL/android-project/app/src/main/java")
+            // Launcher resources are generated from the same canonical PNGs
+            // used by the desktop window instead of being edited separately.
+            res.srcDir(generatedIconResources)
         }
+    }
+
+    tasks.named("preBuild").configure {
+        dependsOn(generateTapHLEIcons)
     }
 
     if (!project.hasProperty("EXCLUDE_NATIVE_LIBS")) {
@@ -132,9 +149,9 @@ android {
 
 cargoNdk {
     // Make sure this matches the android abiFilters above.
-    targets = arrayListOf("arm64")
-    module = ".."
-    librariesNames = arrayListOf("libtapHLE.so", "libSDL2.so", "libc++_shared.so")
+    targets = arrayListOf("arm64", "x86_64")
+    module = "../.."
+    librariesNames = arrayListOf("libtapHLE_gui.so", "libSDL2.so", "libc++_shared.so")
     extraCargoEnv = mapOf(
         "ANDROID_NDK" to android.ndkDirectory.toString(),
         "ANDROID_NDK_HOME" to android.ndkDirectory.toString(),
@@ -167,10 +184,12 @@ cargoNdk {
     // The default feature, "static", makes us use static linking for SDL2 and OpenAL Soft.
     // For Android, we need dynamic linking for SDL2, but static linking for OpenAL Soft.
     extraCargoBuildArguments = arrayListOf(
+        "--package",
+        "tapHLE_gui",
         "--lib",
         "--no-default-features",
         "--features",
-        "tapHLE_openal_soft_wrapper/static,sdl2/bundled"
+        "android"
     )
 }
 

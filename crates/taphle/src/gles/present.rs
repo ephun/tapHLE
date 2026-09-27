@@ -15,6 +15,16 @@ pub struct FpsCounter {
     time: std::time::Instant,
     frames: u32,
 }
+
+/// Rotate texture coordinates around the centre so NPOT textures can clamp.
+pub fn texture_rotation(rotation: Matrix<2>) -> Matrix<4> {
+    let centre = rotation.transform([0.5, 0.5]);
+    let mut columns = *Matrix::<4>::from(&rotation).columns();
+    columns[3][0] = 0.5 - centre[0];
+    columns[3][1] = 0.5 - centre[1];
+    Matrix::from_columns(columns)
+}
+
 impl FpsCounter {
     pub fn start() -> Self {
         FpsCounter {
@@ -75,7 +85,7 @@ pub unsafe fn present_frame(
     let tex_coords: [f32; 12] = [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0];
     gles.EnableClientState(gles11::TEXTURE_COORD_ARRAY);
     gles.TexCoordPointer(2, gles11::FLOAT, 0, tex_coords.as_ptr() as *const GLvoid);
-    let matrix = Matrix::<4>::from(&rotation_matrix);
+    let matrix = texture_rotation(rotation_matrix);
     gles.MatrixMode(gles11::TEXTURE);
     gles.LoadMatrixf(matrix.columns().as_ptr() as *const _);
     gles.Enable(gles11::TEXTURE_2D);
@@ -105,5 +115,33 @@ pub unsafe fn present_frame(
         }
         gles.VertexPointer(2, gles11::FLOAT, 0, vertices.as_ptr() as *const GLvoid);
         gles.DrawArrays(gles11::TRIANGLES, 0, 6);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quarter_turns_keep_texture_corners_inside_the_image() {
+        for turn in 0..4 {
+            let rotation = Matrix::z_rotation(turn as f32 * std::f32::consts::FRAC_PI_2);
+            let matrix = texture_rotation(rotation);
+            let centre = matrix.transform([0.5, 0.5, 0.0, 1.0]);
+            assert!((centre[0] - 0.5).abs() < 0.00001);
+            assert!((centre[1] - 0.5).abs() < 0.00001);
+            for x in [0.0, 1.0] {
+                for y in [0.0, 1.0] {
+                    let point = matrix.transform([x, y, 0.0, 1.0]);
+                    for value in &point[..2] {
+                        assert!((-0.00001..=1.00001).contains(value));
+                    }
+                }
+            }
+        }
+        let matrix = texture_rotation(Matrix::z_rotation(std::f32::consts::FRAC_PI_2));
+        let point = matrix.transform([0.25, 0.75, 0.0, 1.0]);
+        assert!((point[0] - 0.25).abs() < 0.00001);
+        assert!((point[1] - 0.25).abs() < 0.00001);
     }
 }

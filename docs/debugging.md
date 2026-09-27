@@ -304,6 +304,23 @@ that a real driver answers by recording `GL_INVALID_ENUM` and continuing. A
 bounded emulator fix should preserve that guest-visible error behavior instead of
 converting the app mistake into a host panic or ignoring all GL errors.
 
+On iOS, separate guest rendering, composition, and native presentation before
+changing shared drawing rules. SDL's UIKit drawable has nonzero framebuffer
+and renderbuffer names; the current GL binding can instead be a guest buffer.
+A valid submitted renderbuffer with a blank composed frame points to composition,
+while a valid composed frame with a blank Simulator screenshot points to the
+native drawable or visible view. Do not initialize bitmap backing stores on
+all layers to hide either failure: an empty bitmap can overwrite valid
+CAEAGLLayer pixels. Keep the existing invalidation rules.
+
+Native GLES adapters must translate driver extension differences. For example,
+Apple's BGRA texture extension requires RGBA as the internal format, while the
+EXT variant requires BGRA. A repeated GL error alone is not proof of a visible
+failure: trace the exact failing call, check its arguments against the host
+extension, and verify the corrected output with an OS screenshot. Temporary
+error-draining probes alter guest-visible GL errors and must be removed before
+final validation.
+
 ## Layout and drawing are separate boundaries
 
 For an archived UIKit screen, diagnose drawing and hit testing separately.
@@ -748,3 +765,11 @@ own submodule init and its own `CARGO_TARGET_DIR`. Never stash their work.
 
 After a commit, a binary can still report the old revision; touch
 `crates/version/build.rs` to force the stamp to regenerate.
+
+When a layout pass finds a freed superview, inspect subclass teardown before
+adding nil checks to layout. Taking an entire subclass host object also takes
+its embedded superclass state. Restore that state before releasing subclass
+members or sending `super dealloc`, so UIView can detach retained children and
+release its backing layer. Test with a child retained by the caller: after its
+parent is released, the child must have no superview and only the caller's
+retain. Exercise each destructor in the inheritance chain.

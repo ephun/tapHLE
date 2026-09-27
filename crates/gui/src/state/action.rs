@@ -46,7 +46,6 @@ pub enum Action {
     OpenUrl(String),
     OpenCompatibilityEntry(String),
     OpenCompatibilityReport(String),
-    SetLocalRating(String, Option<u8>),
     ShowAbout,
     ShowLogPanel(bool),
     ToggleLogPanel,
