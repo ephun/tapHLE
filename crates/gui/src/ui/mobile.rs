@@ -110,6 +110,7 @@ pub fn layout_for(size: Vec2) -> Layout {
 /// Everything a mobile frame needs, and nothing it can change.
 pub struct MobileContext<'a> {
     pub library: &'a Library,
+    pub database: &'a crate::state::compat::DatabaseSnapshot,
     pub groups: &'a [VersionGroup],
     pub icons: &'a std::collections::HashMap<String, egui::TextureHandle>,
     pub selected: Option<&'a str>,
@@ -577,7 +578,11 @@ fn details_screen(
             ui.label(egui::RichText::new(publisher).color(theme::LIGHT.text_dim));
         }
         ui.label(format!("Version {}", entry.metadata.version_for_display()));
-        widgets::stars(ui, entry.local_rating.stars, 18.0);
+        let rating = context
+            .database
+            .find(&entry.metadata.bundle_identifier)
+            .and_then(|record| record.rating);
+        widgets::stars(ui, rating, 18.0);
         ui.separator();
         ui.label(format!("Bundle ID: {}", entry.metadata.bundle_identifier));
         ui.label(format!("Bundle version: {}", entry.metadata.bundle_version));
@@ -595,6 +600,9 @@ fn details_screen(
         if action_button(ui, "App settings") {
             *screen = Screen::AppSettings;
             actions.push(Action::OpenAppSettings(entry.id.clone()));
+        }
+        if action_button(ui, "Compatibility report") {
+            actions.push(Action::OpenCompatibilityReport(entry.id.clone()));
         }
     });
 }

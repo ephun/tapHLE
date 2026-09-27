@@ -71,7 +71,12 @@ pub fn open_url(url: &str) -> Result<(), String> {
         };
     }
 
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(target_os = "android")]
+    {
+        return sdl2::url::open_url(url).map_err(|error| format!("Could not open {url}: {error}"));
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         open_with_desktop(url.as_ref(), url)
     }

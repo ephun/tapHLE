@@ -427,12 +427,10 @@ fn list_row(
         x += column_width;
     }
 
-    let rating = entry.local_rating.stars.or_else(|| {
-        context
-            .database
-            .find(&entry.metadata.bundle_identifier)?
-            .rating
-    });
+    let rating = context
+        .database
+        .find(&entry.metadata.bundle_identifier)
+        .and_then(|record| record.rating);
     if let Some(rating) = rating {
         for star in 0..rating.min(5) {
             ui.painter().circle_filled(
@@ -532,9 +530,7 @@ fn handle_entry_interaction(
             actions.push(Action::OpenCompatibilityEntry(entry.id.clone()));
             ui.close();
         }
-        if crate::state::compat::CLIENT_REPORTING_AVAILABLE
-            && ui.button("Compatibility Report…").clicked()
-        {
+        if ui.button("Compatibility Report…").clicked() {
             actions.push(Action::OpenCompatibilityReport(entry.id.clone()));
             ui.close();
         }

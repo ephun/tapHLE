@@ -7,9 +7,7 @@
 //!
 //! Everything here is machine-local: which apps this computer knows about,
 //! how long they have been played, what this user set. None of it is a
-//! compatibility claim, and none of it is meant to be shared — that
-//! distinction is why the local star rating in [crate::state::compat] never
-//! overwrites a database rating.
+//! compatibility claim, and none of it is meant to be shared.
 //!
 //! The files live in a `tapHLE_frontend` directory beside `tapHLE_sandbox`
 //! and `tapHLE_apps`, so a portable install stays portable: copying the
@@ -24,7 +22,7 @@ use std::path::{Path, PathBuf};
 pub const DIR: &str = "frontend";
 /// Global settings, both emulator defaults and frontend preferences.
 pub const SETTINGS_FILE: &str = "settings.json";
-/// The app library: entries, per-app overrides, play statistics, ratings.
+/// The app library: entries, per-app overrides, and play statistics.
 pub const LIBRARY_FILE: &str = "library.json";
 /// Volatile interface state: window geometry, panel sizes, last selection.
 pub const STATE_FILE: &str = "state.json";

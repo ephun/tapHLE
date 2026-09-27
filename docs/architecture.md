@@ -385,7 +385,7 @@ emulator inserted into it.
 | `state/metadata.rs` | Reading an app, and the icon cache |
 | `state/settings.rs` | Global defaults, per-app overrides, argument generation |
 | `state/logstore.rs` | The shared log buffer and line classification |
-| `state/compat.rs` | Compatibility ratings, local and shared |
+| `state/compat.rs` | Published compatibility states and web-report links |
 | `state/updates.rs` | Release checking |
 | `state/timefmt.rs` | Dates and durations as a person reads them |
 | `platform/storage.rs` | Where the frontend's own files live |
@@ -495,20 +495,16 @@ what is on screen is built.
 ### Compatibility
 
 Reading is complete. `GET /compatibility/api/apps` is a real, public,
-credential-free endpoint, so the frontend shows the shared rating beside the
-local one, links to an app's record, and can say whether a record already exists
-before anybody drafts a report.
+credential-free endpoint, so the frontend shows published cumulative states and
+links to an app's record.
 
-**Submitting is not implemented**, and the report window says so rather than
-offering a button that does nothing. The database accepts reports from an agent
-token belonging to the maintainer; a submission on behalf of an arbitrary user
-needs the GitHub sign-in the project has not built. Until it exists, the report
-window assembles the exact contents of a report — identity, versions, build,
-platform, rating, options, log excerpt — for pasting into the web form, which is a
-real workflow rather than a placeholder.
-
-The local rating never touches the database value. They are different things and
-the panel labels them so.
+tapHLE does not choose or store a compatibility rating. Report actions open the
+GitHub-authenticated tapHLEdb form in the browser. The deployed form accepts an
+existing app ID or version ID in its URL; the public app endpoint exposes the
+former, so a matching bundle identifier preselects the canonical app. Other
+identity, version, and provenance fields remain for the person to enter until
+the site publishes a prefill contract for them. No database credential is
+embedded in tapHLE.
 
 ### Updates
 
@@ -539,7 +535,7 @@ JSON meant to be readable and hand-editable:
 
 | File | What it holds |
 | --- | --- |
-| `library.json` | Entries, per-app overrides, play statistics, local ratings |
+| `library.json` | Entries, per-app overrides, play statistics |
 | `settings.json` | Global emulator defaults and frontend preferences |
 | `state.json` | Window geometry, panel sizes, view mode, last selection |
 | `compatibility.json` | The last ratings read from the database |
@@ -551,7 +547,7 @@ file names the paths of a personal collection, so the directory is ignored by
 Git.
 
 Entries are keyed by the app's own identity — bundle identifier and version — not
-by path, so moving a file keeps its settings, its rating and its play time. The
+by path, so moving a file keeps its settings and its play time. The
 version is part of the key because two versions of one app are separate records
 in the compatibility database and can need different settings.
 
@@ -563,7 +559,6 @@ in the compatibility database and can need different settings.
   user-facing action is emulator work — capture on demand, write a file, bind a
   key — belonging on its own branch. The compatibility report already has a place
   for one.
-- **Submitting compatibility reports**, as above.
 - **A native menu bar**, as above.
 - **Dark mode.** `theme.rs` is written as a palette plus a function that applies
   it, so a second palette is the whole change.

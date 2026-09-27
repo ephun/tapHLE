@@ -3,8 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-//! The dialogs: About, the import report, the crash notice, and the
-//! compatibility report.
+//! The dialogs: About, the import report, and the crash notice.
 //!
 //! The crash notice is the one that matters most. A game that stops is the
 //! normal outcome of compatibility work, and letting its window simply
@@ -14,7 +13,6 @@
 
 use egui::{Id, Ui};
 
-use crate::state::compat::ReportDraft;
 use crate::state::library::ImportOutcome;
 use crate::state::updates::UpdateStatus;
 use crate::state::Action;
@@ -498,9 +496,7 @@ pub fn show_crash(ctx: &egui::Context, notice: &mut CrashNotice, actions: &mut V
             if ui.button("Save Log…").clicked() {
                 actions.push(Action::SaveLog);
             }
-            if crate::state::compat::CLIENT_REPORTING_AVAILABLE
-                && ui.button("Compatibility Report…").clicked()
-            {
+            if ui.button("Compatibility Report…").clicked() {
                 actions.push(Action::OpenCompatibilityReport(notice.entry_id.clone()));
                 notice.open = false;
             }
@@ -514,164 +510,6 @@ pub fn show_crash(ctx: &egui::Context, notice: &mut CrashNotice, actions: &mut V
     if response.should_close() {
         notice.open = false;
     }
-}
-
-/// The compatibility report window.
-pub struct ReportDialog {
-    pub open: bool,
-    pub entry_id: String,
-    pub stars: Option<u8>,
-    pub notes: String,
-    pub include_log: bool,
-    pub draft: ReportDraft,
-}
-
-pub fn show_report(
-    ctx: &egui::Context,
-    dialog: &mut ReportDialog,
-    limitation: &str,
-    actions: &mut Vec<Action>,
-) {
-    let response = egui::Modal::new(Id::new("taphle-report")).show(ctx, |ui| {
-        ui.set_width(600.0);
-        ui.heading("Compatibility report");
-        ui.label(egui::RichText::new(&dialog.draft.display_name).color(theme::LIGHT.text_dim));
-        ui.add_space(6.0);
-        theme::hairline(ui);
-        ui.add_space(6.0);
-
-        crate::ui::desktop::settings_dialog::page(ui, 580.0, |ui| {
-            match (
-                &dialog.draft.existing_entry,
-                dialog.draft.database_consulted,
-            ) {
-                (Some(entry), _) => {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label("The database already has a record for this app:");
-                        ui.label(egui::RichText::new(&entry.name).strong());
-                    });
-                    ui.label(
-                        egui::RichText::new(
-                            "Report against that record rather than creating a \
-                                 second one for the same app.",
-                        )
-                        .small()
-                        .color(theme::LIGHT.text_dim),
-                    );
-                    if ui.button("Open the existing record").clicked() {
-                        actions.push(Action::OpenUrl(entry.url.clone()));
-                    }
-                }
-                (None, true) => {
-                    ui.label(
-                        "The database has no record for this bundle identifier \
-                             yet, so this would be a new one.",
-                    );
-                }
-                (None, false) => {
-                    ui.label(
-                        egui::RichText::new(
-                            "The database could not be reached, so whether a \
-                                 record already exists is unknown. Check before \
-                                 submitting, or a duplicate may be created.",
-                        )
-                        .color(theme::LIGHT.warning),
-                    );
-                }
-            }
-
-            widgets::section(ui, "Rating");
-            if let Some(new_rating) = widgets::star_picker(ui, dialog.stars) {
-                dialog.stars = new_rating;
-                dialog.draft.stars = new_rating;
-            }
-
-            widgets::section(ui, "Notes");
-            if ui
-                .add(
-                    egui::TextEdit::multiline(&mut dialog.notes)
-                        .desired_width(f32::INFINITY)
-                        .desired_rows(4)
-                        .hint_text("What worked, what did not, and where it stopped"),
-                )
-                .changed()
-            {
-                dialog.draft.notes = dialog.notes.clone();
-            }
-
-            widgets::section(ui, "Report contents");
-            ui.checkbox(&mut dialog.include_log, "Include the recent log output");
-            let text = report_text(dialog);
-            ui.add(
-                egui::TextEdit::multiline(&mut text.as_str())
-                    .font(egui::TextStyle::Monospace)
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(10),
-            );
-        });
-
-        ui.add_space(8.0);
-        theme::hairline(ui);
-        ui.add_space(6.0);
-        ui.label(
-            egui::RichText::new(limitation)
-                .small()
-                .color(theme::LIGHT.text_dim),
-        );
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui.button("Copy Report").clicked() {
-                actions.push(Action::CopyText(report_text(dialog)));
-            }
-            if ui.button("Open the Database").clicked() {
-                actions.push(Action::OpenUrl(
-                    crate::state::compat::DATABASE_WEB_URL.to_string(),
-                ));
-            }
-            if ui
-                .button("Save my rating")
-                .on_hover_text("Keep this rating on this computer")
-                .clicked()
-            {
-                actions.push(Action::SetLocalRating(
-                    dialog.entry_id.clone(),
-                    dialog.stars,
-                ));
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Close").clicked() {
-                    dialog.open = false;
-                }
-                ui.add_enabled(false, egui::Button::new("Submit"))
-                    .on_disabled_hover_text(limitation);
-            });
-        });
-    });
-    if response.should_close() {
-        dialog.open = false;
-    }
-}
-
-fn report_text(dialog: &ReportDialog) -> String {
-    let mut draft = ReportDraft {
-        display_name: dialog.draft.display_name.clone(),
-        bundle_identifier: dialog.draft.bundle_identifier.clone(),
-        bundle_version: dialog.draft.bundle_version.clone(),
-        short_version: dialog.draft.short_version.clone(),
-        taphle_version: dialog.draft.taphle_version.clone(),
-        taphle_build: dialog.draft.taphle_build.clone(),
-        platform: dialog.draft.platform.clone(),
-        stars: dialog.stars,
-        notes: dialog.notes.clone(),
-        launch_options: dialog.draft.launch_options.clone(),
-        log_excerpt: String::new(),
-        existing_entry: dialog.draft.existing_entry.clone(),
-        database_consulted: dialog.draft.database_consulted,
-    };
-    if dialog.include_log {
-        draft.log_excerpt = dialog.draft.log_excerpt.clone();
-    }
-    draft.to_text()
 }
 
 /// A plain question with two answers, used before anything irreversible.
@@ -746,35 +584,5 @@ mod tests {
         assert!(messy.worth_showing());
         assert_eq!(messy.added, 1);
         assert_eq!(messy.failures, 1);
-    }
-
-    /// Leaving the log out of a report has to actually leave it out.
-    #[test]
-    fn the_log_is_only_included_when_asked_for() {
-        let mut dialog = ReportDialog {
-            open: true,
-            entry_id: "com.x@1".to_string(),
-            stars: Some(3),
-            notes: String::new(),
-            include_log: false,
-            draft: ReportDraft {
-                display_name: "X".to_string(),
-                bundle_identifier: "com.x".to_string(),
-                bundle_version: "1".to_string(),
-                short_version: None,
-                taphle_version: "test".to_string(),
-                taphle_build: "test".to_string(),
-                platform: "windows x86_64".to_string(),
-                stars: Some(3),
-                notes: String::new(),
-                launch_options: Vec::new(),
-                log_excerpt: "SECRET LOG LINE".to_string(),
-                existing_entry: None,
-                database_consulted: true,
-            },
-        };
-        assert!(!report_text(&dialog).contains("SECRET LOG LINE"));
-        dialog.include_log = true;
-        assert!(report_text(&dialog).contains("SECRET LOG LINE"));
     }
 }

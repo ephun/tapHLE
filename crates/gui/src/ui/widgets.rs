@@ -298,42 +298,6 @@ pub fn stars(ui: &mut Ui, rating: Option<u8>, size: f32) -> Response {
     response
 }
 
-/// Five stars the person can click, plus a way back to "not rated".
-///
-/// Returns the new rating when it changed.
-pub fn star_picker(ui: &mut Ui, rating: Option<u8>) -> Option<Option<u8>> {
-    let palette = &theme::LIGHT;
-    let size = 16.0;
-    let mut changed = None;
-    ui.horizontal(|ui| {
-        for index in 0..5u8 {
-            let (rect, response) = ui.allocate_exact_size(Vec2::splat(size + 2.0), Sense::click());
-            let response = response.on_hover_text(format!("Rate {} of 5", index + 1));
-            let earned = index < rating.unwrap_or(0);
-            let color = if response.hovered() {
-                palette.accent
-            } else if earned {
-                palette.star
-            } else {
-                palette.star_empty
-            };
-            draw_star(ui.painter(), rect.center(), size * 0.5, color, earned);
-            if response.clicked() {
-                changed = Some(Some(index + 1));
-            }
-        }
-        if rating.is_some()
-            && ui
-                .small_button("Clear")
-                .on_hover_text("Remove this machine's own rating")
-                .clicked()
-        {
-            changed = Some(None);
-        }
-    });
-    changed
-}
-
 /// A metadata row: a dim label and a value that wraps.
 pub fn field(ui: &mut Ui, label: &str, value: &str) {
     if value.trim().is_empty() {

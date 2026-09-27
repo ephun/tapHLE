@@ -74,10 +74,9 @@
 - Linux has a complete portable-bundle layout matching the Windows package:
   executable, guest libraries, fonts, app directory, options, icon and licence.
 
-- Compatibility ratings from the tapHLE database are shown beside each app,
-  and you can keep your own rating separately without either overwriting the
-  other. Unfinished report-submission controls are hidden until tapHLE can offer
-  a secure GitHub-authenticated human workflow; distributed builds never contain
+- Compatibility results from the tapHLE database are shown beside each app.
+  Reporting opens the authenticated database form in your browser instead of
+  creating or storing a rating inside tapHLE; distributed builds never contain
   a privileged agent credential.
 
 - Every option that could be switched on can now be switched off again:

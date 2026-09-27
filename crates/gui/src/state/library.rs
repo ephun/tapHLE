@@ -7,7 +7,7 @@
 //!
 //! An entry is keyed by the app's own identity — bundle identifier and
 //! version — rather than by where its file happens to sit, so moving a file
-//! keeps its settings, its rating and how long it has been played. The path
+//! keeps its settings and how long it has been played. The path
 //! is recorded too, because something has to be launched, but it is data
 //! about the entry rather than the entry's name.
 //!
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::state::compat::{DatabaseSnapshot, LocalRating};
+use crate::state::compat::DatabaseSnapshot;
 use crate::state::metadata::{self, AppMetadata, ReadApp};
 use crate::state::settings::{EmulatorSettings, SortOrder};
 
@@ -49,8 +49,6 @@ pub struct LibraryEntry {
     /// time it is saved.
     #[serde(default, skip_serializing)]
     pub overrides: EmulatorSettings,
-    /// This machine's own rating. Never sent anywhere.
-    pub local_rating: LocalRating,
     /// Whether the file was there the last time the library was checked.
     /// Not stored: it is about this machine right now.
     #[serde(skip)]
@@ -345,14 +343,9 @@ pub fn visible_entries(
             // "recently played" is a question about the ones that have been.
             SortOrder::RecentlyPlayed => b.last_played.cmp(&a.last_played),
             SortOrder::Compatibility => {
-                let rating = |entry: &LibraryEntry| {
-                    entry
-                        .local_rating
-                        .stars
-                        .or_else(|| database.find(&entry.metadata.bundle_identifier)?.rating)
-                        .unwrap_or(0)
-                };
-                rating(b).cmp(&rating(a))
+                let rating =
+                    |entry: &LibraryEntry| database.find(&entry.metadata.bundle_identifier)?.rating;
+                rating(b).unwrap_or(0).cmp(&rating(a).unwrap_or(0))
             }
             SortOrder::DateAdded => b.added.cmp(&a.added),
         };
@@ -508,6 +501,17 @@ fn publisher_key(entry: &LibraryEntry) -> (bool, String) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn legacy_local_ratings_are_not_loaded_or_saved() {
+        let entry: LibraryEntry = serde_json::from_value(serde_json::json!({
+            "id": "com.example@1",
+            "local_rating": {"stars": 5, "notes": "old local opinion"}
+        }))
+        .unwrap();
+        let saved = serde_json::to_value(entry).unwrap();
+        assert!(saved.get("local_rating").is_none());
+    }
+
     fn entry(title: &str, id: &str) -> LibraryEntry {
         LibraryEntry {
             id: format!("{id}@1.0"),
@@ -615,29 +619,6 @@ mod tests {
         };
         let order = visible_entries(&library, &filter, &database);
         assert_eq!(library.entries[order[0]].title(), "High");
-    }
-
-    /// A local rating is this machine's own answer and outranks the shared
-    /// one for the purposes of this user's own view.
-    #[test]
-    fn a_local_rating_outranks_the_database_for_sorting() {
-        let mut low = entry("Low", "com.low");
-        low.local_rating.stars = Some(5);
-        let library = library_of(vec![low, entry("High", "com.high")]);
-        let database = crate::state::compat::parse_snapshot(
-            r#"{"apps":[{"app_id":2,"name":"High","rating":4,
-                 "extra":{"bundle_identifier":"com.high"},"url":"/a/2"}]}"#,
-            0,
-        )
-        .unwrap();
-        let filter = ViewFilter {
-            search: "",
-            favorites_only: false,
-            sort: SortOrder::Compatibility,
-            descending: false,
-        };
-        let order = visible_entries(&library, &filter, &database);
-        assert_eq!(library.entries[order[0]].title(), "Low");
     }
 
     fn versioned(title: &str, id: &str, version: &str) -> LibraryEntry {

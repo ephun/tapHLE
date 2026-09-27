@@ -3,33 +3,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-//! Compatibility ratings: the shared ones, this machine's own, and reports.
+//! Compatibility results from tapHLEdb, and the human web-report workflow.
 //!
-//! Two ratings exist for an app and they are deliberately different things.
-//! The **database rating** is tapHLEdb's published record, which the frontend
-//! only ever reads. The **local rating** is what this user found on this
-//! machine; it is stored with the library entry and never sent anywhere. The
-//! interface shows them apart, and choosing a local rating never touches the
-//! database value — an unmoderated opinion must not be able to overwrite a
-//! published one.
-//!
-//! ## What is implemented
-//!
-//! Reading is complete. `GET /compatibility/api/apps` is a real, public,
-//! credential-free endpoint that returns every app the database knows with
-//! its current star rating, so the frontend can show the shared rating,
-//! link to the entry, and tell whether an app already has a record before
-//! anybody drafts a new report.
-//!
-//! ## What is not
-//!
-//! Submitting is not implemented. All client-reporting controls are hidden
-//! until a secure GitHub-authenticated human workflow exists. [ReportDraft] and
-//! the retained dialog code stay behind [CLIENT_REPORTING_AVAILABLE] so the
-//! unfinished path cannot be mistaken for a product feature, and no privileged
-//! agent credential is ever embedded in a distributed build.
+//! tapHLE reads published cumulative states. It does not create a rating or
+//! submit a report: the person who tested an app chooses the result in the
+//! GitHub-authenticated tapHLEdb form. The form's documented GET contract can
+//! preselect an existing app with `app=<id>` or an existing version with
+//! `version=<id>`. The public API exposes app IDs but not version IDs, so the
+//! frontend uses only the former and does not invent unsupported prefill keys.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::platform::http::Transport;
@@ -38,12 +22,48 @@ use crate::platform::http::Transport;
 pub const DATABASE_SITE: &str = "https://taphle.ephun.net";
 /// The public, credential-free list of apps and their ratings.
 pub const DATABASE_APPS_URL: &str = "https://taphle.ephun.net/compatibility/api/apps";
-/// Where a person goes to read or submit records.
+/// Where a person goes to read records.
 pub const DATABASE_WEB_URL: &str = "https://taphle.ephun.net/compatibility";
+/// The GitHub-authenticated human report form.
+pub const DATABASE_REPORT_FORM_URL: &str = "https://taphle.ephun.net/compatibility/reports/new";
 
-/// Hidden until the distributed client has a secure GitHub-authenticated human
-/// submission flow. Agent credentials are never embedded in tapHLE builds.
-pub const CLIENT_REPORTING_AVAILABLE: bool = false;
+/// The ten cumulative states accepted by compatibility-model-v2.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CompatibilityState {
+    #[serde(rename = "?????")]
+    Untested,
+    #[serde(rename = "*XXXX")]
+    RanFailedHigher,
+    #[serde(rename = "*????")]
+    RanHigherUnknown,
+    #[serde(rename = "**XXX")]
+    InteractiveFailedHigher,
+    #[serde(rename = "**???")]
+    InteractiveHigherUnknown,
+    #[serde(rename = "***XX")]
+    CoreUseFailedHigher,
+    #[serde(rename = "***??")]
+    CoreUseHigherUnknown,
+    #[serde(rename = "****X")]
+    EndToEndFailedFull,
+    #[serde(rename = "****?")]
+    EndToEndFullUnknown,
+    #[serde(rename = "*****")]
+    FullyWorking,
+}
+
+impl CompatibilityState {
+    pub const fn stars(self) -> u8 {
+        match self {
+            Self::Untested => 0,
+            Self::RanFailedHigher | Self::RanHigherUnknown => 1,
+            Self::InteractiveFailedHigher | Self::InteractiveHigherUnknown => 2,
+            Self::CoreUseFailedHigher | Self::CoreUseHigherUnknown => 3,
+            Self::EndToEndFailedFull | Self::EndToEndFullUnknown => 4,
+            Self::FullyWorking => 5,
+        }
+    }
+}
 
 /// One app as the database describes it.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -51,8 +71,10 @@ pub const CLIENT_REPORTING_AVAILABLE: bool = false;
 pub struct DatabaseEntry {
     pub app_id: u64,
     pub name: String,
-    /// Stars, 1 to 5. An app with a record but no rating yet has none.
+    pub compatibility_state: Option<CompatibilityState>,
+    /// Derived stars for the existing read-only interface.
     pub rating: Option<u8>,
+    pub states_by_platform: BTreeMap<String, CompatibilityState>,
     pub bundle_identifier: Option<String>,
     pub developer_publisher: Option<String>,
     /// Absolute address of the entry's page.
@@ -103,6 +125,10 @@ struct ApiApp {
     #[serde(default)]
     rating: Option<u8>,
     #[serde(default)]
+    compatibility_state: Option<CompatibilityState>,
+    #[serde(default)]
+    states_by_platform: BTreeMap<String, CompatibilityState>,
+    #[serde(default)]
     extra: ApiExtra,
     #[serde(default)]
     url: String,
@@ -123,22 +149,64 @@ pub fn parse_snapshot(body: &str, fetched: u64) -> Result<DatabaseSnapshot, Stri
     let entries = response
         .apps
         .into_iter()
-        .map(|app| DatabaseEntry {
-            app_id: app.app_id,
-            name: app.name,
-            rating: app.rating.filter(|stars| (1..=5).contains(stars)),
-            bundle_identifier: app
-                .extra
-                .bundle_identifier
-                .filter(|id| !id.trim().is_empty()),
-            developer_publisher: app
-                .extra
-                .developer_publisher
-                .filter(|name| !name.trim().is_empty()),
-            url: absolute_url(&app.url),
+        .map(|app| {
+            let rating = app
+                .compatibility_state
+                .map(CompatibilityState::stars)
+                .or_else(|| app.rating.filter(|stars| (1..=5).contains(stars)))
+                .filter(|stars| *stars > 0);
+            DatabaseEntry {
+                app_id: app.app_id,
+                name: app.name,
+                compatibility_state: app.compatibility_state,
+                rating,
+                states_by_platform: app.states_by_platform,
+                bundle_identifier: app
+                    .extra
+                    .bundle_identifier
+                    .filter(|id| !id.trim().is_empty()),
+                developer_publisher: app
+                    .extra
+                    .developer_publisher
+                    .filter(|name| !name.trim().is_empty()),
+                url: absolute_url(&app.url),
+            }
         })
         .collect();
     Ok(DatabaseSnapshot { fetched, entries })
+}
+
+/// Build the only prefilled web-form URL supported by the deployed revision.
+pub fn report_form_url(bundle_identifier: &str, database: Option<&DatabaseSnapshot>) -> String {
+    match database.and_then(|snapshot| snapshot.find(bundle_identifier)) {
+        Some(entry) if entry.app_id > 0 => {
+            append_query_parameter(DATABASE_REPORT_FORM_URL, "app", &entry.app_id.to_string())
+        }
+        _ => DATABASE_REPORT_FORM_URL.to_string(),
+    }
+}
+
+fn append_query_parameter(url: &str, name: &str, value: &str) -> String {
+    format!(
+        "{url}?{}={}",
+        percent_encode(name.as_bytes()),
+        percent_encode(value.as_bytes())
+    )
+}
+
+fn percent_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded = String::with_capacity(bytes.len());
+    for &byte in bytes {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push('%');
+            encoded.push(HEX[(byte >> 4) as usize] as char);
+            encoded.push(HEX[(byte & 0x0f) as usize] as char);
+        }
+    }
+    encoded
 }
 
 /// The API returns site-relative addresses; a browser needs the whole thing.
@@ -154,14 +222,16 @@ fn absolute_url(url: &str) -> String {
     }
 }
 
+/// The host platform shown in diagnostics and About.
+pub fn platform_description() -> String {
+    format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
 /// Where the shared ratings come from. A trait so the interface never talks
 /// to the network directly, and so a different source could be substituted.
 pub trait CompatibilityProvider: Send + Sync {
     fn describe(&self) -> String;
     fn fetch(&self) -> Result<DatabaseSnapshot, String>;
-    /// Why reporting remains unavailable. Retained with the disabled dialog
-    /// until a secure human submission workflow replaces it.
-    fn submission_limitation(&self) -> &'static str;
 }
 
 pub struct TapHledbProvider {
@@ -192,125 +262,6 @@ impl CompatibilityProvider for TapHledbProvider {
         }
         parse_snapshot(&response.body, crate::state::timefmt::now_seconds())
     }
-
-    fn submission_limitation(&self) -> &'static str {
-        "Client reporting is hidden until tapHLE has a secure \
-         GitHub-authenticated human submission workflow. Privileged agent \
-         credentials are never embedded in distributed builds."
-    }
-}
-
-/// This machine's own rating for an app, kept with its library entry.
-#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct LocalRating {
-    /// Stars, 1 to 5. None means this user has not rated it.
-    pub stars: Option<u8>,
-    pub notes: String,
-    /// The tapHLE version the rating was formed on, so an old opinion is
-    /// recognisable as old.
-    pub taphle_version: Option<String>,
-    /// Unix seconds.
-    pub updated: Option<u64>,
-}
-
-impl LocalRating {
-    pub fn set_stars(&mut self, stars: Option<u8>) {
-        self.stars = stars.filter(|s| (1..=5).contains(s));
-        self.touch();
-    }
-
-    pub fn touch(&mut self) {
-        self.updated = Some(crate::state::timefmt::now_seconds());
-        self.taphle_version = Some(tapHLE_version::VERSION.trim().to_string());
-    }
-}
-
-/// Everything a compatibility report should say, assembled from what the
-/// frontend actually knows.
-///
-/// Nothing here is invented: the identity comes from the app's own bundle,
-/// the build from the version crate, the options from the settings that were
-/// used, and the log excerpt from the run's own output.
-pub struct ReportDraft {
-    pub display_name: String,
-    pub bundle_identifier: String,
-    pub bundle_version: String,
-    pub short_version: Option<String>,
-    pub taphle_version: String,
-    pub taphle_build: String,
-    pub platform: String,
-    pub stars: Option<u8>,
-    pub notes: String,
-    pub launch_options: Vec<String>,
-    pub log_excerpt: String,
-    /// A record already in the database for this bundle identifier, so a
-    /// second entry is not created for an app that already has one.
-    pub existing_entry: Option<DatabaseEntry>,
-    /// Whether the database was reachable when this draft was made. Without
-    /// it, "no existing entry" only means "not known".
-    pub database_consulted: bool,
-}
-
-impl ReportDraft {
-    /// The report as text, ready for the clipboard and the web form.
-    pub fn to_text(&self) -> String {
-        let mut text = String::new();
-        let mut line = |label: &str, value: &str| {
-            text.push_str(label);
-            text.push_str(": ");
-            text.push_str(value);
-            text.push('\n');
-        };
-        line("App", &self.display_name);
-        line("Bundle identifier", &self.bundle_identifier);
-        line("Bundle version", &self.bundle_version);
-        if let Some(short) = &self.short_version {
-            line("Short version", short);
-        }
-        line("tapHLE version", &self.taphle_version);
-        line("tapHLE build", &self.taphle_build);
-        line("Platform", &self.platform);
-        line(
-            "Rating",
-            &match self.stars {
-                Some(stars) => format!("{stars} of 5 stars"),
-                None => "not rated".to_string(),
-            },
-        );
-        line(
-            "Launch options",
-            &if self.launch_options.is_empty() {
-                "(defaults)".to_string()
-            } else {
-                self.launch_options.join(" ")
-            },
-        );
-        line(
-            "Existing database entry",
-            &match (&self.existing_entry, self.database_consulted) {
-                (Some(entry), _) => format!("{} — {}", entry.name, entry.url),
-                (None, true) => "none found for this bundle identifier".to_string(),
-                (None, false) => "not checked (the database was not reachable)".to_string(),
-            },
-        );
-        if !self.notes.trim().is_empty() {
-            text.push_str("\nNotes:\n");
-            text.push_str(self.notes.trim());
-            text.push('\n');
-        }
-        if !self.log_excerpt.trim().is_empty() {
-            text.push_str("\nLog excerpt:\n");
-            text.push_str(self.log_excerpt.trim_end());
-            text.push('\n');
-        }
-        text
-    }
-}
-
-/// The host platform, as a report should record it.
-pub fn platform_description() -> String {
-    format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)
 }
 
 #[cfg(test)]
@@ -322,6 +273,8 @@ mod tests {
     /// rather than a blank rating column.
     const SAMPLE: &str = r#"{"apps":[
         {"app_id":4,"name":"Baby Monkey","rating":3,
+         "compatibility_state":"***??",
+         "states_by_platform":{"Windows":"***??"},
          "extra":{"bundle_identifier":"com.kihon.babymonkey"},
          "url":"/compatibility/apps/4"},
         {"app_id":5,"name":"Cops & Robbers","rating":2,
@@ -340,6 +293,15 @@ mod tests {
         assert_eq!(entry.rating, Some(2));
         assert_eq!(entry.developer_publisher.as_deref(), Some("Glu Mobile"));
         assert_eq!(entry.url, "https://taphle.ephun.net/compatibility/apps/5");
+        let baby = snapshot.find("com.kihon.babymonkey").unwrap();
+        assert_eq!(
+            baby.compatibility_state,
+            Some(CompatibilityState::CoreUseHigherUnknown)
+        );
+        assert_eq!(
+            baby.states_by_platform.get("Windows"),
+            Some(&CompatibilityState::CoreUseHigherUnknown)
+        );
     }
 
     /// Records have been entered with different capitalisation, and a missed
@@ -359,11 +321,6 @@ mod tests {
         assert!(parse_snapshot("<html>404</html>", 0).is_err());
     }
 
-    #[test]
-    fn unfinished_client_reporting_is_hidden() {
-        assert!(!CLIENT_REPORTING_AVAILABLE);
-    }
-
     /// A rating outside one to five stars is not a rating tapHLE uses.
     #[test]
     fn out_of_range_ratings_are_dropped() {
@@ -376,30 +333,47 @@ mod tests {
         assert_eq!(snapshot.entries[0].rating, None);
     }
 
-    /// A draft has to name the existing entry when there is one; that is the
-    /// whole point of consulting the database before reporting.
     #[test]
-    fn a_draft_reports_whether_an_entry_already_exists() {
+    fn structured_state_outranks_the_legacy_numeric_rating() {
+        let snapshot = parse_snapshot(
+            r#"{"apps":[{"app_id":1,"name":"X","rating":5,
+                "compatibility_state":"*????","extra":{"bundle_identifier":"com.x"},
+                "url":"/a/1"}]}"#,
+            0,
+        )
+        .unwrap();
+        assert_eq!(snapshot.entries[0].rating, Some(1));
+    }
+
+    #[test]
+    fn impossible_and_invented_states_are_rejected() {
+        assert!(serde_json::from_str::<CompatibilityState>(r#""***X?""#).is_err());
+        assert!(serde_json::from_str::<CompatibilityState>(r#""⭐⭐⭐❓❓""#).is_err());
+    }
+
+    #[test]
+    fn report_url_prefills_only_the_canonical_existing_app() {
         let snapshot = parse_snapshot(SAMPLE, 0).unwrap();
-        let draft = ReportDraft {
-            display_name: "Baby Monkey".to_string(),
-            bundle_identifier: "com.kihon.babymonkey".to_string(),
-            bundle_version: "1.3.5".to_string(),
-            short_version: None,
-            taphle_version: "test".to_string(),
-            taphle_build: "test".to_string(),
-            platform: "windows x86_64".to_string(),
-            stars: Some(3),
-            notes: String::new(),
-            launch_options: vec!["--landscape-native".to_string()],
-            log_excerpt: String::new(),
-            existing_entry: snapshot.find("com.kihon.babymonkey").cloned(),
-            database_consulted: true,
-        };
-        let text = draft.to_text();
-        assert!(text.contains("com.kihon.babymonkey"));
-        assert!(text.contains("compatibility/apps/4"));
-        assert!(text.contains("--landscape-native"));
+        assert_eq!(
+            report_form_url("COM.KIHON.BABYMONKEY", Some(&snapshot)),
+            "https://taphle.ephun.net/compatibility/reports/new?app=4"
+        );
+        let url = report_form_url("com.unknown", Some(&snapshot));
+        assert_eq!(url, DATABASE_REPORT_FORM_URL);
+        assert!(!url.contains("rating"));
+        assert!(!url.contains("compatibility_state"));
+        assert_eq!(
+            report_form_url("com.kihon.babymonkey", None),
+            DATABASE_REPORT_FORM_URL
+        );
+    }
+
+    #[test]
+    fn query_components_are_percent_encoded() {
+        assert_eq!(
+            append_query_parameter("https://example.invalid/form", "app id", "a&b/ç"),
+            "https://example.invalid/form?app%20id=a%26b%2F%C3%A7"
+        );
     }
 
     /// Fetch the real database, through the real transport, and check that
@@ -444,27 +418,5 @@ mod tests {
             identified.count() > 0,
             "no entry carried a bundle identifier, so nothing could ever match a library app"
         );
-    }
-
-    /// When the database could not be reached, the draft must not claim that
-    /// no entry exists — that is how duplicates get created.
-    #[test]
-    fn an_unreachable_database_is_not_reported_as_no_entry() {
-        let draft = ReportDraft {
-            display_name: "X".to_string(),
-            bundle_identifier: "com.x".to_string(),
-            bundle_version: "1".to_string(),
-            short_version: None,
-            taphle_version: "test".to_string(),
-            taphle_build: "test".to_string(),
-            platform: "windows x86_64".to_string(),
-            stars: None,
-            notes: String::new(),
-            launch_options: Vec::new(),
-            log_excerpt: String::new(),
-            existing_entry: None,
-            database_consulted: false,
-        };
-        assert!(draft.to_text().contains("not checked"));
     }
 }

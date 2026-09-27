@@ -23,9 +23,7 @@ use std::time::{Duration, Instant};
 use crate::platform::http::{CurlTransport, Transport};
 use crate::platform::storage;
 use crate::run::launcher::{self, Launcher};
-use crate::state::compat::{
-    self, CompatibilityProvider, DatabaseSnapshot, ReportDraft, TapHledbProvider,
-};
+use crate::state::compat::{self, CompatibilityProvider, DatabaseSnapshot, TapHledbProvider};
 use crate::state::library::{self, ImportOutcome, Library, ScanResult, VersionGroup, ViewFilter};
 use crate::state::logstore::{self, LogLevel, SharedLog};
 use crate::state::metadata::AppIcon;
@@ -36,7 +34,7 @@ use crate::state::Action;
 use crate::ui::desktop::chrome::ChromeContext;
 use crate::ui::desktop::details::DetailsContext;
 use crate::ui::desktop::dialogs::{
-    AboutDialog, AboutInfo, Confirmation, CrashNotice, ImportReport, ReportDialog,
+    AboutDialog, AboutInfo, Confirmation, CrashNotice, ImportReport,
 };
 use crate::ui::desktop::library_view::LibraryContext;
 use crate::ui::desktop::logpanel::LogView;
@@ -139,7 +137,6 @@ pub struct Frontend {
     about: Option<AboutDialog>,
     import_report: Option<ImportReport>,
     crash: Option<CrashNotice>,
-    report: Option<ReportDialog>,
     confirmation: Option<Confirmation>,
 
     background: (Sender<Background>, Receiver<Background>),
@@ -248,7 +245,6 @@ impl Frontend {
             about: None,
             import_report: None,
             crash: None,
-            report: None,
             confirmation: None,
             background: channel(),
             repaint: egui_ctx.clone(),
@@ -967,38 +963,18 @@ impl Frontend {
     }
 
     fn open_report(&mut self, entry_id: &str) {
-        if !compat::CLIENT_REPORTING_AVAILABLE {
+        let Some(bundle_identifier) = self
+            .library
+            .find(entry_id)
+            .map(|entry| entry.metadata.bundle_identifier.clone())
+        else {
             return;
+        };
+        let database = self.database_available.then_some(&self.database);
+        let url = compat::report_form_url(&bundle_identifier, database);
+        if let Err(error) = crate::platform::process::open_url(&url) {
+            self.note(LogLevel::Warning, error);
         }
-        let Some(entry) = self.library.find(entry_id) else {
-            return;
-        };
-        let draft = ReportDraft {
-            display_name: entry.title().to_string(),
-            bundle_identifier: entry.metadata.bundle_identifier.clone(),
-            bundle_version: entry.metadata.bundle_version.clone(),
-            short_version: entry.metadata.short_version.clone(),
-            taphle_version: tapHLE_version::VERSION.trim().to_string(),
-            taphle_build: build_description(),
-            platform: compat::platform_description(),
-            stars: entry.local_rating.stars,
-            notes: entry.local_rating.notes.clone(),
-            launch_options: self.effective_settings(entry_id).to_args(),
-            log_excerpt: self.recent_output(&self.run_ids_for(entry_id)),
-            existing_entry: self
-                .database
-                .find(&entry.metadata.bundle_identifier)
-                .cloned(),
-            database_consulted: self.database_available,
-        };
-        self.report = Some(ReportDialog {
-            open: true,
-            entry_id: entry_id.to_string(),
-            stars: draft.stars,
-            notes: draft.notes.clone(),
-            include_log: true,
-            draft,
-        });
     }
 
     fn apply(&mut self, ctx: &egui::Context, action: Action) {
@@ -1146,16 +1122,7 @@ impl Frontend {
                 }
             }
             Action::OpenCompatibilityReport(id) => {
-                if crate::state::compat::CLIENT_REPORTING_AVAILABLE {
-                    self.open_report(&id);
-                }
-            }
-            Action::SetLocalRating(id, stars) => {
-                if let Some(entry) = self.library.find_mut(&id) {
-                    entry.local_rating.set_stars(stars);
-                    self.dirty.library = true;
-                    self.invalidate_order();
-                }
+                self.open_report(&id);
             }
             Action::ShowAbout => self.about = Some(AboutDialog::default()),
             Action::ShowLogPanel(visible) => {
@@ -1301,24 +1268,6 @@ impl Frontend {
             },
             update_source: GitHubReleaseProvider::new(self.transport.clone()).describe(),
         }
-    }
-}
-
-/// A description of how this build was produced, for a report.
-fn build_description() -> String {
-    match (
-        tapHLE_version::GITHUB_REPOSITORY,
-        tapHLE_version::GITHUB_RUN_ID,
-    ) {
-        (Some(repository), Some(run)) => format!("{repository} run {run}"),
-        _ => format!(
-            "local {} build",
-            if cfg!(debug_assertions) {
-                "debug"
-            } else {
-                "release"
-            }
-        ),
     }
 }
 
@@ -1484,6 +1433,7 @@ impl crate::shell::Application for Frontend {
                         .collect();
                     let mobile = crate::ui::mobile::MobileContext {
                         library: &self.library,
+                        database: &self.database,
                         groups: &groups,
                         icons: &self.icons,
                         selected: self.state.selected_app.as_deref(),
@@ -1807,13 +1757,6 @@ impl Frontend {
                 self.crash = None;
             }
         }
-        if let Some(dialog) = &mut self.report {
-            let limitation = TapHledbProvider::new(self.transport.clone()).submission_limitation();
-            crate::ui::desktop::dialogs::show_report(ctx, dialog, limitation, actions);
-            if !dialog.open {
-                self.report = None;
-            }
-        }
         if let Some(confirmation) = &mut self.confirmation {
             crate::ui::desktop::dialogs::show_confirmation(ctx, confirmation, actions);
             if !confirmation.open {
@@ -1888,12 +1831,6 @@ mod tests {
         assert_eq!(form_factor_for(true, false), FormFactor::Mobile);
         assert_eq!(form_factor_for(false, true), FormFactor::Mobile);
         assert_eq!(form_factor_for(false, false), FormFactor::Desktop);
-    }
-
-    #[test]
-    fn a_build_outside_ci_says_so() {
-        let description = build_description();
-        assert!(description.contains("local") || description.contains("run"));
     }
 
     #[test]

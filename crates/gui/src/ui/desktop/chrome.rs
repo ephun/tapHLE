@@ -109,13 +109,12 @@ pub fn menu_bar(ui: &mut Ui, context: &ChromeContext<'_>, actions: &mut Vec<Acti
                 }
                 ui.close();
             }
-            if crate::state::compat::CLIENT_REPORTING_AVAILABLE
-                && ui
-                    .add_enabled(
-                        context.selected.is_some(),
-                        egui::Button::new("Compatibility Report…"),
-                    )
-                    .clicked()
+            if ui
+                .add_enabled(
+                    context.selected.is_some(),
+                    egui::Button::new("Compatibility Report…"),
+                )
+                .clicked()
             {
                 if let Some(id) = &selected {
                     actions.push(Action::OpenCompatibilityReport(id.clone()));

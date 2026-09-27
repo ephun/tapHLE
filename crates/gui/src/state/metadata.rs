@@ -18,6 +18,7 @@
 use std::io::{Read, Write};
 use std::path::Path;
 
+use sha2::{Digest, Sha256};
 use tapHLE::app_bundle;
 
 /// What an app says about itself.
@@ -50,6 +51,8 @@ pub struct AppMetadata {
     pub release_date: Option<String>,
     /// Size of the `.ipa` in bytes, when it could be read.
     pub size_bytes: Option<u64>,
+    /// SHA-256 of the exact `.ipa`, when the library entry is a file.
+    pub app_artifact_sha256: Option<String>,
 }
 
 impl AppMetadata {
@@ -130,6 +133,7 @@ pub struct ReadApp {
 /// Read an app bundle or `.ipa` through the emulator's own reader.
 pub fn read(path: &Path) -> Result<ReadApp, String> {
     let contents = app_bundle::read(path)?;
+    let mut warnings = contents.warnings;
     let store = contents
         .store_metadata
         .and_then(|bytes| plist::Value::from_reader(std::io::Cursor::new(bytes)).ok())
@@ -144,6 +148,21 @@ pub fn read(path: &Path) -> Result<ReadApp, String> {
     };
 
     let info = contents.info;
+    let size_bytes = path
+        .is_file()
+        .then(|| std::fs::metadata(path).ok().map(|metadata| metadata.len()))
+        .flatten();
+    let app_artifact_sha256 = if path.is_file() {
+        match sha256_file(path) {
+            Ok(hash) => Some(hash),
+            Err(error) => {
+                warnings.push(error);
+                None
+            }
+        }
+    } else {
+        None
+    };
     Ok(ReadApp {
         metadata: AppMetadata {
             display_name: info.display_name,
@@ -158,15 +177,23 @@ pub fn read(path: &Path) -> Result<ReadApp, String> {
             publisher: from_store("artistName"),
             genre: from_store("genre"),
             release_date: from_store("releaseDate"),
-            size_bytes: path
-                .is_file()
-                .then(|| std::fs::metadata(path).ok().map(|m| m.len()))
-                .flatten(),
+            size_bytes,
+            app_artifact_sha256,
         },
         icon: contents.icon.map(AppIcon::from),
-        warnings: contents.warnings,
+        warnings,
         architecture: contents.architecture,
     })
+}
+
+/// Hash one exact file without loading an IPA into memory a second time.
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| format!("Could not open {} for hashing: {e}", path.display()))?;
+    let mut digest = Sha256::new();
+    std::io::copy(&mut file, &mut digest)
+        .map_err(|e| format!("Could not hash {}: {e}", path.display()))?;
+    Ok(format!("{:x}", digest.finalize()))
 }
 
 /// A file name for an app's cached icon.
@@ -324,6 +351,18 @@ mod tests {
         let mut metadata = metadata_with("A", "A", "com.x.a");
         metadata.bundle_version = "2.1".to_string();
         assert_eq!(metadata.stable_id(), "com.x.a@2.1");
+    }
+
+    #[test]
+    fn an_exact_artifact_hash_is_lowercase_sha256() {
+        let path = std::env::temp_dir().join("taphle-gui-sha256-test");
+        std::fs::write(&path, b"abc").unwrap();
+        let hash = sha256_file(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            hash,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]

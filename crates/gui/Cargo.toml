@@ -45,6 +45,7 @@ glow = "0.16"
 sdl2 = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10.9"
 # Both are already in the emulator's dependency tree. flate2 compresses the
 # cached icon bitmaps, which avoids adding a PNG encoder; plist reads the
 # App Store metadata that sits beside an IPA's bundle.
