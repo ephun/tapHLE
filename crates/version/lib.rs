@@ -6,6 +6,9 @@ mod version_logic;
 
 /// Current version. See `build.rs` for how this is generated.
 pub const VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/version.txt"));
+/// Full revision of a clean build, or an empty string when it cannot be
+/// truthfully attributed to one commit.
+pub const GIT_COMMIT: &str = include_str!(concat!(env!("OUT_DIR"), "/git-commit.txt"));
 
 // Environment variables set by GitHub Actions
 pub const GITHUB_REPOSITORY: Option<&str> = option_env!("GITHUB_REPOSITORY");

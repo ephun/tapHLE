@@ -367,7 +367,7 @@ fn list_row(
     actions: &mut Vec<Action>,
 ) {
     let entry = &context.library.entries[group.shown];
-    let width = ui.available_width().max(560.0);
+    let width = ui.available_width().max(720.0);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
     let selected = is_selected(context, group);
     let palette = &theme::LIGHT;
@@ -427,18 +427,18 @@ fn list_row(
         x += column_width;
     }
 
-    let rating = context
+    let state = context
         .database
         .find(&entry.metadata.bundle_identifier)
-        .and_then(|record| record.rating);
-    if let Some(rating) = rating {
-        for star in 0..rating.min(5) {
-            ui.painter().circle_filled(
-                egui::pos2(x + 6.0 + star as f32 * 9.0, rect.center().y),
-                3.0,
-                palette.star,
-            );
-        }
+        .and_then(|record| record.compatibility_state);
+    if let Some(state) = state {
+        let state_rect = Rect::from_min_size(
+            egui::pos2(x + 4.0, rect.center().y - 8.0),
+            egui::vec2((rect.right() - x - 4.0).max(0.0), 16.0),
+        );
+        ui.scope_builder(egui::UiBuilder::new().max_rect(state_rect), |ui| {
+            widgets::compatibility_state(ui, state, 12.0);
+        });
     }
 
     handle_entry_interaction(ui, context, group, &response, actions);

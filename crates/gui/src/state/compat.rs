@@ -7,16 +7,21 @@
 //!
 //! tapHLE reads published cumulative states. It does not create a rating or
 //! submit a report: the person who tested an app chooses the result in the
-//! GitHub-authenticated tapHLEdb form. The form's documented GET contract can
-//! preselect an existing app with `app=<id>` or an existing version with
-//! `version=<id>`. The public API exposes app IDs but not version IDs, so the
-//! frontend uses only the former and does not invent unsupported prefill keys.
+//! GitHub-authenticated tapHLEdb form. Its versioned GET contract accepts the
+//! app, version and build facts tapHLE already has, while deliberately leaving
+//! the compatibility judgement and contributor identity to the signed-in user.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+#[cfg(not(target_os = "android"))]
+use sha2::{Digest, Sha256};
+#[cfg(not(target_os = "android"))]
+use std::io::Read;
+
 use crate::platform::http::Transport;
+use crate::state::metadata::AppMetadata;
 
 /// The site the compatibility database is served from.
 pub const DATABASE_SITE: &str = "https://taphle.ephun.net";
@@ -61,6 +66,48 @@ impl CompatibilityState {
             Self::CoreUseFailedHigher | Self::CoreUseHigherUnknown => 3,
             Self::EndToEndFailedFull | Self::EndToEndFullUnknown => 4,
             Self::FullyWorking => 5,
+        }
+    }
+
+    /// The same five-position notation the tapHLEdb web interface shows.
+    pub const fn emoji(self) -> &'static str {
+        match self {
+            Self::Untested => "❓❓❓❓❓",
+            Self::RanFailedHigher => "⭐❌❌❌❌",
+            Self::RanHigherUnknown => "⭐❓❓❓❓",
+            Self::InteractiveFailedHigher => "⭐⭐❌❌❌",
+            Self::InteractiveHigherUnknown => "⭐⭐❓❓❓",
+            Self::CoreUseFailedHigher => "⭐⭐⭐❌❌",
+            Self::CoreUseHigherUnknown => "⭐⭐⭐❓❓",
+            Self::EndToEndFailedFull => "⭐⭐⭐⭐❌",
+            Self::EndToEndFullUnknown => "⭐⭐⭐⭐❓",
+            Self::FullyWorking => "⭐⭐⭐⭐⭐",
+        }
+    }
+
+    /// A screen-reader label which preserves unknown versus tested-and-failed.
+    pub const fn accessible_label(self) -> &'static str {
+        match self {
+            Self::Untested => "Compatibility unknown at all five positions",
+            Self::RanFailedHigher => {
+                "Launch established; all four higher positions tested and failed"
+            }
+            Self::RanHigherUnknown => "Launch established; all four higher positions unknown",
+            Self::InteractiveFailedHigher => {
+                "Launch and interaction established; all three higher positions tested and failed"
+            }
+            Self::InteractiveHigherUnknown => {
+                "Launch and interaction established; all three higher positions unknown"
+            }
+            Self::CoreUseFailedHigher => {
+                "Core use established; both higher positions tested and failed"
+            }
+            Self::CoreUseHigherUnknown => "Core use established; both higher positions unknown",
+            Self::EndToEndFailedFull => {
+                "End-to-end use established; fully working tested and failed"
+            }
+            Self::EndToEndFullUnknown => "End-to-end use established; fully working is unknown",
+            Self::FullyWorking => "All five compatibility positions established",
         }
     }
 }
@@ -176,22 +223,211 @@ pub fn parse_snapshot(body: &str, fetched: u64) -> Result<DatabaseSnapshot, Stri
     Ok(DatabaseSnapshot { fetched, entries })
 }
 
-/// Build the only prefilled web-form URL supported by the deployed revision.
-pub fn report_form_url(bundle_identifier: &str, database: Option<&DatabaseSnapshot>) -> String {
-    match database.and_then(|snapshot| snapshot.find(bundle_identifier)) {
-        Some(entry) if entry.app_id > 0 => {
-            append_query_parameter(DATABASE_REPORT_FORM_URL, "app", &entry.app_id.to_string())
-        }
-        _ => DATABASE_REPORT_FORM_URL.to_string(),
+/// Build facts that can safely become editable draft fields in a browser URL.
+///
+/// There is intentionally nowhere here to put a rating, source identity or
+/// moderation state. Those are user/server decisions, not build metadata.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ReportPrefill {
+    pub platform: Option<String>,
+    pub os_version: Option<String>,
+    pub architecture: Option<String>,
+    pub taphle_commit: Option<String>,
+    pub taphle_release: Option<String>,
+    pub artifact_sha256: Option<String>,
+    pub build_provenance: Option<String>,
+    pub build_profile: Option<String>,
+    pub verification_type: Option<String>,
+}
+
+/// Facts about this running tapHLE product. Potentially slow product hashing
+/// belongs on a worker thread; callers must not run this while painting a UI.
+pub fn running_report_prefill() -> ReportPrefill {
+    #[cfg(not(target_os = "android"))]
+    let artifact_sha256 = std::env::current_exe()
+        .ok()
+        .and_then(|path| sha256_file(&path).ok());
+    // Android's current_exe is the system app_process binary, not tapHLE's
+    // APK or native library, so hashing it would assert false provenance.
+    #[cfg(target_os = "android")]
+    let artifact_sha256 = None;
+    let commit = tapHLE_version::GIT_COMMIT.trim();
+    let commit = (commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .then(|| commit.to_ascii_lowercase());
+    let version = tapHLE_version::VERSION.trim();
+    let build_provenance = match (
+        tapHLE_version::GITHUB_REPOSITORY,
+        tapHLE_version::GITHUB_RUN_ID,
+    ) {
+        (Some(repository), Some(run)) => Some(format!(
+            "GitHub Actions build https://github.com/{repository}/actions/runs/{run}"
+        )),
+        _ => Some(format!("local build of tapHLE {version}")),
+    };
+    ReportPrefill {
+        platform: Some(host_platform().to_string()),
+        os_version: host_os_version(),
+        architecture: Some(std::env::consts::ARCH.to_string()),
+        taphle_commit: commit,
+        taphle_release: (!version.is_empty()).then(|| version.to_string()),
+        artifact_sha256,
+        build_provenance,
+        build_profile: Some(if cfg!(debug_assertions) {
+            "debug".to_string()
+        } else {
+            "release".to_string()
+        }),
+        verification_type: Some("compatibility".to_string()),
     }
 }
 
-fn append_query_parameter(url: &str, name: &str, value: &str) -> String {
-    format!(
-        "{url}?{}={}",
-        percent_encode(name.as_bytes()),
-        percent_encode(value.as_bytes())
-    )
+/// Construct the documented `prefill[v]=1` browser handoff.
+///
+/// A malformed library entry falls back to the generic form rather than
+/// opening a URL the server must reject. Empty optional values are omitted.
+pub fn report_form_url(metadata: &AppMetadata, report: &ReportPrefill) -> String {
+    if metadata.bundle_identifier.trim().is_empty() || metadata.bundle_version.trim().is_empty() {
+        return DATABASE_REPORT_FORM_URL.to_string();
+    }
+
+    let mut fields: Vec<(&str, &str)> = vec![
+        ("prefill[v]", "1"),
+        (
+            "prefill[app][bundle_identifier]",
+            metadata.bundle_identifier.as_str(),
+        ),
+        ("prefill[app][display_name]", metadata.title()),
+        (
+            "prefill[version][bundle_version]",
+            metadata.bundle_version.as_str(),
+        ),
+    ];
+    push_optional(
+        &mut fields,
+        "prefill[version][short_version]",
+        metadata.short_version.as_deref(),
+    );
+    push_optional(
+        &mut fields,
+        "prefill[version][minimum_os_version]",
+        metadata.minimum_os_version.as_deref(),
+    );
+    push_optional(
+        &mut fields,
+        "prefill[version][app_artifact_sha256]",
+        metadata.app_artifact_sha256.as_deref(),
+    );
+    for (name, value) in [
+        ("prefill[report][platform]", report.platform.as_deref()),
+        ("prefill[report][os_version]", report.os_version.as_deref()),
+        (
+            "prefill[report][architecture]",
+            report.architecture.as_deref(),
+        ),
+        (
+            "prefill[report][taphle_commit]",
+            report.taphle_commit.as_deref(),
+        ),
+        (
+            "prefill[report][taphle_release]",
+            report.taphle_release.as_deref(),
+        ),
+        (
+            "prefill[report][artifact_sha256]",
+            report.artifact_sha256.as_deref(),
+        ),
+        (
+            "prefill[report][build_provenance]",
+            report.build_provenance.as_deref(),
+        ),
+        (
+            "prefill[report][build_profile]",
+            report.build_profile.as_deref(),
+        ),
+        (
+            "prefill[report][verification_type]",
+            report.verification_type.as_deref(),
+        ),
+    ] {
+        push_optional(&mut fields, name, value);
+    }
+
+    let query = fields
+        .into_iter()
+        .map(|(name, value)| {
+            format!(
+                "{}={}",
+                percent_encode(name.as_bytes()),
+                percent_encode(value.as_bytes())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("&");
+    format!("{DATABASE_REPORT_FORM_URL}?{query}")
+}
+
+fn push_optional<'a>(
+    fields: &mut Vec<(&'static str, &'a str)>,
+    name: &'static str,
+    value: Option<&'a str>,
+) {
+    if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
+        fields.push((name, value));
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn sha256_file(path: &std::path::Path) -> Result<String, std::io::Error> {
+    let mut file = std::fs::File::open(path)?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn host_platform() -> &'static str {
+    match std::env::consts::OS {
+        "windows" => "Windows",
+        "macos" => "macOS",
+        "android" => "Android",
+        "ios" => "iOS",
+        "linux" => "Linux",
+        other => other,
+    }
+}
+
+fn host_os_version() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    let output = std::process::Command::new("cmd")
+        .args(["/C", "ver"])
+        .output()
+        .ok();
+    #[cfg(target_os = "macos")]
+    let output = std::process::Command::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok();
+    #[cfg(target_os = "android")]
+    let output = std::process::Command::new("getprop")
+        .arg("ro.build.version.release")
+        .output()
+        .ok();
+    #[cfg(target_os = "linux")]
+    let output = std::process::Command::new("uname").arg("-r").output().ok();
+    #[cfg(target_os = "ios")]
+    let output: Option<std::process::Output> = None;
+
+    output
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|version| version.trim().to_string())
+        .filter(|version| !version.is_empty())
 }
 
 fn percent_encode(bytes: &[u8]) -> String {
@@ -352,18 +588,134 @@ mod tests {
     }
 
     #[test]
-    fn report_url_prefills_only_the_canonical_existing_app() {
-        let snapshot = parse_snapshot(SAMPLE, 0).unwrap();
+    fn all_states_have_the_exact_five_position_emoji_mapping() {
+        for (state, emoji) in [
+            (CompatibilityState::Untested, "❓❓❓❓❓"),
+            (CompatibilityState::RanFailedHigher, "⭐❌❌❌❌"),
+            (CompatibilityState::RanHigherUnknown, "⭐❓❓❓❓"),
+            (CompatibilityState::InteractiveFailedHigher, "⭐⭐❌❌❌"),
+            (CompatibilityState::InteractiveHigherUnknown, "⭐⭐❓❓❓"),
+            (CompatibilityState::CoreUseFailedHigher, "⭐⭐⭐❌❌"),
+            (CompatibilityState::CoreUseHigherUnknown, "⭐⭐⭐❓❓"),
+            (CompatibilityState::EndToEndFailedFull, "⭐⭐⭐⭐❌"),
+            (CompatibilityState::EndToEndFullUnknown, "⭐⭐⭐⭐❓"),
+            (CompatibilityState::FullyWorking, "⭐⭐⭐⭐⭐"),
+        ] {
+            assert_eq!(state.emoji(), emoji);
+            assert!(!state.accessible_label().trim().is_empty());
+            assert!(!state.accessible_label().contains("/5"));
+        }
+    }
+
+    fn complete_metadata() -> AppMetadata {
+        AppMetadata {
+            display_name: "Game & Friends".to_string(),
+            bundle_identifier: "com.example/game".to_string(),
+            bundle_version: "42+beta".to_string(),
+            short_version: Some("1.2 β".to_string()),
+            minimum_os_version: Some("3.2".to_string()),
+            app_artifact_sha256: Some("b".repeat(64)),
+            ..Default::default()
+        }
+    }
+
+    fn complete_report() -> ReportPrefill {
+        ReportPrefill {
+            platform: Some("Windows".to_string()),
+            os_version: Some("11 24H2".to_string()),
+            architecture: Some("x86_64".to_string()),
+            taphle_commit: Some("a".repeat(40)),
+            taphle_release: Some("0.2.4-dev.1".to_string()),
+            artifact_sha256: Some("c".repeat(64)),
+            build_provenance: Some("workflow 123 & release".to_string()),
+            build_profile: Some("release".to_string()),
+            verification_type: Some("compatibility".to_string()),
+        }
+    }
+
+    #[test]
+    fn report_url_uses_nested_percent_encoded_prefill_fields() {
+        let url = report_form_url(&complete_metadata(), &complete_report());
+        for component in [
+            "prefill%5Bv%5D=1",
+            "prefill%5Bapp%5D%5Bbundle_identifier%5D=com.example%2Fgame",
+            "prefill%5Bapp%5D%5Bdisplay_name%5D=Game%20%26%20Friends",
+            "prefill%5Bversion%5D%5Bbundle_version%5D=42%2Bbeta",
+            "prefill%5Bversion%5D%5Bshort_version%5D=1.2%20%CE%B2",
+            "prefill%5Bversion%5D%5Bminimum_os_version%5D=3.2",
+            "prefill%5Breport%5D%5Bplatform%5D=Windows",
+            "prefill%5Breport%5D%5Bos_version%5D=11%2024H2",
+            "prefill%5Breport%5D%5Barchitecture%5D=x86_64",
+            "prefill%5Breport%5D%5Btaphle_commit%5D=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "prefill%5Breport%5D%5Btaphle_release%5D=0.2.4-dev.1",
+            "prefill%5Breport%5D%5Bbuild_provenance%5D=workflow%20123%20%26%20release",
+            "prefill%5Breport%5D%5Bbuild_profile%5D=release",
+            "prefill%5Breport%5D%5Bverification_type%5D=compatibility",
+        ] {
+            assert!(url.contains(component), "missing {component} in {url}");
+        }
+        assert!(url.contains(&format!(
+            "prefill%5Bversion%5D%5Bapp_artifact_sha256%5D={}",
+            "b".repeat(64)
+        )));
+        assert!(url.contains(&format!(
+            "prefill%5Breport%5D%5Bartifact_sha256%5D={}",
+            "c".repeat(64)
+        )));
+        assert!(!url.contains("prefill%5Breport%5D%5Bapp_artifact_sha256%5D"));
+        assert!(!url.contains("?app="));
+    }
+
+    #[test]
+    fn unavailable_and_forbidden_prefill_fields_are_omitted() {
+        let metadata = AppMetadata {
+            display_name: "Game".to_string(),
+            bundle_identifier: "com.example.game".to_string(),
+            bundle_version: "1".to_string(),
+            ..Default::default()
+        };
+        let url = report_form_url(&metadata, &ReportPrefill::default());
         assert_eq!(
-            report_form_url("COM.KIHON.BABYMONKEY", Some(&snapshot)),
-            "https://taphle.ephun.net/compatibility/reports/new?app=4"
+            url,
+            concat!(
+                "https://taphle.ephun.net/compatibility/reports/new?",
+                "prefill%5Bv%5D=1&",
+                "prefill%5Bapp%5D%5Bbundle_identifier%5D=com.example.game&",
+                "prefill%5Bapp%5D%5Bdisplay_name%5D=Game&",
+                "prefill%5Bversion%5D%5Bbundle_version%5D=1"
+            )
         );
-        let url = report_form_url("com.unknown", Some(&snapshot));
-        assert_eq!(url, DATABASE_REPORT_FORM_URL);
-        assert!(!url.contains("rating"));
-        assert!(!url.contains("compatibility_state"));
+        for forbidden in [
+            "rating",
+            "compatibility_state",
+            "source_",
+            "moderation",
+            "trust",
+            "credential",
+            "token",
+            "app%5D=",
+        ] {
+            assert!(!url.contains(forbidden), "forbidden field in {url}");
+        }
+        for unavailable in [
+            "short_version",
+            "minimum_os_version",
+            "app_artifact_sha256",
+            "tested_at",
+            "test_run_id",
+            "evidence",
+            "logs",
+        ] {
+            assert!(!url.contains(unavailable), "unavailable field in {url}");
+        }
+    }
+
+    #[test]
+    fn incomplete_identity_keeps_the_generic_form_fallback() {
+        let mut metadata = complete_metadata();
+        metadata.bundle_identifier.clear();
         assert_eq!(
-            report_form_url("com.kihon.babymonkey", None),
+            report_form_url(&metadata, &complete_report()),
             DATABASE_REPORT_FORM_URL
         );
     }
@@ -371,8 +723,8 @@ mod tests {
     #[test]
     fn query_components_are_percent_encoded() {
         assert_eq!(
-            append_query_parameter("https://example.invalid/form", "app id", "a&b/ç"),
-            "https://example.invalid/form?app%20id=a%26b%2F%C3%A7"
+            percent_encode("app id=a&b/ç".as_bytes()),
+            "app%20id%3Da%26b%2F%C3%A7"
         );
     }
 

@@ -6,13 +6,14 @@
 //! The small pieces both form factors are built from.
 //!
 //! A widget belongs here when it is the same on a phone as on a desktop: an
-//! icon, a star rating, a labelled field, a section heading. Anything that
+//! icon, a compatibility state, a labelled field, a section heading. Anything that
 //! arranges those into a screen belongs in [crate::ui::desktop] or
 //! [crate::ui::mobile] instead, because that is the part a form factor
 //! changes.
 
-use egui::{Color32, Rect, Response, Sense, Stroke, Ui, Vec2};
+use egui::{Color32, Rect, Response, Sense, Stroke, Ui, Vec2, WidgetInfo, WidgetType};
 
+use crate::state::compat::CompatibilityState;
 use crate::ui::theme;
 
 /// The icons drawn on toolbar buttons and in menus.
@@ -272,29 +273,16 @@ pub fn toolbar_button(
     }
 }
 
-/// Five stars, filled to `rating`. Read-only.
-pub fn stars(ui: &mut Ui, rating: Option<u8>, size: f32) -> Response {
-    let palette = &theme::LIGHT;
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(size * 5.6, size), Sense::hover());
-    let filled = rating.unwrap_or(0);
-    for index in 0..5u8 {
-        let centre = egui::pos2(
-            rect.left() + size * 0.5 + index as f32 * size * 1.15,
-            rect.center().y,
-        );
-        let earned = index < filled;
-        draw_star(
-            ui.painter(),
-            centre,
-            size * 0.5,
-            if earned {
-                palette.star
-            } else {
-                palette.star_empty
-            },
-            earned,
-        );
-    }
+/// The database's five-position state. Read-only, with a semantic label for
+/// assistive technology and a matching tooltip for sighted mouse users.
+pub fn compatibility_state(ui: &mut Ui, state: CompatibilityState, size: f32) -> Response {
+    let label = state.accessible_label();
+    let response = ui
+        .add(egui::Label::new(
+            egui::RichText::new(state.emoji()).size(size),
+        ))
+        .on_hover_text(label);
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, label));
     response
 }
 

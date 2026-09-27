@@ -578,11 +578,13 @@ fn details_screen(
             ui.label(egui::RichText::new(publisher).color(theme::LIGHT.text_dim));
         }
         ui.label(format!("Version {}", entry.metadata.version_for_display()));
-        let rating = context
+        let state = context
             .database
             .find(&entry.metadata.bundle_identifier)
-            .and_then(|record| record.rating);
-        widgets::stars(ui, rating, 18.0);
+            .and_then(|record| record.compatibility_state);
+        if let Some(state) = state {
+            widgets::compatibility_state(ui, state, 18.0);
+        }
         ui.separator();
         ui.label(format!("Bundle ID: {}", entry.metadata.bundle_identifier));
         ui.label(format!("Bundle version: {}", entry.metadata.bundle_version));

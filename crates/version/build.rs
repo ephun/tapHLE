@@ -118,4 +118,34 @@ pub fn main() {
         }
     };
     std::fs::write(out_dir.join("version.txt"), version).unwrap();
+
+    // A report needs the full revision, while the user-facing version uses a
+    // short `git describe`. A dirty product is not identical to HEAD, so it
+    // must not claim that commit as its provenance.
+    let full_revision = Command::new("git")
+        .arg("-C")
+        .arg(&workspace_root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|revision| revision.trim().to_string())
+        .filter(|revision| revision.len() == 40);
+    let clean = Command::new("git")
+        .arg("-C")
+        .arg(&workspace_root)
+        .args(["status", "--porcelain", "--untracked-files=no"])
+        .output()
+        .ok()
+        .is_some_and(|output| output.status.success() && output.stdout.is_empty());
+    std::fs::write(
+        out_dir.join("git-commit.txt"),
+        if clean {
+            full_revision.as_deref().unwrap_or("")
+        } else {
+            ""
+        },
+    )
+    .unwrap();
 }

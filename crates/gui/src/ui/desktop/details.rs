@@ -209,10 +209,9 @@ fn compatibility(
         ui.add(
             egui::Label::new(egui::RichText::new("Database").color(theme::LIGHT.text_dim)).wrap(),
         );
-        match record.and_then(|record| record.rating) {
-            Some(rating) => {
-                widgets::stars(ui, Some(rating), 13.0);
-                ui.label(egui::RichText::new(format!("{rating}/5")).small());
+        match record.and_then(|record| record.compatibility_state) {
+            Some(state) => {
+                widgets::compatibility_state(ui, state, 13.0);
             }
             None if !context.database_available => {
                 ui.label(

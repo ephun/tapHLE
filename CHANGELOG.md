@@ -74,10 +74,11 @@
 - Linux has a complete portable-bundle layout matching the Windows package:
   executable, guest libraries, fonts, app directory, options, icon and licence.
 
-- Compatibility results from the tapHLE database are shown beside each app.
-  Reporting opens the authenticated database form in your browser instead of
-  creating or storing a rating inside tapHLE; distributed builds never contain
-  a privileged agent credential.
+- Compatibility results from the tapHLE database are shown beside each app as
+  five positions: established, unknown, or tested-and-failed. Reporting opens
+  the authenticated database form in your browser with the app, version, host
+  and build facts already filled in instead of creating or storing a rating
+  inside tapHLE; distributed builds never contain a privileged agent credential.
 
 - Every option that could be switched on can now be switched off again:
   `--windowed`, `--portrait`, `--no-landscape-native` and seven more. This

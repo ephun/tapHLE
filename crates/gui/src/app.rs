@@ -57,6 +57,7 @@ enum Background {
     },
     Compatibility(Result<DatabaseSnapshot, String>),
     Update(UpdateStatus),
+    OpenUrl(String),
     Note(LogLevel, String),
 }
 
@@ -559,6 +560,11 @@ impl Frontend {
                     }
                     self.update = status;
                 }
+                Background::OpenUrl(url) => {
+                    if let Err(error) = crate::platform::process::open_url(&url) {
+                        self.note(LogLevel::Warning, error);
+                    }
+                }
                 Background::Note(level, text) => self.note(level, text),
             }
         }
@@ -963,18 +969,20 @@ impl Frontend {
     }
 
     fn open_report(&mut self, entry_id: &str) {
-        let Some(bundle_identifier) = self
+        let Some(metadata) = self
             .library
             .find(entry_id)
-            .map(|entry| entry.metadata.bundle_identifier.clone())
+            .map(|entry| entry.metadata.clone())
         else {
             return;
         };
-        let database = self.database_available.then_some(&self.database);
-        let url = compat::report_form_url(&bundle_identifier, database);
-        if let Err(error) = crate::platform::process::open_url(&url) {
-            self.note(LogLevel::Warning, error);
-        }
+        let sender = self.background_sender();
+        std::thread::spawn(move || {
+            let report = compat::running_report_prefill();
+            sender.send(Background::OpenUrl(compat::report_form_url(
+                &metadata, &report,
+            )));
+        });
     }
 
     fn apply(&mut self, ctx: &egui::Context, action: Action) {
