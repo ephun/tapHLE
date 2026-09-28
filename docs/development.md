@@ -5,8 +5,8 @@ make one specific app work, read `docs/compatibility.md` after this. If you want
 to know how tapHLE is put together, read `docs/architecture.md`.
 
 Per-platform status lives in `docs/platforms.md`. The instructions below are
-written for Windows because that is where tapHLE is developed; macOS notes
-follow, and Linux is built in CI but has not been run by anyone.
+written for Windows because that is where tapHLE is primarily developed. Host
+build and runtime status belongs in that page; do not infer it from this guide.
 
 ## What you get
 
@@ -62,9 +62,9 @@ from such a host are not comparable with results from one that has a GPU.
 `dev-scripts/regression-sweep.ps1` sampling a title screen is the case that
 bites: frames arrive far enough apart that slow-cycling screens flip between
 MOVING and STATIC between runs. That is fine for comparing two revisions on the
-same host, which is what a regression sweep does, and it is not a compatibility
-result — see [`docs/platforms.md`](platforms.md) on results being
-host-qualified.
+same host, which is what a regression sweep does, and it is not compatibility
+evidence for a higher rating threshold. See
+[`docs/compatibility.md`](compatibility.md).
 
 **CMake 4 needs a policy override.** It dropped support for projects declaring a
 minimum policy version below 3.5, which the vendored SDL, Dynarmic and OpenAL
@@ -186,7 +186,7 @@ cargo build --release
 ```
 
 Running from the repository root lets tapHLE find `runtime/dylibs`,
-`runtime/fonts`, and `tapHLE_default_options.txt`. To run elsewhere, copy those
+`runtime/fonts`, and `runtime/default_options.txt`. To run elsewhere, copy those
 resources beside the executable, or use
 `platforms/windows/make-bundle.sh` from Git Bash to assemble a complete
 portable directory.
@@ -217,8 +217,9 @@ Stop at the highest level you can afford and say where you stopped.
 | 4. Lint and format | `bash dev-scripts/lint.sh` | clang-format |
 | 5. The actual app | release build, launch the exact target | the app, on the claimed host |
 
-Level 5 is the only proof that a compatibility claim is true, and it is
-host-qualified: running an app on Windows says nothing about macOS.
+Level 5 is the only proof that an app reached a compatibility threshold in that
+run. The report records its host; the public normal-release rating is the
+cross-platform app-version summary described in `docs/compatibility.md`.
 
 **Run `dev-scripts/lint.sh` before you merge.** It is the real gate. `cargo fmt`
 and `cargo test` can both pass while CI is red, because lint checks things they
@@ -328,7 +329,7 @@ anything implemented since has already been dropped from the static gap list.
 5. Add or update a focused test when practical.
 6. Run the relevant checks from `AGENTS.md`.
 7. For verified app testing, submit the exact result to the compatibility
-   database when publication is authorized.
+   database as required by `AGENTS.md`.
 8. Open a pull request using the repository template.
 
 Pull requests should say which agent or AI tool materially assisted, what

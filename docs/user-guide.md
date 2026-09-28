@@ -60,7 +60,7 @@ Options are read in layers, and **a later layer wins**:
 | --- | --- | --- |
 | 1 (lowest) | The emulator's own default | Compiled in |
 | 2 | Your global settings | `global` in the runtime settings file — applies to every app |
-| 3 | `tapHLE_default_options.txt` | Per-app entries that ship with tapHLE and make particular apps work |
+| 3 | [default_options.txt](../runtime/default_options.txt) | Per-app entries that ship with tapHLE and make particular apps work |
 | 4 | Your settings for this app | `apps` in the runtime settings file |
 | 5 (highest) | The command line | For a run you start yourself |
 
@@ -80,7 +80,7 @@ A setting you have not decided at some level emits **nothing at all** rather
 than the emulator's default. That matters: emitting a default would silently
 countermand the shipped per-app entries that make several apps work.
 
-`tapHLE_options.txt` is the older per-app options file. It is still read, just
+[options.txt](../runtime/options.txt) is the older per-app options file. It is still read, just
 after your settings and before the command line, so one you already wrote keeps
 working — but nothing writes it any more and new settings do not go there.
 
@@ -154,12 +154,21 @@ stays available after its window has gone.
 | `runtime/sandbox` | Guest save data | No |
 | `runtime/frontend` | Library, settings and window state, as readable JSON | No |
 
-None of it is touched by an uninstall, and `tapHLE_options.txt` is only installed
+None of it is touched by an uninstall, and
+[options.txt](../runtime/options.txt) is only installed
 if absent, so an upgrade never discards what you put in it.
 
 Library entries are keyed by the app's own identity — bundle identifier and
-version — not by path, so moving a file keeps its settings, its rating and its
-play time.
+version — not by path, so moving a file keeps its settings and play time.
+Compatibility comes from tapHLEdb rather than the local library. The database
+website shows one cross-platform normal-release rating per app version; detailed
+views may also show platform evidence, commits, history, and reports.
+
+The frontend renders the ten cumulative rating states with ⭐ for an established
+threshold, ❓ for a threshold not established, and ❌ for one tested and known
+not met. **Report…** opens the authenticated web form with app/version/build
+facts prefilled; tapHLE does not accept or save a local rating. See
+`docs/compatibility.md` for the thresholds and exact handoff behavior.
 
 ## From the command line
 
@@ -176,7 +185,7 @@ An app path is required — picking one from a library is the frontend's job.
 - `--copyright` prints the bundled licence text.
 
 The frontend passes exactly these options, so anything it does can be reproduced
-by hand, and `tapHLE_options.txt` applies to both.
+by hand, and [options.txt](../runtime/options.txt) applies to both.
 
 ## When an app does not work
 

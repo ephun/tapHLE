@@ -1,18 +1,19 @@
 # Compatibility data and tools
 
-This directory holds compatibility *data* and the offline tools that check it.
+This directory holds active clickmaps and work notes plus frozen data from the
+pre-tapHLEdb reporting workflow.
 
 **The protocol lives in [`docs/compatibility.md`](../docs/compatibility.md)** —
 what a result means, how an artifact is identified, the availability policy, the
-rating scale, how a report is submitted, and the branch workflow. Read that
+rating states and thresholds, how a report is submitted, and the branch workflow. Read that
 first. This file covers only what is in this directory.
 
 ## What is here
 
 | Path | What it is |
 | --- | --- |
-| `apps/*.json` | **Legacy** records, predating the live database. Readable and checkable; do not add to them. |
-| `schema-v1.json` | The shape of those legacy records |
+| `apps/*.json` | Frozen historical reports from before tapHLEdb; do not add or edit them |
+| `schema-v1.json` | Historical schema for those three frozen files; not a current API contract |
 | `notes/<app-slug>.md` | Per-app work notes. Continuation aids, **not** compatibility claims. |
 | `clickmaps/<app-slug>.json` | Replayable routes from launch to a rating milestone |
 | `clickmaps/protocol.md` | The clickmap format and its rules |
@@ -21,7 +22,7 @@ first. This file covers only what is in this directory.
 New results go to the live database at
 <https://taphle.ephun.net/compatibility>, not to files here.
 
-## Checking the legacy records
+## Checking the historical records
 
 Run from the repository root:
 
@@ -32,16 +33,15 @@ python .\dev-scripts\compatibility.py check
 python .\dev-scripts\compatibility.py check --baseline-ref origin/trunk
 ```
 
-`check` validates exact identities, canonical URLs, hashes, report ordering, and
-that every report's tapHLE commit exists and is an ancestor of `HEAD`, without
-accessing the network. With `--baseline-ref`, it also proves that existing
-reports are an unchanged prefix of the new report list.
+`check` validates the frozen records without accessing the network. With
+`--baseline-ref`, it also proves that they have not changed. These commands
+maintain historical integrity; they are not a way to create a current report.
 
 The offline validator rejects a report dated after the record's most recent
 availability check, and rejects any mismatch between a record's version identity
 and its Archive.org source.
 
-### What a legacy record identifies
+### What a historical record identifies
 
 An exact version is identified by `CFBundleIdentifier` (`bundle_identifier`),
 `CFBundleVersion` (`bundle_version`), `CFBundleShortVersionString` when the IPA
@@ -64,4 +64,4 @@ it.
 
 An IPA, extracted app, asset, decryption key, save data, personal path, or raw
 tapHLE log. Summarize only the minimum diagnostic facts needed for the report.
-Keep local apps in the ignored `tapHLE_apps` directory or another private path.
+Keep local apps in the ignored `runtime/apps` directory.

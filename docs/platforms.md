@@ -19,13 +19,13 @@ seven independent axes, and collapsing them is what produced sentences like
 | **CI** | A job in `.github/workflows/tapHLE_release.yml` exercises this host automatically. |
 | **Package tooling** | A script exists that turns a build into something installable. Separate from whether anyone has run it. |
 | **Release eligible** | A numbered release may ship an artifact for this host. |
-| **Compatibility support** | The maintainer accepts compatibility results earned on this host. |
+| **Compatibility evidence** | A report from this host records what was actually exercised there. It does not create a separate host-specific public release rating. |
 
 Two words are reserved and should not be used loosely anywhere in tapHLE's
 documentation:
 
-**Supported** means compatibility-supported — the maintainer accepts behavioral
-and compatibility claims earned there. It never means "the code compiled once."
+**Supported host** means a host on which the maintainer accepts behavioral
+evidence. It never means "the code compiled once."
 
 **Packaged** is not a yes/no. Say *bundle tooling*, *installer tooling*, or
 *published artifact*, whichever you actually mean.
@@ -43,19 +43,18 @@ what that commits the project to.
 
 Intent is not state. What is true today:
 
-| Host | Distribution target | Build verified | Runtime verified | CI | Package tooling | Release eligible | Compatibility support |
+| Host | Distribution target | Build verified | Runtime verified | CI | Package tooling | Release eligible | Compatibility evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Windows x86_64 | yes | yes | yes, continuously | yes | bundle yes; installer written, never built | pending the all-five bar | **canonical** |
-| macOS x86_64 | yes | yes, in CI | no — nobody has played an app on it | yes | emulator-only bundle script, inherited | pending the all-five bar | no |
-| Linux x86_64 | yes | attempted in CI, not confirmed | no | yes, `continue-on-error` | portable bundle script, real build pending | pending the all-five bar | no |
-| Android | yes | yes | yes — synthetic app launch, touch and library return | no | debug APK tooling | pending the all-five bar | no |
-| iOS | yes | yes — Intel simulator and ARM64 device build | partial — 24-app simulator sweep completed; physical-device runtime pending | no | Xcode app bundle and ad-hoc IPA tooling; device installation unverified | pending the all-five bar | no |
+| Windows x86_64 | yes | yes | yes, continuously | yes | bundle yes; installer written, never built | pending the all-five bar | accepted; most existing evidence |
+| macOS x86_64 | yes | yes, in CI | no — nobody has played an app on it | yes | emulator-only bundle script, inherited | pending the all-five bar | accepted when actually run |
+| Linux x86_64 | yes | attempted in CI, not confirmed | no | yes, `continue-on-error` | portable bundle script, real build pending | pending the all-five bar | accepted when actually run |
+| Android | yes | yes | yes — synthetic app launch, touch and library return | no | debug APK tooling | pending the all-five bar | accepted when actually run |
+| iOS | yes | yes — Intel simulator and ARM64 device build | partial — 24-app simulator sweep completed; physical-device runtime pending | no | Xcode app bundle and ad-hoc IPA tooling; device installation unverified | pending the all-five bar | accepted when actually run |
 
 ### Windows x86_64
 
-The primary development and compatibility environment. A compatibility result
-is accepted here and nowhere else today, so in practice this is the host to
-expect apps to work on.
+The primary development and compatibility environment, and the source of most
+existing evidence. That history does not make the rating Windows-only.
 
 `platforms/windows/make-bundle.sh` assembles the redistributable directory
 and runs in CI. `platforms/windows/installer.iss` is a written, reviewed Inno Setup
@@ -65,9 +64,9 @@ development machine. Treat its first run as unproven.
 ### macOS x86_64
 
 Builds in CI on `macos-15` with formatting, lint, unit and integration tests.
-Nobody plays apps on it, so a macOS result is unverified by definition. It is
-useful for comparing guest behaviour against Apple's own frameworks and for
-debugging shared code.
+Nobody has yet played apps on it, so current macOS runtime behavior is
+unverified. It is useful for comparing guest behaviour against Apple's own
+frameworks and for debugging shared code.
 
 `platforms/macos/make-bundle.sh` is inherited from touchHLE, predates the
 frontend, and bundles the emulator only.
@@ -138,13 +137,13 @@ and installable package tooling, and the frozen app matrix is complete.
 The `0.2.4` cohort froze on 2026-08-24. Its exact 24 app versions are the records
 in `compatibility/release-cohorts/0.2.4.json`; do not add or remove an app after
 the freeze because a later database rating changed. Every one of those app
-versions must independently reach at least three stars on Windows, Linux, macOS,
-Android and iOS.
+versions must independently demonstrate the three-star threshold on Windows,
+Linux, macOS, Android and iOS.
 
 All five products for a candidate must be built from one full Git commit. Each
 verification records the host, architecture, OS version, full commit, binary or
 package SHA-256, build provenance and profile, exact app artifact identity,
-rating/frontier, producer identity and verification type. The commit is the
+compatibility state/evidence, producer identity and verification type. The commit is the
 canonical source identity; a package hash proves which output was actually run.
 
 A development-candidate matrix is followed by the final changelog and release
@@ -156,7 +155,7 @@ for the later commit.
 Three requirements follow:
 
 - **One version is earned by one complete matrix.** A shared version never
-  implies compatibility copied from another host.
+  implies evidence copied from another host.
 - **The mobile products are real products, not later ports.** Android and iOS
   must build, install and run visibly on their assigned devices. Each includes
   the library, applicable settings, and help/about surfaces. Reporting is shown
@@ -168,13 +167,18 @@ A successful build is not a runtime result. GUI claims require the target's real
 visible session and inspected window evidence; a background or SSH-only process
 is not visible-runtime evidence.
 
-## Compatibility results are host-qualified
+## Compatibility evidence and release ratings
 
-A compatibility result records the host it was earned on, and says nothing
-about any other host. A three-star result on Windows does not become a
-three-star result on macOS because the code is shared; somebody has to run it
-there. This is the same rule as the shared version number above, applied to a
-single app instead of a release.
+Every report records the host on which its evidence was produced. The public
+normal-release rating is nevertheless cross-platform by definition: the default
+end-user view shows one latest approved rating for each app version. Detailed
+and developer views may show platform observations, commits, history, and
+evidence, including disagreements between hosts.
+
+A Windows run is not evidence that macOS executed the same route. Host coverage
+therefore remains explicit, and release qualification still requires the full
+per-host matrix. The distinction is between host-specific evidence and the one
+cross-platform release rating, not between separate platform ratings.
 
 `docs/compatibility.md` has the full protocol.
 

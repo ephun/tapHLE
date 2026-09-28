@@ -38,12 +38,12 @@ owner instead of restating the fact. This table is what makes that checkable.
 | What a compatibility result means | `docs/compatibility.md` | Link |
 | Artifact identity and provenance protocol | `docs/compatibility.md` | Link |
 | Availability / archive / DMCA policy | `docs/compatibility.md` | Link |
-| Rating scale and star thresholds | `docs/compatibility.md` | Link |
-| Database submission shape | `docs/compatibility.md` | Link |
+| Compatibility rating states and thresholds | `docs/compatibility.md` | Link |
+| Database reporting and browser handoff | `docs/compatibility.md` | Link |
 | Compatibility branch lifecycle | `docs/compatibility.md` | `AGENTS.md` carries the mandatory summary |
 | Click maps | `docs/compatibility.md` | `compatibility/clickmaps/protocol.md` owns the file format |
 | Work-note lifecycle and template | `docs/compatibility.md` | Link |
-| Legacy JSON records and offline tools | `compatibility/README.md` | `docs/compatibility.md` links |
+| Historical JSON records and offline tools | `compatibility/README.md` | Link only when maintaining those artifacts |
 | Diagnostic technique | `docs/debugging.md` | Link |
 | Host harness, input, frame capture | `docs/debugging.md` | Link |
 | Subsystem map and code layout | `docs/architecture.md` | Link |

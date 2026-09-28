@@ -54,10 +54,10 @@ which does not meet tapHLE's three-star rendering rule. The immutable pre-change
 live-database backup and its digest are recorded in that manifest's provenance
 fields.
 
-A candidate passes only when every frozen app independently reaches at least
-three stars on all five hosts. Every run must use a product built from the same
-full candidate commit and record the product hash and build provenance. A build
-or launch check is not a substitute for the app matrix.
+A candidate passes only when every frozen app independently demonstrates at
+least the three-star threshold on all five hosts. Every run must use a product
+built from the same full candidate commit and record the product hash and build
+provenance. A build or launch check is not a substitute for the app matrix.
 
 Release reconfirmations are stored as release-verification records in tapHLEdb.
 They are distinct from rating-changing compatibility reports, so repeatedly
@@ -74,8 +74,8 @@ A non-empty changelog is necessary but not sufficient. Cut `0.2.4` only after:
 
 1. all five installable products come from one exact clean `trunk` commit;
 2. each product's hash and reproducible build provenance are recorded;
-3. every frozen app has a valid three-star-or-better release verification on
-   every host for those products; and
+3. every frozen app has a valid release verification establishing at least the
+   three-star threshold on every host for those products; and
 4. repository policy, lint, unit, integration, packaging and visible runtime
    checks pass on the applicable hosts.
 
@@ -144,7 +144,8 @@ A numbered release must:
 5. record SHA-256 product hashes and build provenance including host, architecture,
    OS/toolchain versions and build profile;
 6. carry a complete tapHLEdb release-verification matrix for the frozen cohort,
-   with each app independently at three stars or better on every host; and
+   with each app independently demonstrating at least the three-star threshold
+   on every host; and
 7. avoid claims broader than the exact committed compatibility evidence.
 
 Do not move or reuse a published tag; make a new version for every replacement.
@@ -241,7 +242,7 @@ to run tapHLE, and `tapHLE.exe` is a usable program on its own.
 Uninstalling removes what was installed and nothing else. `runtime/apps`,
 `runtime/sandbox` and `runtime/frontend` are the person's own apps, saved games
 and library, and Inno Setup does not touch files it did not place. The user's
-`tapHLE_options.txt` is installed only if absent, so an upgrade never discards
+[options.txt](../runtime/options.txt) is installed only if absent, so an upgrade never discards
 what somebody put in it.
 
 The executables carry their icon and version properties, attached by
@@ -319,7 +320,8 @@ full-screen pages inside the shared composition, not desktop-style pop-up
 windows: settings, app settings and About must remain inside the safe area,
 scroll when the form factor is short, use at least 16-point body and 14-point
 secondary text, and give every interactive control a 48-point touch target.
-The Xcode resource phase places `dylibs`, `fonts` and `default_options.txt` at
+The Xcode resource phase places `dylibs`, `fonts` and
+[default_options.txt](../runtime/default_options.txt) at
 the app-bundle root, where `ResourceFile` looks for them. A signed IPA,
 physical-device run, CI jobs and
 release artifact publication are still separate work; current status and

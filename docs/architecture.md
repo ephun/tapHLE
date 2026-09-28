@@ -430,7 +430,8 @@ precedence.
 
 An unset setting emits **no argument at all**. Emitting the emulator's default
 instead would silently countermand the per-app entries in
-`tapHLE_default_options.txt`, and those entries are what makes several apps work.
+`runtime/default_options.txt`, and those entries are what makes several apps
+work.
 
 The type itself lives in the emulator, as `tapHLE::settings::EmulatorSettings`,
 not in the frontend. Both programs have to agree about what a setting is, and
@@ -444,7 +445,8 @@ program: the frontend writes it, the emulator reads it directly at startup.
 It replaced an arrangement where the frontend kept its settings in
 a frontend settings file and `library.json` and handed them to the
 emulator as command-line arguments, while the emulator separately read
-`tapHLE_default_options.txt` and `tapHLE_options.txt` underneath. The two
+[default_options.txt](../runtime/default_options.txt) and
+[options.txt](../runtime/options.txt) underneath. The two
 systems met only at argv, and because an unset setting emits no argument, a
 setting the frontend left alone fell through to a file the frontend never
 showed. A run started from a terminal and the same run started from the library
@@ -494,17 +496,27 @@ what is on screen is built.
 
 ### Compatibility
 
-Reading is complete. `GET /compatibility/api/apps` is a real, public,
-credential-free endpoint, so the frontend shows published cumulative states and
-links to an app's record.
+`GET /compatibility/api/apps` is public and credential-free. The frontend reads
+the exact ten cumulative compatibility states, renders their ⭐/❓/❌ notation,
+and links to the app record. It retains legacy numeric `rating` only as derived
+fallback and sorting data; when both arrive, the structured state wins.
 
-tapHLE does not choose or store a compatibility rating. Report actions open the
-GitHub-authenticated tapHLEdb form in the browser. The deployed form accepts an
-existing app ID or version ID in its URL; the public app endpoint exposes the
-former, so a matching bundle identifier preselects the canonical app. Other
-identity, version, and provenance fields remain for the person to enter until
-the site publishes a prefill contract for them. No database credential is
-embedded in tapHLE.
+The database website's default version view is one latest approved
+normal-release rating per app version. `states_by_platform` is retained for
+detailed/developer use. The current frontend consumes only the app-list summary
+and matches it by bundle identifier, so two versions of one app currently show
+the same app-level state. **Implementation TODO:** expose and consume
+version-aware summary data before claiming the frontend's displayed state is for
+the selected version. The frontend does not display a platform matrix.
+
+tapHLE does not choose or store a local compatibility rating and does not submit
+a report. **Report…** opens the GitHub-authenticated tapHLEdb form with the
+versioned `prefill[v]=1` browser contract. `state/compat.rs` sends the app and
+version identity plus the host/build facts it can determine, while deliberately
+omitting compatibility judgement, contributor identity, credentials,
+moderation, evidence, and fields it cannot know. The exact fields and omissions
+are documented in `docs/compatibility.md`. No database credential is embedded in
+tapHLE, and opening the URL creates no database row.
 
 ### Updates
 
@@ -538,7 +550,7 @@ JSON meant to be readable and hand-editable:
 | `library.json` | Entries, per-app overrides, play statistics |
 | `settings.json` | Global emulator defaults and frontend preferences |
 | `state.json` | Window geometry, panel sizes, view mode, last selection |
-| `compatibility.json` | The last ratings read from the database |
+| `compatibility.json` | The last compatibility states read from the database |
 | `icons/` | Cached icon bitmaps |
 | `frontend_log.txt` | Frontend panics, since a windowed program has no console |
 

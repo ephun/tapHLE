@@ -9,18 +9,21 @@ Techniques — how to read a crash, capture a frame, verify audio — are in
 
 ## What a compatibility result means
 
-A result is a statement that **this exact app build, run by this exact tapHLE
-revision, on this host, reached this milestone on this date.**
+A report is evidence that **this exact app build, run by this exact tapHLE
+revision, on this host, reached this threshold on this date.** The published
+normal-release rating is the latest approved cross-platform summary for that app
+version; it is not a separate rating per host.
 
 Every part of that is load-bearing:
 
 - **App build.** Identified from bundle metadata read out of the file that was
   actually run, never from a filename or a page title.
 - **tapHLE revision.** A committed one. A dirty worktree cannot produce a claim.
-- **Host.** Results are **host-qualified**. A three-star result on Windows says
-  nothing about macOS; the code being shared is not evidence, somebody has to
-  run it there. Windows is the only host with compatibility support today — see
-  `docs/platforms.md`.
+- **Host.** Every report names where its evidence was produced. Detailed views
+  may compare platforms, while the default end-user view remains one release
+  rating per app version. A run on one host is not evidence that another host
+  executed the same route; release qualification therefore uses a per-host
+  matrix. See `docs/platforms.md`.
 - **Date.** Each report is an immutable dated snapshot, never revised.
 
 ## For a non-programmer with a coding agent
@@ -355,9 +358,9 @@ independent of UIKit, input, and graphics.
 
 Work on an app in `compat/<app-slug>`; for example, Ricky work belongs on
 `compat/ricky`. Exploratory checkpoint commits are allowed there so
-investigations are reproducible and do not depend on a dirty worktree. When
-publishing is authorized, push useful checkpoints to the matching remote branch
-so another agent can resume them.
+investigations are reproducible and do not depend on a dirty worktree. Push
+useful checkpoints to the matching remote branch so another agent can resume
+them.
 
 **Never force-push or otherwise rewrite a commit referenced by a compatibility
 report.**
@@ -388,10 +391,10 @@ A dirty-worktree run is a useful experiment but never database evidence.
 1. Commit the focused implementation on `compat/<app-slug>`.
 2. Build and run the relevant tests from that exact commit.
 3. Re-verify the IPA hash and replay the milestone on the claimed host.
-4. If the milestone is reproducible, append a compatibility report referencing
-   the tested implementation commit.
-5. Submit the verified result to the compatibility database when publication is
-   authorized.
+4. If the milestone is reproducible, commit its clickmap with the tested
+   implementation when the route needs more than launch.
+5. Submit the verified result to the compatibility database, referencing that
+   exact tested commit.
 6. Merge a stable, documented milestone to `trunk` even when known limitations
    remain.
 
@@ -399,7 +402,7 @@ Keep implementation, agent-policy documentation, and compatibility reports in
 separable commits. This makes incomplete app experiments easy to continue or
 revert without losing durable process improvements.
 
-Crossing a star threshold does two things, not one: the reusable fix graduates to
+Crossing a rating-state boundary does two things, not one: the reusable fix graduates to
 `trunk` *and* the report goes to the database. Do only the first and a real result
 stays invisible; do only the second and the claim cannot be reproduced.
 
@@ -422,26 +425,63 @@ canonical provenance or the submission token is missing, record that exact
 blocker and keep threshold publication open; do not silently leave the report or
 the `trunk` promotion undone.
 
-## The rating scale
+## Compatibility rating states
 
-- ★☆☆☆☆ (1/5) **Broken** — does not reach usable content.
-- ★★☆☆☆ (2/5) **Starts** — an intro or menu works, but gameplay does not.
-- ★★★☆☆ (3/5) **In game** — some gameplay works, but major problems remain.
-- ★★★★☆ (4/5) **Playable** — the whole app can be used, with small problems.
-- ★★★★★ (5/5) **Fully working** — everything important works.
-- — **Not tested** — there is no verified tapHLE result.
+tapHLE uses ten cumulative states. These states are the rating model; there is
+no separate conceptual "state" layered over a numeric rating. The API stores the
+ASCII form, and the app and website render it with emoji:
 
-Three stars includes rendering. A loop that runs is not enough: output that is
-broken, mirrored, flipped or clipped is not a three.
+| Stored | Display | Meaning |
+| --- | --- | --- |
+| `?????` | ❓❓❓❓❓ | No threshold has been established. |
+| `*XXXX` | ⭐❌❌❌❌ | Exact execution was observed; meaningful interaction was tested and failed, so every cumulative higher threshold is also known not met. |
+| `*????` | ⭐❓❓❓❓ | Exact execution was observed; higher thresholds were not established. |
+| `**XXX` | ⭐⭐❌❌❌ | Stable meaningful content and basic interaction work; primary activity was tested and failed. |
+| `**???` | ⭐⭐❓❓❓ | Stable meaningful content and basic interaction work; higher thresholds were not established. |
+| `***XX` | ⭐⭐⭐❌❌ | Primary activity or core functionality supports meaningful use; end-to-end use was tested and failed. |
+| `***??` | ⭐⭐⭐❓❓ | Primary activity or core functionality supports meaningful use; higher thresholds were not established. |
+| `****X` | ⭐⭐⭐⭐❌ | The intended experience works end to end without a major blocker; fully working was tested and not met. |
+| `****?` | ⭐⭐⭐⭐❓ | The intended experience works end to end without a major blocker; fully working was not established. |
+| `*****` | ⭐⭐⭐⭐⭐ | Fully working to the extent reasonably testable. |
 
-**An agent may assign at most three stars** — two when the app reaches a stable
-screen, three when the gameplay loop demonstrably starts and persists for a short
-while. **Four and five stars require a human to have actually played it**, and an
-agent must never assign them.
+A question mark means that threshold is not established. It does not mean
+"probably works." An X means the threshold was exercised and is known not met.
+Because thresholds are cumulative, only the ten states above are valid; mixed
+forms such as `***X?` are not.
 
-The filled and empty stars are only a short summary. The exact report, feature
-states, app file, tapHLE commit, and host say what was really tested. `boots` and
-`menu` both display as two stars, while the stored status keeps the difference.
+Concrete examples:
+
+- An app that launches and sits at a title screen without tested input is
+  `*????`, not two stars because it remained alive for a long time.
+- A responsive menu is `**???` until the primary activity is exercised.
+- A game with a demonstrably usable gameplay loop can reach `***??`; a
+  timer, process survival, or changing frames alone cannot establish that.
+- If that loop renders mirrored, clipped, or otherwise unusably, the third
+  threshold is not met. Record X only when the threshold was actually tested;
+  otherwise leave it unknown.
+- A human who completes the primary intended experience without a major blocker
+  can establish `****?`; five stars require reasonable testing of the remaining
+  important behavior.
+
+The database derives a leading-star count for backward-compatible read clients,
+but new reports submit the exact compatibility state. Do not turn legacy numeric
+ratings, run duration, survival, or a later threshold into guessed X or question
+mark positions.
+
+### Source ceilings
+
+- Agents can establish at most three stars. The server enforces this.
+- Humans are required for four and five stars. The server enforces this.
+- A survey-style script conceptually stops at one star because it does not test
+  meaningful interaction. The current API groups it with deterministic test
+  harnesses and can technically accept automation evidence through three stars.
+  **TODO:** distinguish survey evidence in code before claiming that narrower
+  one-star ceiling is enforced.
+
+Agent and meaningful visual automation reports require a screenshot under the
+current server policy. Evidence from a deterministic harness may establish only
+the thresholds it actually exercises; source ceilings never turn liveness into
+interaction or playability.
 
 The scale is adapted from the [touchHLE app
 database](https://appdb.touchhle.org/), whose database content is published under
@@ -466,9 +506,9 @@ commit-per-edit Git workflow.
 
 What lives where, so the two never duplicate each other:
 
-- **tapHLEdb — the database.** Structured data only: an app's identity, its
-  versions, and dated reports carrying a 1–5 rating, the tapHLE version, the
-  host, the source of the result, and a one-line frontier. Each report is a dated
+- **tapHLEdb — the database.** Structured data: an app's identity, its versions,
+  and dated reports carrying an exact compatibility state, the tapHLE version,
+  the host, the source of the result, and evidence. Each report is a dated
   snapshot and is never revised, so its frontier records where the app stood *at
   that commit*. It answers *"where does this app stand?"*
 - **`compatibility/notes/<app>.md` — the notebook.** The debugging narrative:
@@ -481,7 +521,8 @@ present.
 
 ### Host, artifact and verification identity
 
-Compatibility is platform-specific. Every new record identifies:
+The release rating is cross-platform, while every evidence report is
+host-specific. Every new report identifies:
 
 - host platform, architecture and OS version;
 - the full tapHLE Git commit;
@@ -489,7 +530,7 @@ Compatibility is platform-specific. Every new record identifies:
   including build profile and toolchain/runner identity;
 - the exact app artifact identity: bundle identifier and version fields from
   `tapHLE --info`, plus the lawfully obtained app artifact hash;
-- rating and frontier;
+- compatibility state and frontier/evidence;
 - producer and submitter identity; and
 - verification type.
 
@@ -497,15 +538,16 @@ The Git commit is the canonical source identity. A product hash is still require
 because it proves which output from that source was installed and run.
 
 `compatibility` is the verification type for ordinary rating history. Submit one
-when the rating changes in either direction, following the boundary rules below.
+when the exact rating state changes in either direction, following the boundary
+rules below.
 `release_verification` is a reconfirmation for a named release candidate: it says
 an existing rating was reproduced on a particular platform, commit and product.
 It does not create a new rating boundary and must remain distinguishable in the
 API and UI. Never use a release reconfirmation to reconstruct a boundary that was
 missed.
 
-A record exists only because tapHLE actually ran that app and produced a rating.
-Apps are never listed speculatively.
+An app/version may be catalogued before testing and then displays `?????`.
+Cataloguing establishes identity only; it is not a compatibility result.
 
 ### Who records it
 
@@ -533,18 +575,19 @@ shared machines and CI.
 
 ### Submit every boundary, as it is crossed
 
-Record a compatibility report when the star rating changes, **in either
-direction** — an app that got worse is worth knowing about too. A rerun that
-repeats a rating is submitted only as `release_verification` for a named release
-candidate, never as another compatibility boundary.
+Record a compatibility report when the exact ten-state rating changes, **in
+either direction** — including unknown-to-failed or failed-to-unknown at the same
+leading-star count. A rerun that repeats the same state is submitted only as
+`release_verification` for a named release candidate, never as another
+compatibility boundary.
 
-**Every star boundary gets its own report, at the time it is crossed.** An app
-taken from one star to three earns a report at two *and* a report at three, not a
-single report at the end. The temptation to skip the first is strongest exactly
-when the next boundary looks close — and that is when it gets missed. Each report
-is a dated snapshot of one revision, so the series is what shows which commit
-moved the app; a missing boundary erases that, and a later regression hunt has
-nothing to bisect against.
+**Every rating-state boundary gets its own report, at the time it is crossed.**
+Do not jump over an intermediate established threshold and file only the final
+state. The temptation to skip the first is strongest exactly when the next
+boundary looks close — and that is when it gets missed. Each report is a dated
+snapshot of one revision, so the series is what shows which commit moved the
+app; a missing boundary erases that, and a later regression hunt has nothing to
+bisect against.
 
 A boundary passed without a report **cannot be filled in later.** Do not
 reconstruct one from a work note, from memory, or from a rerun on a newer
@@ -557,80 +600,67 @@ Reports are immutable and append-only. Never rewrite a previous observation
 because a later commit works better. If an old report needs a correction, append
 one with `supersedes` and explain it.
 
-### The submission endpoint
+### The browser report form
+
+The tapHLE app does not choose a rating, store a local rating, or submit a
+report. **Report…** opens the GitHub-authenticated tapHLEdb form in the browser.
+It uses the deployed versioned `prefill[v]=1` contract when the library has both
+bundle identifier and bundle version; malformed identity falls back to the
+generic form.
+
+The current client sends these draft fields when available:
+
+- app: `bundle_identifier`, `display_name`;
+- version: `bundle_version`, `short_version`, `minimum_os_version`,
+  `app_artifact_sha256`;
+- report: `platform`, `os_version`, `architecture`, `taphle_commit`,
+  `taphle_release`, `artifact_sha256`, `build_provenance`, `build_profile`, and
+  `verification_type=compatibility`.
+
+Empty optional values are omitted. On Android the executable hash is omitted
+because `current_exe` names the system `app_process`, not the APK or tapHLE
+library. On iOS the client currently omits OS version. A non-40-hex build commit
+is omitted. The app artifact hash is sent under the version namespace; the form
+copies it into the report draft.
+
+The URL deliberately omits the compatibility state/rating, source class and
+identity, moderation/trust fields, credentials, screenshot, icon, timestamps,
+test-run ID, result, logs, evidence, and frontier. Prefill is untrusted editable
+draft input: it submits nothing, creates nothing, and approves nothing. The
+signed-in user must select the compatibility state and complete the normal form.
+The exact accepted fields and validation rules are owned by
+[tapHLEdb's `API.md`](https://github.com/ephun/tapHLEdb/blob/trunk/API.md).
+
+### The agent submission endpoint
 
 ```
 POST https://taphle.ephun.net/compatibility/api/report
 ```
 
-It is documented in `API.md` in the tapHLEdb repository. **Do not discover the
-schema by probing the live endpoint** — a probe that succeeds is a published
-report, and one session's guesswork left six junk reports for the maintainer to
-reject. The accepted shape, confirmed against the deployment:
+The current request shape is documented in tapHLEdb's `API.md`. **Do not
+discover the schema by probing the live endpoint**: a successful probe is a real
+submission. New writes use the exact `compatibility_state` and `source_class`
+fields.
 
-```json
-{
-  "app_id": 26,
-  "version_id": 26,
-  "report": {
-    "rating": 3,
-    "extra": {
-      "source_type": "agent",
-      "source_name": "tapHLE Lead",
-      "platform": "Windows",
-      "architecture": "x86_64",
-      "os_version": "11 24H2",
-      "taphle_commit": "0123456789abcdef0123456789abcdef01234567",
-      "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "app_artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "build_provenance": "clean checkout; Rust 1.97.1; release profile",
-      "build_profile": "release",
-      "verification_type": "compatibility",
-      "frontier": "gameplay loop starts and persists"
-    }
-  }
-}
-```
+Use `app_id`/`version_id` only after confirming them from `GET /api/apps`, or
+send complete `app` and `version` objects. Versions are matched by exact
+`CFBundleVersion` and app artifact SHA-256; version identity fields belong in
+`version.extra`. A new app also requires an icon, which the browser form leaves
+for the user to upload.
 
-The version's identity fields go **inside `version.extra`**, not beside `name`.
-Putting them beside it is rejected with `version.extra is missing a required
-field`, which at least names the object.
+New reports require complete app/version provenance and report provenance,
+including source class and producer name, host/architecture/OS, full lowercase
+40-hex tapHLE commit, product and app SHA-256 hashes, build provenance/profile,
+release channel, verification type, test-run ID, UTC timestamp, result, evidence
+description, and visual-output classification. Crashes require crash evidence.
+The API binds source identity to the credential; token clients cannot claim
+`human`. `release_verification` has additional release-candidate requirements.
+Use the live `API.md` rather than copying its evolving field list into scripts.
 
-`app_id` and `version` may instead be an `app` object and a `version` object to
-create new ones; look the app up first with `GET /api/apps` so an existing entry
-is reused rather than duplicated. The `app` object takes `name` and an `extra`
-holding at least `bundle_identifier`.
+A rejected transaction writes nothing. That is not permission to discover the
+schema by probing; validate against the source contract and its tests first.
 
-**An app_id from a work note may no longer exist.** Rows are removed in
-moderation, and the note does not find out: Omium's recorded app 25 returned
-`app_id does not exist`, because the moderator had removed it along with a bad
-neighbouring row. Read `GET /api/apps` and confirm that exact `app_id` and bundle identifier before
-trusting an id a note gives you. Create the app rather than guessing another
-number when it is absent.
-
-New reports require source type/name, platform, architecture, OS version, full
-40-hex tapHLE commit, tested product SHA-256, tested app SHA-256, build provenance,
-build profile and verification type. `platform` is one of Windows, Linux, macOS,
-Android or iOS. `release_verification` also requires `release_version`; an
-ordinary `compatibility` report must omit it. Unknown keys and malformed hashes
-are rejected. The complete current schema and release-verification read endpoint
-are in tapHLEdb's `API.md`.
-
-`frontier` tolerates at least 500 characters, and exceeding its limit is rejected
-with a flat `{"error":"invalid_submission"}` that names no field — so a
-submission that fails while the rating and identity are plainly fine is very
-likely this. Keep it to a few sentences; the full account belongs in the work
-note, which has no limit and is version-controlled next to the code that moves
-it.
-
-A rejected submission publishes nothing, so correcting one of these and retrying
-is safe. That is not licence to discover the schema by probing — the warning
-above stands.
-
-Send it with `curl`; Python's `urllib` default user agent is refused by the
-front-end proxy with HTTP 403 code 1010.
-
-### Include a screenshot when you have one
+### Screenshots
 
 A screenshot of the milestone is welcome and makes the rating easier to confirm
 or overturn. Prefer an OS-level capture of the real visible tapHLE/app window over
@@ -643,11 +673,10 @@ Inspect the final crop for notifications, account names, file paths, unrelated
 windows and other sensitive information before attaching it. Never alter the app
 content to make evidence look better.
 
-A screenshot is **not required**. Some milestones are not visual, a safe crop may
-not prove them, and desktop capture can return a black client area. Never delay a
-verified result because no safe useful image exists, and never describe a screen
-you did not inspect. An accurate report without an image beats an illustrated
-guess. Say what you observed and how you observed it.
+The server currently requires a screenshot for agent reports and for automated
+reports when meaningful visual output exists. Human policy may permit omission.
+If no safe screenshot can satisfy the applicable source policy, the report is
+not ready; never substitute a description of a screen you did not inspect.
 
 ### Choosing what to work on
 
@@ -659,7 +688,8 @@ No credential is needed. The lowest-rated apps need the most help, and an app
 listed there with no `compat/<slug>` branch is unclaimed work an agent may start
 without being asked.
 
-Apps sitting at `ok:survived` are the cheapest ratings in the queue.
+Apps at `*????` are the cheapest known ratings in the queue, but
+survival alone must not be promoted to a higher threshold.
 
 For broad framework work across a large collection, see "Choosing what to work
 on" in `docs/development.md`.
@@ -679,8 +709,9 @@ for a different version of the same app. Explore from where the replay stops.
 
 Record one for every app that needs more than a launch to reach its milestone,
 and keep it current as the frontier advances. When a run reaches a rating
-milestone, record the route in the same commit as the report — the route is fresh
-at that moment and never will be again.
+milestone, put the route in the exact tested commit before submitting the report
+that cites that commit — the route is fresh at that moment and never will be
+again.
 
 Each step records the screen it starts on, the client-area tap coordinate, and
 the screen it leads to. Client coordinates are only meaningful against a stated
@@ -739,7 +770,7 @@ healthy splash screen and reported success. The app never reached a level again.
 earlier, so it was assumed to still work — and it had been dead for a dozen
 commits before anyone launched it.
 
-So:
+The complete regression-prevention gate the project needs is:
 
 1. **Check every app that carries a rating**, not a convenient subset. An app
    absent from the sweep is an app whose rating is a claim about the past.
@@ -754,17 +785,26 @@ So:
    single check distinguishes "playing" from "frozen on a plausible screenshot",
    and it is the check that has caught the most.
 
-`dev-scripts/regression-sweep.ps1` does 1, 3 and 4. It sweeps whatever is in the
-app collection directory, so there is no list for an app to fall out of, and it
-takes per-app launch options from `tapHLE_default_options.txt` by bundle
-identifier rather than carrying its own copy of them. It exits non-zero if any
-app failed to start or died.
+That complete gate is **TBD**. `dev-scripts/regression-sweep.ps1` is the current
+partial helper: it does 3 and 4 for every app present in the directory passed to
+`-AppsDir`, takes per-app launch options from `runtime/default_options.txt`, and
+exits non-zero if an unexpected app fails to start or dies. Run it against the
+current checkout layout as:
+
+```powershell
+.\dev-scripts\regression-sweep.ps1 -AppsDir runtime\apps
+```
+
+It does not know which database-rated apps are absent from that local directory,
+and known failures in `dev-scripts/regression-sweep-known-bad.txt` do not make its
+exit status fail. It therefore does not implement 1 or protect the published
+rating set by itself.
 
 **Run it before merging anything that touches a shared path, and after.** Writing
 the check by hand instead is how it shrank to eight apps and a twenty-second wait
 the last time. One app's screenshot is a sample, not a check.
 
-It does **not** do 2. Nothing in it leaves the title screen, so it reports
+It also does **not** do 2. Nothing in it leaves the title screen, so it reports
 `STATIC` for an app that is merely waiting for input and for one that is wedged,
 and cannot tell them apart. Reaching a rated milestone still means following that
 app's click map.
@@ -829,9 +869,16 @@ Partial progress is welcome when it is clearly described. **Do not claim that an
 app or feature works until it was tested on the claimed host from the commit in
 the pull request.**
 
-## Legacy JSON records
+## Historical repository records and work-note follow-up
 
-`compatibility/apps/*.json` predates the live database and remains readable and
-checkable until the maintainer migrates it. **Do not add records there.**
-`compatibility/schema-v1.json` documents its shape, and
-`compatibility/README.md` covers the offline tools.
+The three `compatibility/apps/*.json` files and `compatibility/schema-v1.json`
+are frozen historical artifacts from the pre-tapHLEdb workflow. Do not add,
+edit, or use them as the current reporting schema. `compatibility/README.md`
+documents their limited offline validation role.
+
+`compatibility/notes/` remains the active continuation notebook during this
+pass. tapHLEdb now has app/version/report-scoped developer notes, which is the
+follow-up migration target. Do not partially move notes: the maintainer still
+needs to decide scope, target level, historical attribution, and when the
+repository copies become read-only or are retired. Until then, keep each note in
+its current location and do not duplicate individual entries into tapHLEdb.

@@ -13,7 +13,7 @@ Open tapHLE, see your apps, pick one, press Play.
 and many apps will not work yet. The project does not include apps, Apple
 software, decryption keys, or other proprietary material.
 
-**[See the compatibility ratings (1–5 stars)](https://taphle.ephun.net/compatibility)**
+**[See the compatibility ratings](https://taphle.ephun.net/compatibility)**
 
 ## Want a specific app to work?
 
@@ -40,8 +40,9 @@ others unintentionally.
 tapHLE targets Windows, macOS, Linux, Android and iOS, and is waiting to
 release its first version until all five are ready.
 
-Most work is done and tested on Windows first, and Windows is currently the
-only host on which compatibility results are accepted.
+Most work is done and tested on Windows first. Compatibility reports record the
+host that produced their evidence, while the default published rating is one
+cross-platform release rating for each app version.
 **[docs/platforms.md](docs/platforms.md)** is the honest per-platform state —
 what builds, what has actually been run, and what is packaged.
 

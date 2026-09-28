@@ -65,11 +65,13 @@ also welcome.
 **The first release ships on all five platforms: Windows, macOS, Linux, Android
 and iOS.**
 
-Windows is the primary development and compatibility environment.
-**Compatibility results are host-qualified**: a result states the host it was
-earned on and says nothing about any other, so a three-star result on Windows
-does not become one on macOS because the code is shared. Somebody has to run it
-there.
+Windows is the primary development and compatibility environment. Every report
+records the host that produced its evidence. The published normal-release
+rating is cross-platform and belongs to an exact app version; the default
+end-user view shows one such rating, while detailed views may expose platforms,
+commits, history, and evidence. One host's run is not evidence that another host
+executed the same route, so release qualification still requires its per-host
+matrix.
 
 [`docs/platforms.md`](docs/platforms.md) is the single canonical record of what
 builds, what has been run, what is packaged, and what is release-eligible. **Do
@@ -128,7 +130,8 @@ Windows, Linux, macOS, Android and iOS using products from one exact commit.
 ## Compatibility claims
 
 [`docs/compatibility.md`](docs/compatibility.md) is the protocol — the submission
-shape, the rating scale, the availability policy. The obligations are here.
+shape, rating states and thresholds, and availability policy. The obligations
+are here.
 
 **Never guess an app's identity. Read it from `tapHLE --info`, before you compose
 the report.** The bundle identifier, the version, and the display name are facts
@@ -146,11 +149,11 @@ the 2026-07-26 target list turned out to be plain `Minecrafted`,
 `com.disney.JellyCar3` for a game published by Walaber.
 
 **A report separates who submitted it from what produced it, and both must be
-truthful.** The submitter is the GitHub account or API token that posted it. The
-producer is `source_type`: use `agent` for any result an agent produced, even
-when a human pastes it into the web form on the agent's behalf. Never record an
-agent's result as `human` — a human submitting is not a human testing, and that
-distinction is the reason the field exists.
+truthful.** The submitter is the GitHub account or API credential that posted
+it. The producer is `source_class`: use `agent` for any result an agent produced,
+even when a human opens or completes the web form on the agent's behalf. Never
+record an agent's result as `human` — a human submitting is not a human testing,
+and that distinction is the reason the field exists.
 
 **Submit it yourself, without asking.** A report is ordinary finished work, in
 exactly the way an ordinary `git push` is: the maintainer set the goal, the
@@ -162,7 +165,7 @@ Stopping to ask is the error, not the caution. The narrow exceptions elsewhere i
 — force-pushing, rewriting published history, release tags — do not extend to
 this.
 
-**Crossing a star threshold does two things, not one.** The reusable fix
+**Crossing a rating-state boundary does two things, not one.** The reusable fix
 graduates to `trunk` *and* a report goes to the database. Doing only the first
 leaves a real result invisible; doing only the second claims a result nobody can
 reproduce.
@@ -176,10 +179,12 @@ the merge has been pushed to `origin/trunk`. After the push, run `git merge-base
 by missing provenance or credentials, say so plainly and leave threshold
 publication incomplete rather than silently omitting either half.
 
-**Every star boundary gets its own report, at the time it is crossed.** An app
-that goes one star to two to three earns three reports, not one. Do not save them
-up, and do not treat a boundary as unimportant because you expect to pass the
-next one shortly — that expectation is exactly when a boundary goes unrecorded.
+**Every rating-state boundary gets its own report, at the time it is crossed.**
+Do not save them up, and do not treat a boundary as unimportant because you
+expect to pass the next one shortly — that expectation is exactly when a
+boundary goes unrecorded. Question marks mean a threshold is not established;
+X means it was tested and is known not met. Never infer either from duration or
+survival.
 
 **Stop at the boundary. Do not chain the next fix.** The default way this rule
 gets broken is not forgetfulness, it is iteration: the moment a fix works the
@@ -193,25 +198,29 @@ report exactly this way on 2026-08-05, and the loss is permanent.
 A boundary passed without a report **cannot be recovered afterwards.** Do not
 compose one from memory, from a work note, or from a rerun on a later revision.
 
-Submit when the rating changes in **either** direction. A rerun that reproduces
-the same rating is not another compatibility boundary. Submit it only when a
+Submit when the exact ten-state rating changes in **either** direction. A rerun
+that reproduces the same state is not another compatibility boundary. Submit it only when a
 named release candidate needs a `release_verification` record, which tapHLEdb
 keeps distinguishable from rating-changing compatibility history.
 
 Every report records the platform, architecture, OS version, full tapHLE commit,
 tested binary or package hash, reproducible build provenance and profile, exact
-app artifact identity, rating/frontier, producer identity and verification type.
+app artifact identity, compatibility state/evidence, producer identity and
+verification type.
 A short commit or package filename is not a substitute for those fields.
 
-An agent may assign **at most three stars** (two for a stable screen, three for a
-gameplay loop that starts and persists). Four and five stars require human
-testing. Three stars includes rendering: broken, mirrored, flipped or clipped
-output is not a three.
+An agent may establish **at most three stars**. Four and five stars require
+human testing. Three stars includes usable rendering: broken, mirrored, flipped
+or clipped output is not a three. Survey-style scripts conceptually stop at one
+star because they do not exercise meaningful interaction; the current API does
+not distinguish them from other deterministic harnesses, so this narrower
+ceiling remains an implementation TODO rather than an enforced claim.
 
 A screenshot normally shows only the tapHLE/app window or a tightly cropped
-relevant area, not the full private desktop. Inspect the final image for sensitive
-information before submission. Screenshots are useful but optional; omit one when
-no safe image can prove the result.
+relevant area, not the full private desktop. Inspect the final image for
+sensitive information before submission. The server requires screenshots for
+agent reports and for automated reports with meaningful visual output. If no
+safe image can satisfy the applicable source policy, the report is not ready.
 
 **The agent token lives at `~/.taphledb-token` and nowhere else.** Read it inline
 at the moment of use, as `$(cat ~/.taphledb-token)`. Never echo it, and never
@@ -234,7 +243,7 @@ disputed. Use the exact item URL supplied by the maintainer or reporter; do not
 search for or guess one.
 
 **An app that needs an option to run correctly needs an entry in
-`tapHLE_default_options.txt`.** A result that depends on the tester remembering a
+`runtime/default_options.txt`.** A result that depends on the tester remembering a
 flag is not a result a player can reproduce, so shipping the option is part of
 the work rather than a follow-up. Adding an entry does not discharge the
 underlying gap: record that separately if the option is compensating for
@@ -392,7 +401,9 @@ checks that do work and state the exact limitation. **Do not claim an app works
 without launching that exact app version.**
 
 **Regression-test every change to a shared path.** Run
-`dev-scripts/regression-sweep.ps1` before merging and after. One app's screenshot
+`dev-scripts/regression-sweep.ps1 -AppsDir runtime/apps` before merging and
+after. This is a partial liveness/frame-motion sweep, not the still-TBD full
+rated-milestone gate described in `docs/compatibility.md`. One app's screenshot
 is a sample, not a check.
 
 ## Source and artifact rules
@@ -433,7 +444,7 @@ This is not a style preference. Three things go wrong when a name gets in:
   than the class. That is how `0f9d5a16` left two identical bugs in place.
 - It puts the maintainer's private test library into a public repository.
 
-Per-app behaviour has a home already: `tapHLE_default_options.txt`, keyed by
+Per-app behaviour has a home already: `runtime/default_options.txt`, keyed by
 bundle identifier, for the things apps genuinely differ on — orientation,
 native-landscape rendering, control mapping. That file is *supposed* to name
 apps. The app-specific narrative belongs in `compatibility/notes/` and the
@@ -447,7 +458,7 @@ name in `sc_network_reachability.rs`. **They should not be there.** They are
 debt, tolerated only because each is load-bearing for some app. Do not add to
 them, do not cite them as precedent, and do not delete one as a drive-by; migrate
 it deliberately, with its own regression sweep, either into
-`tapHLE_default_options.txt` or into a general rule covering the class of apps
+`runtime/default_options.txt` or into a general rule covering the class of apps
 behaving that way.
 
 The principle behind all of this: **advancing one app should advance every app
@@ -470,9 +481,10 @@ stated elsewhere in this guide that has actually been broken in practice.
 2. **One branch, one subject.** `git status` before committing and `git show
    --stat` after: an unrelated file in the diff means it belongs on another
    branch, and `git add -A` is how it gets there by accident.
-3. **A milestone gets its clickmap in the same commit as its report.**
-   `compatibility/clickmaps/<slug>.json` exists and replays.
-4. **A rating change gets its report, now.** Every star boundary, in either
+3. **A milestone gets its clickmap in the exact tested commit.**
+   `compatibility/clickmaps/<slug>.json` exists and replays before the report
+   cites that commit.
+4. **A rating change gets its report, now.** Every ten-state boundary, in either
    direction, at the time it is crossed.
 5. **The changelog entry is written on the branch that earns it**, in a user's
    terms, if a user would notice the change at all.

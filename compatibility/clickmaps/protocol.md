@@ -35,7 +35,7 @@ pointing at the map rather than duplicating the steps, so they cannot drift.
 The emulator replays a map itself:
 
 ```sh
-tapHLE "tapHLE_apps/J & F HD (v1.1) [Cracked].ipa"     --replay=compatibility/clickmaps/jim-and-frank-hd.json --replay-quit
+tapHLE "runtime/apps/J & F HD (v1.1) [Cracked].ipa"     --replay=compatibility/clickmaps/jim-and-frank-hd.json --replay-quit
 ```
 
 **Prefer this.** It queues each tap as the same event a real mouse click
@@ -62,7 +62,7 @@ or repair a route recorded for a different orientation.
 
 ```powershell
 .\dev-scripts\clickmap.ps1 -Map compatibility\clickmaps\jim-and-frank-hd.json `
-                           -App "tapHLE_apps\J & F HD (v1.1) [Cracked].ipa"
+                           -App "runtime\apps\J & F HD (v1.1) [Cracked].ipa"
 ```
 
 Windows only, and it drives the real cursor. What it still does that `--replay`
