@@ -79,19 +79,27 @@ impl Category {
     /// Paths contains executable and folder-picker configuration for the
     /// desktop frontend. Mobile imports through its platform document picker
     /// and owns its installation paths, so there is nothing useful to edit.
+    /// Controls configures a separate controller-driven input path rather than
+    /// the native touchscreen and accelerometer.
     pub const MOBILE_GLOBAL: &'static [Category] = &[
         Category::General,
         Category::Display,
         Category::Graphics,
-        Category::Controls,
         Category::Fonts,
         Category::System,
         Category::Logging,
     ];
 
-    /// Per-app mobile categories. The remaining categories all affect the
-    /// guest or a controller that can be attached to the device.
-    pub const MOBILE_PER_APP: &'static [Category] = Self::PER_APP;
+    /// Per-app categories that describe the emulated app on a native mobile
+    /// host. Controller tuning and controller-to-touch placement remain in
+    /// the desktop frontend, where that input workflow is supported.
+    pub const MOBILE_PER_APP: &'static [Category] = &[
+        Category::Display,
+        Category::Graphics,
+        Category::Fonts,
+        Category::System,
+        Category::Logging,
+    ];
 }
 
 /// Which settings surface is asking the shared category renderer to draw.
@@ -238,12 +246,7 @@ pub fn show_app(ctx: &egui::Context, dialog: &mut AppDialog) -> Outcome {
                         );
                         dialog.open_control_editor = open_editor;
                         ui.add_space(12.0);
-                        controls_page(
-                            ui,
-                            &mut dialog.draft,
-                            Some(&dialog.inherited),
-                            Surface::Desktop,
-                        );
+                        controls_page(ui, &mut dialog.draft, Some(&dialog.inherited));
                     }
                     other => {
                         emulator_page(ui, other, &mut dialog.draft, inherited, Surface::Desktop)
@@ -291,16 +294,14 @@ pub(crate) fn show_app_category_for(ui: &mut Ui, dialog: &mut AppDialog, surface
     let inherited = Some(&dialog.inherited);
     match dialog.category {
         Category::Logging => logging_page(ui, &mut dialog.draft, inherited),
-        Category::Controls => {
-            if surface.shows_desktop_integration() {
-                crate::ui::widgets::section(ui, "This app's controls");
-                let inherited_layout = dialog.inherited.controls.clone().unwrap_or_default();
-                let mut open_editor = dialog.open_control_editor;
-                app_control_layout(ui, &mut dialog.draft, &inherited_layout, &mut open_editor);
-                dialog.open_control_editor = open_editor;
-                ui.add_space(12.0);
-            }
-            controls_page(ui, &mut dialog.draft, inherited, surface);
+        Category::Controls if surface.shows_desktop_integration() => {
+            crate::ui::widgets::section(ui, "This app's controls");
+            let inherited_layout = dialog.inherited.controls.clone().unwrap_or_default();
+            let mut open_editor = dialog.open_control_editor;
+            app_control_layout(ui, &mut dialog.draft, &inherited_layout, &mut open_editor);
+            dialog.open_control_editor = open_editor;
+            ui.add_space(12.0);
+            controls_page(ui, &mut dialog.draft, inherited);
         }
         other => emulator_page(ui, other, &mut dialog.draft, inherited, surface),
     }
@@ -572,7 +573,9 @@ fn emulator_page(
     match category {
         Category::Display => display_page(ui, draft, inherited, surface),
         Category::Graphics => graphics_page(ui, draft, inherited),
-        Category::Controls => controls_page(ui, draft, inherited, surface),
+        Category::Controls if surface.shows_desktop_integration() => {
+            controls_page(ui, draft, inherited)
+        }
         Category::Fonts => fonts_page(ui, draft, inherited),
         Category::System => system_page(ui, draft, inherited),
         _ => (),
@@ -766,16 +769,9 @@ fn graphics_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
 /// What each control does *on the app's screen* is not here. That is per-app —
 /// a touch target only means something against one app's layout — and lives in
 /// that app's own settings.
-fn controls_page(
-    ui: &mut Ui,
-    draft: &mut EmulatorSettings,
-    inherited: Option<&EmulatorSettings>,
-    surface: Surface,
-) {
-    if surface.shows_desktop_integration() {
-        caption(ui, "Where each button touches the screen is set per app.");
-        ui.add_space(6.0);
-    }
+fn controls_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {
+    caption(ui, "Where each button touches the screen is set per app.");
+    ui.add_space(6.0);
 
     crate::ui::widgets::section(ui, "Analog sticks");
     optional_row(
@@ -826,18 +822,11 @@ fn controls_page(
     );
 
     crate::ui::widgets::section(ui, "Tilting the device");
-    if surface.shows_desktop_integration() {
-        caption(
-            ui,
-            "A desktop has no accelerometer, so a stick stands in for it.",
-        );
-        caption(ui, "You can also tilt by holding the right mouse button.");
-    } else {
-        caption(
-            ui,
-            "A connected controller can stand in for the device's accelerometer.",
-        );
-    }
+    caption(
+        ui,
+        "A desktop has no accelerometer, so a stick stands in for it.",
+    );
+    caption(ui, "You can also tilt by holding the right mouse button.");
     switch_row(
         ui,
         "Tilt with the left stick",
@@ -1387,10 +1376,11 @@ mod tests {
     }
 
     #[test]
-    fn mobile_settings_exclude_desktop_integrations() {
+    fn native_mobile_settings_exclude_controller_and_desktop_integrations() {
         assert!(!Category::MOBILE_GLOBAL.contains(&Category::Paths));
+        assert!(!Category::MOBILE_GLOBAL.contains(&Category::Controls));
+        assert!(!Category::MOBILE_PER_APP.contains(&Category::Controls));
         assert!(!Surface::Mobile.shows_desktop_integration());
-        assert!(Surface::Desktop.shows_desktop_integration());
 
         for category in Category::MOBILE_GLOBAL {
             assert!(Category::GLOBAL.contains(category));
@@ -1398,6 +1388,13 @@ mod tests {
         for category in Category::MOBILE_PER_APP {
             assert!(Category::PER_APP.contains(category));
         }
+    }
+
+    #[test]
+    fn desktop_settings_retain_controller_configuration() {
+        assert!(Surface::Desktop.shows_desktop_integration());
+        assert!(Category::GLOBAL.contains(&Category::Controls));
+        assert!(Category::PER_APP.contains(&Category::Controls));
     }
 
     #[test]

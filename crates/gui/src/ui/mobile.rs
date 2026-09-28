@@ -13,10 +13,10 @@
 //!
 //! What does not arrive here is as much of the design as what does. A
 //! touchscreen device needs no control-placement editor, because the guest's
-//! touch is the person's touch. Controller tuning remains useful when a
-//! controller is connected, including choosing whether its stick overrides
-//! the device's accelerometer. Window, process and folder settings describe
-//! desktop integrations a native mobile host does not have. Roughly half of
+//! touch is the person's touch. Controller tuning, virtual-cursor setup and
+//! controller-to-touch placement remain in the desktop interface where that
+//! workflow is supported. Window, process and folder settings describe desktop
+//! integrations a native mobile host does not have. Roughly half of
 //! [crate::ui::desktop::settings_dialog] is desktop-only by nature, so the
 //! mobile client is genuinely smaller rather than the same one squeezed.
 //!
@@ -1069,6 +1069,20 @@ mod tests {
     fn a_touch_target_satisfies_both_platforms() {
         assert!(TOUCH_TARGET >= 44.0, "smaller than Apple's minimum");
         assert!(TOUCH_TARGET >= 48.0, "smaller than Google's minimum");
+    }
+
+    #[test]
+    fn controller_category_cannot_remain_selected_on_mobile() {
+        use crate::ui::desktop::settings_dialog::Category;
+
+        assert_eq!(
+            mobile_category(Category::Controls, Category::MOBILE_GLOBAL),
+            Category::General
+        );
+        assert_eq!(
+            mobile_category(Category::Controls, Category::MOBILE_PER_APP),
+            Category::Display
+        );
     }
 
     /// A row has to be at least a touch target tall, or the list is a row of
