@@ -25,7 +25,7 @@ use crate::state::settings::{
 };
 use crate::ui::theme;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub enum Category {
     General,
     Display,
@@ -73,6 +73,38 @@ impl Category {
         Category::System,
         Category::Logging,
     ];
+
+    /// Global categories that describe a native mobile installation.
+    ///
+    /// Paths contains executable and folder-picker configuration for the
+    /// desktop frontend. Mobile imports through its platform document picker
+    /// and owns its installation paths, so there is nothing useful to edit.
+    pub const MOBILE_GLOBAL: &'static [Category] = &[
+        Category::General,
+        Category::Display,
+        Category::Graphics,
+        Category::Controls,
+        Category::Fonts,
+        Category::System,
+        Category::Logging,
+    ];
+
+    /// Per-app mobile categories. The remaining categories all affect the
+    /// guest or a controller that can be attached to the device.
+    pub const MOBILE_PER_APP: &'static [Category] = Self::PER_APP;
+}
+
+/// Which settings surface is asking the shared category renderer to draw.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum Surface {
+    Desktop,
+    Mobile,
+}
+
+impl Surface {
+    fn shows_desktop_integration(self) -> bool {
+        self == Self::Desktop
+    }
 }
 
 /// What the person did with the dialog.
@@ -132,14 +164,20 @@ pub fn show_global(ctx: &egui::Context, dialog: &mut GlobalDialog) -> Outcome {
             category_list(ui, Category::GLOBAL, &mut dialog.category);
             ui.separator();
             page(ui, 430.0, |ui| match dialog.category {
-                Category::General => general_page(ui, &mut dialog.draft),
+                Category::General => general_page(ui, &mut dialog.draft, Surface::Desktop),
                 Category::Paths => paths_page(ui, &mut dialog.draft),
                 Category::Logging => {
                     logging_page(ui, &mut dialog.draft.emulator, None);
                     ui.add_space(8.0);
-                    frontend_logging_page(ui, &mut dialog.draft);
+                    frontend_logging_page(ui, &mut dialog.draft, Surface::Desktop);
                 }
-                other => emulator_page(ui, other, &mut dialog.draft.emulator, None),
+                other => emulator_page(
+                    ui,
+                    other,
+                    &mut dialog.draft.emulator,
+                    None,
+                    Surface::Desktop,
+                ),
             });
         });
 
@@ -200,9 +238,16 @@ pub fn show_app(ctx: &egui::Context, dialog: &mut AppDialog) -> Outcome {
                         );
                         dialog.open_control_editor = open_editor;
                         ui.add_space(12.0);
-                        controls_page(ui, &mut dialog.draft, Some(&dialog.inherited));
+                        controls_page(
+                            ui,
+                            &mut dialog.draft,
+                            Some(&dialog.inherited),
+                            Surface::Desktop,
+                        );
                     }
-                    other => emulator_page(ui, other, &mut dialog.draft, inherited),
+                    other => {
+                        emulator_page(ui, other, &mut dialog.draft, inherited, Surface::Desktop)
+                    }
                 }
             });
         });
@@ -229,37 +274,35 @@ pub fn show_app(ctx: &egui::Context, dialog: &mut AppDialog) -> Outcome {
     outcome
 }
 
-/// Draw the selected global-settings category into the space supplied by a
-/// form-factor composition.
-pub(crate) fn show_global_category(ui: &mut Ui, dialog: &mut GlobalDialog) {
+pub(crate) fn show_global_category_for(ui: &mut Ui, dialog: &mut GlobalDialog, surface: Surface) {
     match dialog.category {
-        Category::General => general_page(ui, &mut dialog.draft),
+        Category::General => general_page(ui, &mut dialog.draft, surface),
         Category::Paths => paths_page(ui, &mut dialog.draft),
         Category::Logging => {
             logging_page(ui, &mut dialog.draft.emulator, None);
             ui.add_space(8.0);
-            frontend_logging_page(ui, &mut dialog.draft);
+            frontend_logging_page(ui, &mut dialog.draft, surface);
         }
-        other => emulator_page(ui, other, &mut dialog.draft.emulator, None),
+        other => emulator_page(ui, other, &mut dialog.draft.emulator, None, surface),
     }
 }
 
-/// Draw the selected per-app settings category into the space supplied by a
-/// form-factor composition.
-pub(crate) fn show_app_category(ui: &mut Ui, dialog: &mut AppDialog) {
+pub(crate) fn show_app_category_for(ui: &mut Ui, dialog: &mut AppDialog, surface: Surface) {
     let inherited = Some(&dialog.inherited);
     match dialog.category {
         Category::Logging => logging_page(ui, &mut dialog.draft, inherited),
         Category::Controls => {
-            crate::ui::widgets::section(ui, "This app's controls");
-            let inherited_layout = dialog.inherited.controls.clone().unwrap_or_default();
-            let mut open_editor = dialog.open_control_editor;
-            app_control_layout(ui, &mut dialog.draft, &inherited_layout, &mut open_editor);
-            dialog.open_control_editor = open_editor;
-            ui.add_space(12.0);
-            controls_page(ui, &mut dialog.draft, inherited);
+            if surface.shows_desktop_integration() {
+                crate::ui::widgets::section(ui, "This app's controls");
+                let inherited_layout = dialog.inherited.controls.clone().unwrap_or_default();
+                let mut open_editor = dialog.open_control_editor;
+                app_control_layout(ui, &mut dialog.draft, &inherited_layout, &mut open_editor);
+                dialog.open_control_editor = open_editor;
+                ui.add_space(12.0);
+            }
+            controls_page(ui, &mut dialog.draft, inherited, surface);
         }
-        other => emulator_page(ui, other, &mut dialog.draft, inherited),
+        other => emulator_page(ui, other, &mut dialog.draft, inherited, surface),
     }
 }
 
@@ -524,27 +567,42 @@ fn emulator_page(
     category: Category,
     draft: &mut EmulatorSettings,
     inherited: Option<&EmulatorSettings>,
+    surface: Surface,
 ) {
     match category {
-        Category::Display => display_page(ui, draft, inherited),
+        Category::Display => display_page(ui, draft, inherited, surface),
         Category::Graphics => graphics_page(ui, draft, inherited),
-        Category::Controls => controls_page(ui, draft, inherited),
+        Category::Controls => controls_page(ui, draft, inherited, surface),
         Category::Fonts => fonts_page(ui, draft, inherited),
         Category::System => system_page(ui, draft, inherited),
         _ => (),
     }
 }
 
-fn display_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {
-    crate::ui::widgets::section(ui, "Window");
-    switch_row(
+fn display_page(
+    ui: &mut Ui,
+    draft: &mut EmulatorSettings,
+    inherited: Option<&EmulatorSettings>,
+    surface: Surface,
+) {
+    crate::ui::widgets::section(
         ui,
-        "Start in full screen",
-        &mut draft.fullscreen,
-        false,
-        inherited.map(|i| describe(&i.fullscreen, |v| on_off(*v))),
-        "The window fills the screen as soon as the app starts.",
+        if surface.shows_desktop_integration() {
+            "Window"
+        } else {
+            "Rendering"
+        },
     );
+    if surface.shows_desktop_integration() {
+        switch_row(
+            ui,
+            "Start in full screen",
+            &mut draft.fullscreen,
+            false,
+            inherited.map(|i| describe(&i.fullscreen, |v| on_off(*v))),
+            "The window fills the screen as soon as the app starts.",
+        );
+    }
     optional_row(
         ui,
         "Internal resolution",
@@ -708,9 +766,16 @@ fn graphics_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
 /// What each control does *on the app's screen* is not here. That is per-app —
 /// a touch target only means something against one app's layout — and lives in
 /// that app's own settings.
-fn controls_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&EmulatorSettings>) {
-    caption(ui, "Where each button touches the screen is set per app.");
-    ui.add_space(6.0);
+fn controls_page(
+    ui: &mut Ui,
+    draft: &mut EmulatorSettings,
+    inherited: Option<&EmulatorSettings>,
+    surface: Surface,
+) {
+    if surface.shows_desktop_integration() {
+        caption(ui, "Where each button touches the screen is set per app.");
+        ui.add_space(6.0);
+    }
 
     crate::ui::widgets::section(ui, "Analog sticks");
     optional_row(
@@ -761,11 +826,18 @@ fn controls_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&E
     );
 
     crate::ui::widgets::section(ui, "Tilting the device");
-    caption(
-        ui,
-        "A desktop has no accelerometer, so a stick stands in for it.",
-    );
-    caption(ui, "You can also tilt by holding the right mouse button.");
+    if surface.shows_desktop_integration() {
+        caption(
+            ui,
+            "A desktop has no accelerometer, so a stick stands in for it.",
+        );
+        caption(ui, "You can also tilt by holding the right mouse button.");
+    } else {
+        caption(
+            ui,
+            "A connected controller can stand in for the device's accelerometer.",
+        );
+    }
     switch_row(
         ui,
         "Tilt with the left stick",
@@ -1116,12 +1188,21 @@ fn logging_page(ui: &mut Ui, draft: &mut EmulatorSettings, inherited: Option<&Em
     );
 }
 
-fn frontend_logging_page(ui: &mut Ui, draft: &mut FrontendSettings) {
-    crate::ui::widgets::section(ui, "Log panel");
-    ui.checkbox(
-        &mut draft.reveal_log_on_crash,
-        "Open the log panel when a run ends badly",
+fn frontend_logging_page(ui: &mut Ui, draft: &mut FrontendSettings, surface: Surface) {
+    crate::ui::widgets::section(
+        ui,
+        if surface.shows_desktop_integration() {
+            "Log panel"
+        } else {
+            "Developer log"
+        },
     );
+    if surface.shows_desktop_integration() {
+        ui.checkbox(
+            &mut draft.reveal_log_on_crash,
+            "Open the log panel when a run ends badly",
+        );
+    }
     ui.checkbox(&mut draft.log_show_timestamps, "Show timestamps");
     responsive_control_row(ui, "Lines kept", |ui| {
         ui.add(
@@ -1140,7 +1221,7 @@ fn frontend_logging_page(ui: &mut Ui, draft: &mut FrontendSettings) {
     );
 }
 
-fn general_page(ui: &mut Ui, draft: &mut FrontendSettings) {
+fn general_page(ui: &mut Ui, draft: &mut FrontendSettings, surface: Surface) {
     crate::ui::widgets::section(ui, "Interface");
     responsive_control_row(ui, "Interface scale", |ui| {
         ui.add(
@@ -1159,24 +1240,26 @@ fn general_page(ui: &mut Ui, draft: &mut FrontendSettings) {
         &mut draft.confirm_remove,
         "Ask before removing an app from the library",
     );
-    ui.checkbox(
-        &mut draft.developer_mode,
-        "Developer mode: keep the log panel open and show extra tools",
-    );
-    if draft.developer_mode {
+    if surface.shows_desktop_integration() {
         ui.checkbox(
-            &mut draft.run_in_process,
-            "Run apps inside this window's process",
+            &mut draft.developer_mode,
+            "Developer mode: keep the log panel open and show extra tools",
         );
-        caption(
-            ui,
-            "What a phone will have to do. This window stops responding while              the app runs, its log goes to the terminal instead of the panel,              and only one app can run at a time.",
-        );
-        ui.checkbox(&mut draft.preview_mobile, "Preview the mobile layout");
-        caption(
-            ui,
-            "Draws the phone interface here, at phone proportions. The same              code a phone will run, in a different rectangle.",
-        );
+        if draft.developer_mode {
+            ui.checkbox(
+                &mut draft.run_in_process,
+                "Run apps inside this window's process",
+            );
+            caption(
+                ui,
+                "What a phone will have to do. This window stops responding while              the app runs, its log goes to the terminal instead of the panel,              and only one app can run at a time.",
+            );
+            ui.checkbox(&mut draft.preview_mobile, "Preview the mobile layout");
+            caption(
+                ui,
+                "Draws the phone interface here, at phone proportions. The same              code a phone will run, in a different rectangle.",
+            );
+        }
     }
 
     crate::ui::widgets::section(ui, "Updates");
@@ -1300,6 +1383,20 @@ mod tests {
         assert!(!Category::PER_APP.contains(&Category::Paths));
         for category in Category::PER_APP {
             assert!(Category::GLOBAL.contains(category));
+        }
+    }
+
+    #[test]
+    fn mobile_settings_exclude_desktop_integrations() {
+        assert!(!Category::MOBILE_GLOBAL.contains(&Category::Paths));
+        assert!(!Surface::Mobile.shows_desktop_integration());
+        assert!(Surface::Desktop.shows_desktop_integration());
+
+        for category in Category::MOBILE_GLOBAL {
+            assert!(Category::GLOBAL.contains(category));
+        }
+        for category in Category::MOBILE_PER_APP {
+            assert!(Category::PER_APP.contains(category));
         }
     }
 

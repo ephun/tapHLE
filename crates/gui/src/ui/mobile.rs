@@ -13,10 +13,10 @@
 //!
 //! What does not arrive here is as much of the design as what does. A
 //! touchscreen device needs no control-placement editor, because the guest's
-//! touch is the person's touch — unless a controller is connected, which is
-//! the one case that brings it back. Tilt settings exist to fake an
-//! accelerometer a desktop has not got. Window and fullscreen settings
-//! describe a window nobody can move. Roughly half of
+//! touch is the person's touch. Controller tuning remains useful when a
+//! controller is connected, including choosing whether its stick overrides
+//! the device's accelerometer. Window, process and folder settings describe
+//! desktop integrations a native mobile host does not have. Roughly half of
 //! [crate::ui::desktop::settings_dialog] is desktop-only by nature, so the
 //! mobile client is genuinely smaller rather than the same one squeezed.
 //!
@@ -248,21 +248,42 @@ pub fn show(
         }
         Screen::Activity => activity_screen(ui, body_rect, context, screen, &mut actions),
         Screen::Settings => settings_screen(ui, body_rect, screen, &mut actions),
-        Screen::GlobalSettings => full_page_ui(ui, body_rect, "mobile-global-settings", |ui| {
-            if let Some(dialog) = pages.global_settings.as_deref_mut() {
-                global_settings = global_settings_page(ui, dialog);
-            } else {
-                ui.label("Opening settings…");
-            }
-        }),
+        Screen::GlobalSettings => {
+            use crate::ui::desktop::settings_dialog::Category;
+            let category = pages
+                .global_settings
+                .as_deref()
+                .map(|dialog| mobile_category(dialog.category, Category::MOBILE_GLOBAL))
+                .unwrap_or(Category::General);
+            full_page_ui(
+                ui,
+                body_rect,
+                settings_scroll_id("global", category),
+                |ui| {
+                    if let Some(dialog) = pages.global_settings.as_deref_mut() {
+                        global_settings = global_settings_page(ui, dialog);
+                    } else {
+                        ui.label("Opening settings…");
+                    }
+                },
+            );
+        }
         Screen::Details => details_screen(ui, body_rect, context, screen, &mut actions),
-        Screen::AppSettings => full_page_ui(ui, body_rect, "mobile-app-settings", |ui| {
-            if let Some(dialog) = pages.app_settings.as_deref_mut() {
-                app_settings = app_settings_page(ui, dialog);
-            } else {
-                ui.label("Opening app settings…");
-            }
-        }),
+        Screen::AppSettings => {
+            use crate::ui::desktop::settings_dialog::Category;
+            let category = pages
+                .app_settings
+                .as_deref()
+                .map(|dialog| mobile_category(dialog.category, Category::MOBILE_PER_APP))
+                .unwrap_or(Category::Display);
+            full_page_ui(ui, body_rect, settings_scroll_id("app", category), |ui| {
+                if let Some(dialog) = pages.app_settings.as_deref_mut() {
+                    app_settings = app_settings_page(ui, dialog);
+                } else {
+                    ui.label("Opening app settings…");
+                }
+            });
+        }
         Screen::About => full_page_ui(ui, body_rect, "mobile-about", |ui| {
             if let Some((dialog, info)) = pages.about.as_mut() {
                 about_page(ui, dialog, info, &mut actions);
@@ -460,7 +481,7 @@ fn app_row(
     response.clicked()
 }
 
-fn content_ui(ui: &mut Ui, rect: Rect, id: &'static str, add: impl FnOnce(&mut Ui)) {
+fn content_ui(ui: &mut Ui, rect: Rect, id: impl std::hash::Hash, add: impl FnOnce(&mut Ui)) {
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
@@ -480,7 +501,7 @@ fn content_ui(ui: &mut Ui, rect: Rect, id: &'static str, add: impl FnOnce(&mut U
         });
 }
 
-fn mobile_scroll_area(id: &'static str) -> egui::ScrollArea {
+fn mobile_scroll_area(id: impl std::hash::Hash) -> egui::ScrollArea {
     egui::ScrollArea::vertical()
         .id_salt(id)
         .scroll_source(MOBILE_SCROLL_SOURCE)
@@ -491,7 +512,7 @@ fn mobile_scroll_style() -> egui::style::ScrollStyle {
     egui::style::ScrollStyle::solid()
 }
 
-fn full_page_ui(ui: &mut Ui, rect: Rect, id: &'static str, add: impl FnOnce(&mut Ui)) {
+fn full_page_ui(ui: &mut Ui, rect: Rect, id: impl std::hash::Hash, add: impl FnOnce(&mut Ui)) {
     content_ui(ui, rect, id, add);
 }
 
@@ -629,14 +650,19 @@ fn global_settings_page(
 ) -> crate::ui::desktop::settings_dialog::Outcome {
     use crate::ui::desktop::settings_dialog::{self, Category};
 
-    mobile_category_grid(ui, Category::GLOBAL, &mut dialog.category);
+    dialog.category = mobile_category(dialog.category, Category::MOBILE_GLOBAL);
+    let selected = mobile_category_grid(ui, Category::MOBILE_GLOBAL, dialog.category);
     ui.add_space(8.0);
     theme::hairline(ui);
     ui.add_space(12.0);
     ui.heading(dialog.category.label());
-    settings_dialog::show_global_category(ui, dialog);
+    settings_dialog::show_global_category_for(ui, dialog, settings_dialog::Surface::Mobile);
     ui.add_space(16.0);
-    mobile_settings_buttons(ui, &mut dialog.draft.emulator, false)
+    let outcome = mobile_settings_buttons(ui, &mut dialog.draft.emulator, false);
+    if let Some(selected) = selected {
+        dialog.category = selected;
+    }
+    outcome
 }
 
 fn app_settings_page(
@@ -654,21 +680,27 @@ fn app_settings_page(
         .wrap(),
     );
     ui.add_space(8.0);
-    mobile_category_grid(ui, Category::PER_APP, &mut dialog.category);
+    dialog.category = mobile_category(dialog.category, Category::MOBILE_PER_APP);
+    let selected = mobile_category_grid(ui, Category::MOBILE_PER_APP, dialog.category);
     ui.add_space(8.0);
     theme::hairline(ui);
     ui.add_space(12.0);
     ui.heading(dialog.category.label());
-    settings_dialog::show_app_category(ui, dialog);
+    settings_dialog::show_app_category_for(ui, dialog, settings_dialog::Surface::Mobile);
     ui.add_space(16.0);
-    mobile_settings_buttons(ui, &mut dialog.draft, true)
+    let outcome = mobile_settings_buttons(ui, &mut dialog.draft, true);
+    if let Some(selected) = selected {
+        dialog.category = selected;
+    }
+    outcome
 }
 
 fn mobile_category_grid(
     ui: &mut Ui,
     categories: &[crate::ui::desktop::settings_dialog::Category],
-    current: &mut crate::ui::desktop::settings_dialog::Category,
-) {
+    current: crate::ui::desktop::settings_dialog::Category,
+) -> Option<crate::ui::desktop::settings_dialog::Category> {
+    let mut selected = None;
     let columns = grid_columns(ui.available_width(), categories.len());
     let width = grid_cell_width(ui.available_width(), columns, ui.spacing().item_spacing.x);
     egui::Grid::new(ui.id().with("mobile-settings-categories"))
@@ -677,17 +709,40 @@ fn mobile_category_grid(
         .show(ui, |ui| {
             for (index, category) in categories.iter().enumerate() {
                 let button = egui::Button::selectable(
-                    *current == *category,
+                    current == *category,
                     egui::RichText::new(category.label()).size(BODY_TEXT),
                 );
                 if ui.add_sized([width, TOUCH_TARGET], button).clicked() {
-                    *current = *category;
+                    selected = Some(*category);
                 }
                 if (index + 1) % columns == 0 {
                     ui.end_row();
                 }
             }
         });
+    selected.filter(|selected| *selected != current)
+}
+
+fn mobile_category(
+    current: crate::ui::desktop::settings_dialog::Category,
+    categories: &[crate::ui::desktop::settings_dialog::Category],
+) -> crate::ui::desktop::settings_dialog::Category {
+    if categories.contains(&current) {
+        current
+    } else {
+        categories[0]
+    }
+}
+
+fn settings_scroll_id(
+    scope: &'static str,
+    category: crate::ui::desktop::settings_dialog::Category,
+) -> (
+    &'static str,
+    &'static str,
+    crate::ui::desktop::settings_dialog::Category,
+) {
+    ("mobile-settings", scope, category)
 }
 
 fn grid_columns(width: f32, item_count: usize) -> usize {
@@ -910,6 +965,70 @@ mod tests {
         }
     }
 
+    fn settings_scroll_frame(
+        ctx: &egui::Context,
+        time: f64,
+        events: Vec<egui::Event>,
+        category: crate::ui::desktop::settings_dialog::Category,
+        initial_offset: Option<f32>,
+        target: crate::ui::desktop::settings_dialog::Category,
+    ) -> (
+        f32,
+        egui::Pos2,
+        Option<crate::ui::desktop::settings_dialog::Category>,
+    ) {
+        use crate::ui::desktop::settings_dialog::Category;
+
+        let mut result = None;
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(300.0, 300.0),
+                )),
+                time: Some(time),
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let mut area = mobile_scroll_area(settings_scroll_id("global", category))
+                        .auto_shrink([false, false]);
+                    if let Some(initial_offset) = initial_offset {
+                        area = area.vertical_scroll_offset(initial_offset);
+                    }
+                    let output = area.show(ui, |ui| {
+                        let categories = Category::MOBILE_GLOBAL;
+                        let columns = grid_columns(ui.available_width(), categories.len());
+                        let width = grid_cell_width(
+                            ui.available_width(),
+                            columns,
+                            ui.spacing().item_spacing.x,
+                        );
+                        let origin = ui.next_widget_position();
+                        let index = categories
+                            .iter()
+                            .position(|candidate| *candidate == target)
+                            .expect("the target category is visible on mobile");
+                        let column = index % columns;
+                        let row = index / columns;
+                        let target = origin
+                            + Vec2::new(
+                                column as f32 * (width + ui.spacing().item_spacing.x) + width / 2.0,
+                                row as f32 * (TOUCH_TARGET + ui.spacing().item_spacing.y)
+                                    + TOUCH_TARGET / 2.0,
+                            );
+                        let selected = mobile_category_grid(ui, categories, category);
+                        ui.allocate_space(Vec2::new(ui.available_width(), 1_000.0));
+                        (target, selected)
+                    });
+                    result = Some((output.state.offset.y, output.inner.0, output.inner.1));
+                });
+            },
+        );
+        result.expect("the settings scroll area was drawn")
+    }
+
     #[test]
     fn mobile_navigation_exposes_every_shared_product_surface() {
         assert_eq!(
@@ -1015,6 +1134,70 @@ mod tests {
         let _ = scroll_frame(&ctx, 2.2, vec![pointer_button(to, false)], None);
 
         assert!(after_drag > start);
+    }
+
+    #[test]
+    fn selecting_a_settings_subsection_does_not_reuse_its_parent_scroll_offset() {
+        use crate::ui::desktop::settings_dialog::Category;
+
+        let ctx = egui::Context::default();
+        let (general, _, _) = settings_scroll_frame(
+            &ctx,
+            0.0,
+            Vec::new(),
+            Category::General,
+            Some(120.0),
+            Category::System,
+        );
+        let (_, target, _) = settings_scroll_frame(
+            &ctx,
+            1.0,
+            Vec::new(),
+            Category::General,
+            None,
+            Category::System,
+        );
+        let _ = settings_scroll_frame(
+            &ctx,
+            2.0,
+            vec![
+                egui::Event::PointerMoved(target),
+                pointer_button(target, true),
+            ],
+            Category::General,
+            None,
+            Category::System,
+        );
+        let (_, _, selected) = settings_scroll_frame(
+            &ctx,
+            2.1,
+            vec![pointer_button(target, false)],
+            Category::General,
+            None,
+            Category::System,
+        );
+        assert_eq!(selected, Some(Category::System));
+
+        let (system, _, _) = settings_scroll_frame(
+            &ctx,
+            3.0,
+            Vec::new(),
+            Category::System,
+            None,
+            Category::System,
+        );
+        let (general_again, _, _) = settings_scroll_frame(
+            &ctx,
+            4.0,
+            Vec::new(),
+            Category::General,
+            None,
+            Category::System,
+        );
+
+        assert_eq!(general, 120.0);
+        assert_eq!(system, 0.0);
+        assert_eq!(general_again, general);
     }
 
     #[test]

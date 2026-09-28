@@ -66,7 +66,10 @@
   reimplemented in Java, SwiftUI or UIKit. Mobile settings, app settings and
   About use full-screen, scrolling pages with finger-sized controls instead of
   desktop pop-up dialogs. Tapping the mobile scroll indicator no longer
-  activates content beneath it; dragging the page remains the way to scroll.
+  activates content beneath it; dragging the page remains the way to scroll,
+  and changing a settings section no longer moves the page to the tapped row.
+  Mobile settings omit desktop-only window, path and process controls while
+  retaining device, orientation, touch, controller and import behavior.
   Android can launch an app in that shared window and return to the library.
   The iOS frontend also builds, installs and launches apps in the simulator;
   guest-interface rendering there remains incomplete.

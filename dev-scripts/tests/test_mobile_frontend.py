@@ -217,8 +217,10 @@ class SharedMobileFrontendTests(unittest.TestCase):
         self.assertIn('mobile_scroll_area("mobile-library")', mobile)
         for screen in ("activity", "settings", "details", "developer-log"):
             self.assertIn(f'content_ui(ui, rect, "mobile-{screen}"', mobile)
-        for screen in ("global-settings", "app-settings", "about"):
-            self.assertIn(f'full_page_ui(ui, body_rect, "mobile-{screen}"', mobile)
+        self.assertIn('settings_scroll_id("global", category)', mobile)
+        self.assertIn('settings_scroll_id("app", category)', mobile)
+        self.assertIn('full_page_ui(ui, body_rect, "mobile-about"', mobile)
+        self.assertIn('(\"mobile-settings\", scope, category)', mobile)
 
 
     def test_mobile_play_always_uses_in_process_runtime_before_emulator_lookup(self):
