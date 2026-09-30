@@ -116,6 +116,54 @@ between guest runs; force-quitting tapHLE requires preparation again.
 `jit-status.txt` in tapHLE's Documents directory records the latest native JIT
 stage or failure for device diagnosis. `docs/platforms.md` owns runtime status.
 
+Physical-device work has one machine-operable entry point:
+
+```sh
+python3 platforms/ios/scripts/ios-device.py status
+python3 platforms/ios/scripts/ios-device.py build
+python3 platforms/ios/scripts/ios-device.py --app /path/to/tapHLE.app install
+python3 platforms/ios/scripts/ios-device.py --duration 180 test
+```
+
+Its subcommands are `status`, `prepare`, `build`, `install`, `launch`, `stop`,
+`logs`, `crashes`, `screenshot`, `test`, and `cycle`. `build` always invokes the
+canonical `build-host.sh iphoneos Release --ipa` procedure and verifies its app,
+IPA, hash manifest, and requested entitlement. The resulting ad-hoc signature is
+not installable. Before `install`, a human must authenticate an Apple Development
+identity, embed a development provisioning profile for the device, and re-sign
+the app while preserving `get-task-allow=true`; pass that app with `--app`.
+Neither credentials, pairing records, nor provisioning profiles belong in Git.
+
+Before a device command, connect the iPhone, unlock it, accept **Trust This
+Computer**, finish Xcode pairing/device preparation, and enable Developer Mode in
+Settings > Privacy & Security (including its restart and confirmation). The
+current native host then needs the separately installed and configured StikDebug
+mechanism described above. During `test`, press Play, complete that existing
+device-side handoff, and return to tapHLE. The harness does not install, pair, or
+drive StikDebug; it accepts JIT only when the installed app's
+`Documents/jit-status.txt` says `Ready:`. A missing/failed handoff is
+`JIT_NOT_AVAILABLE`, and an in-progress handoff at the deadline is
+`TEST_TIMEOUT`.
+
+Apple's Xcode command-line tools are primary: this was written against Xcode
+16.4 and `devicectl` 443.24, and also uses `xcdevice`, `xcodebuild`, and
+`codesign`. Install libimobiledevice 1.4.0 for `idevice_id`, `ideviceinfo`,
+`idevicesyslog`, and `idevicescreenshot`; Xcode 16.4 has no physical-device
+syslog or screenshot subcommand. All calls have finite timeouts. Each invocation
+prints one JSON summary and writes the same summary plus tool logs, screenshots,
+and copied tapHLE crash/JIT evidence under the ignored
+`build/ios-device-runs/` directory. Those local artifacts can contain device
+identifiers or logs and must not be committed or shared without review.
+
+Automation can key on these stable failures: `PHONE_NOT_CONNECTED` (20),
+`PHONE_LOCKED` (21), `PHONE_NOT_PAIRED` (22),
+`DEVELOPER_MODE_DISABLED` (23), `SIGNING_FAILED` (30), `INSTALL_FAILED` (31),
+`JIT_NOT_AVAILABLE` (32), `APP_LAUNCH_FAILED` (33), `APP_CRASHED` (34), and
+`TEST_TIMEOUT` (35). `cycle` performs prepare checks, an optional canonical
+build, installation, launch monitoring, crash detection, and JIT verification;
+use `--skip-build --app /path/to/provisioned/tapHLE.app` when the required
+human signing step has produced the installable app.
+
 After installing the simulator app, run known routes as one automated batch:
 
 ```sh
